@@ -1,0 +1,39 @@
+# OTel Collector for local development (docs/11 §4.6). Every platform process emits OTLP here;
+# where the data ends up is decided only in this file, never in instrumented code.
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+exporters:
+  # The CORE profile has no observability backend yet; the OBSERVABILITY profile
+  # (Grafana/Tempo/Loki, docs/19 §4) replaces this exporter.
+  debug:
+    verbosity: basic
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]

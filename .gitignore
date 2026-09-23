@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Python environments (one per data package, never shared)
+.venv/
+__pycache__/
+*.pyc
+
+# Build and tool caches
+.turbo/
+dist/
+coverage/
+.eslintcache
+
+# Local configuration and secrets — only .env.example is versioned
+.env
+.env.*
+!.env.example
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.log
+
+# Credentials and key material — never versioned, whatever the folder
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Archives, including the local backup of the original docs (binary, never versioned)
+*.zip

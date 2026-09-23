@@ -1,0 +1,35 @@
+{
+  "name": "atlasbi",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.27.1",
+  "engines": {
+    "node": ">=24.12.0 <25"
+  },
+  "scripts": {
+    "preflight": "node tools/platform-cli/src/main.ts preflight",
+    "bootstrap": "node tools/platform-cli/src/main.ts bootstrap",
+    "dev": "node tools/platform-cli/src/main.ts dev",
+    "stack:up": "node tools/platform-cli/src/main.ts stack:up",
+    "stack:down": "node tools/platform-cli/src/main.ts stack:down",
+    "stack:logs": "node tools/platform-cli/src/main.ts stack:logs",
+    "reset:local": "node tools/platform-cli/src/main.ts reset:local",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:integration": "turbo run test:integration",
+    "lint": "eslint . --cache",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "catalog:",
+    "eslint": "10.11.0",
+    "eslint-config-prettier": "10.1.8",
+    "prettier": "3.9.8",
+    "turbo": "2.11.2",
+    "typescript": "catalog:",
+    "typescript-eslint": "8.70.1"
+  }
+}

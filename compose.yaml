@@ -1,0 +1,42 @@
+# Local infrastructure for the "equipo local mínimo" deployment level (docs/11 §4.4).
+# Driven by `pnpm dev` / `pnpm stack:up` through `podman compose`. Every image is pinned to an
+# exact tag — never `:latest` — and the versions are justified in docs/versions.md.
+#
+# Services without a `profiles` key form the CORE profile (docs/19 §4). Later build steps add
+# object storage and Cube to CORE, and Airflow/Electric/OpenMetadata behind their own profiles.
+name: atlasbi
+
+services:
+  postgres:
+    image: docker.io/library/postgres:17.11-trixie
+    environment:
+      POSTGRES_USER: ${ATLASBI_POSTGRES_USER:?set ATLASBI_POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${ATLASBI_POSTGRES_PASSWORD:?set ATLASBI_POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${ATLASBI_POSTGRES_DB:?set ATLASBI_POSTGRES_DB in .env}
+    ports:
+      # Loopback only: the local database is never exposed to the rest of the network.
+      - 127.0.0.1:${ATLASBI_POSTGRES_PORT:-55432}:5432
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  otel-collector:
+    # Core distribution: it already ships otlp, batch, debug and health_check — the contrib
+    # image would add hundreds of unused components to the attack surface.
+    image: docker.io/otel/opentelemetry-collector:0.161.0
+    command: ['--config=/etc/otelcol/config.yaml']
+    volumes:
+      - ./infra/local/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - 127.0.0.1:${ATLASBI_OTEL_GRPC_PORT:-4317}:4317
+      - 127.0.0.1:${ATLASBI_OTEL_HTTP_PORT:-4318}:4318
+      - 127.0.0.1:${ATLASBI_OTEL_HEALTH_PORT:-13133}:13133
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

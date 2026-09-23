@@ -1,0 +1,9 @@
+# LF everywhere: files mounted into Linux containers (collector config, SQL, shell)
+# break with CRLF, and Windows checkouts would otherwise produce noisy diffs.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.zip binary
+*.parquet binary
+*.duckdb binary

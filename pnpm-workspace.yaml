@@ -1,0 +1,15 @@
+packages:
+  - apps/*
+  - packages/*
+  - tools/*
+
+# Single source of truth for shared dependency versions (docs/versions.md mirrors the
+# stack-level ones). Packages reference them with "catalog:" — never a floating range.
+catalog:
+  '@types/node': 24.13.6
+  '@types/pg': 8.23.1
+  kysely: 0.29.6
+  pg: 8.23.0
+  typescript: 6.0.3
+  vitest: 4.1.11
+  zod: 4.6.5

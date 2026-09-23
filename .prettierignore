@@ -1,0 +1,7 @@
+pnpm-lock.yaml
+.turbo/
+coverage/
+
+# Architecture docs are hand-written prose; formatting them would rewrite tables and history.
+docs/
+CLAUDE.md
