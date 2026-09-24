@@ -132,6 +132,20 @@ Ninguno de los dos es candidato a motor del corazón: SQL Server es propietario 
 
 **Lo que sí queda como riesgo genuino, y hay que diseñarlo:** un conflicto real de concurrencia optimista ocurre cuando dos escritores intentan **modificar (no agregar) la misma fila** al mismo tiempo — por ejemplo, dos usuarios editando el mismo valor de forecast en Input Tables en el mismo instante. Ese caso sí puede fallar con un error de conflicto, y la mitigación es responsabilidad de la Capa 6 (API Gateway), no de esta capa: el procedimiento de escritura de Input Tables (capa 6, sección 9.1) debe reintentar automáticamente con backoff ante un conflicto de commit, usando los parámetros que DuckLake ya expone para esto (`ducklake_max_retry_count`, `ducklake_retry_wait_ms`, `ducklake_retry_backoff`) — no hay que inventar un mecanismo de colas ni de locking propio.
 
+### 6.6 Catálogo SQLite: límite multi-proceso medido, y su remedio
+
+El catálogo SQLite existe para el nivel **portátil** (un solo desarrollador, un solo proceso que escribe); el catálogo **PostgreSQL** es el primario y el único para escritura concurrente real. La documentación de DuckLake dice que, con SQLite, su modo por defecto (ATTACH/DETACH por consulta más un *retry time-out* ante el bloqueo de escritura) da *"a reasonable amount of multi-processing support"*. Se midió en la Fase 0 del Paso 1 (septiembre 2026; Windows 11, DuckDB 1.5.5, extensión `ducklake` `d8a1881e`, journal por defecto de SQLite, sin reintentos de la aplicación):
+
+| Escenario | Resultado |
+| --- | --- |
+| **Cadencia realista**: un escritor cada 2 s + un lector cada 1 s; o dos escritores cada 2 s | **5/5 corridas por escenario sin errores** y sin operaciones de más de 1 s — lo documentado se cumple |
+| **Contención alta**: lector cada 25 ms mientras se escribe, o escritores sin pausa | Fallos `database is locked`; **el proceso que pierde puede quedar sin poder usar el catálogo** (sus reintentos y lecturas siguen fallando) hasta reiniciarse. Nunca se corrompió nada: el proceso siguiente recupera el catálogo con el *journal* de SQLite, sin datos parciales |
+| **Transacción explícita larga** de varias sentencias + otro escritor | Cascada: falla también el `COMMIT` de quien tenía la transacción; el bloqueo dura hasta que termina el proceso |
+
+**Remedio:** reiniciar el proceso afectado; si hay más de un proceso escribiendo con frecuencia, o más de un usuario, usar el catálogo **PostgreSQL**.
+
+**Consecuencias de diseño** (Paso 1): el puerto administrativo serializa las escrituras dentro del proceso y no ofrece transacciones explícitas de varias sentencias; ante `database is locked` reintenta con un presupuesto acotado y, si se agota, falla con ese remedio en el mensaje. **No se activa el modo WAL de SQLite:** en las pruebas de contención alta eliminó los fallos, pero activarlo exige `node:sqlite` (Stability 1.1 en Node 24) y a cadencia realista no hace falta — queda como opción documentada si el uso real lo pidiera. Los scripts de la medición fueron exploratorios y no forman parte del repositorio: esta tabla es el registro de sus resultados.
+
 ---
 
 ## 7. Contrato de esta capa (qué expone, qué consume)
