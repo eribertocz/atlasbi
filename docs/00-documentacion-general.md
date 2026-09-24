@@ -54,6 +54,7 @@ Cada una de estas piezas se analiza en profundidad en su propio documento de cap
 - **Cero costo de licenciamiento por usuario** — el costo escala con infraestructura, no con headcount.
 - **Total libertad de self-hosting**, con tres niveles de despliegue reales (portátil, local, nube) que comparten el mismo código de aplicación — ver sección 8.
 - **Interoperabilidad nativa con formatos abiertos** (Parquet, catálogo DuckLake compatible con SQLite/DuckDB/Postgres/MySQL) sin pasos de importación.
+- **Visualización analítica premium como diferenciador — aspiración de producto, no una afirmación de superioridad actual.** Un Visualization Engine propio con contrato propio (`VisualSpec`), Visual Intelligence sobre el modelo semántico, defaults excelentes, Motion System, interacción unificada entre todos los visuales, y extensibilidad en todo el espectro: desde drag & drop hasta componentes propios en HTML + CSS + Vanilla JS (aislados y seguros) y un Custom Visual SDK. Los renderers (ECharts hoy) son infraestructura intercambiable — ver `22-visualization-engine.md`, con los atributos medibles que convierten "premium" en criterios verificables.
 - **Ideas incorporadas de otros líderes de BI, no solo de Power BI** — pendiente de definir en detalle capa por capa (ver sección 11): entrega proactiva de insights al estilo Tableau Pulse, exploración asociativa al estilo Qlik, y un modo de consulta SQL exploratoria para power users al estilo del "SQL personalizado" de Tableau.
 
 ---
@@ -301,5 +302,10 @@ Además de la auditoría de gobernanza/hechos (sección 10) y la ronda de ideas 
 - [x] `15-testing-cicd.md` — estrategia de testing por capa, tests de contrato entre capas, y pipeline de CI/CD del monorepo.
 - [x] `16-mvp-definicion-terminado.md` — qué entra y qué no entra en la primera versión, con checklist y script de demo de aceptación.
 - [x] `17-self-service-calculations.md` — cómo el usuario que arma un dashboard crea sus propias medidas (Visual Builder + Semantic SQL de Cube Core + IA), sin aprender un lenguaje nuevo.
+- [x] `18-first-class-citizens.md` — capacidades de plataforma vs. herramientas que las implementan hoy.
+- [x] `19-operabilidad-runtime.md` — topología, `pnpm dev`, migraciones, seed, health checks, Report Document Model.
+- [x] `20-product-ui-ux.md` — arquitectura de experiencia y anatomía del Report Builder.
+- [x] `21-engineering-standards.md` — normativo: inglés en el código, versionado por contrato, Puertos y Adaptadores.
+- [x] `22-visualization-engine.md` — visualización analítica premium como diferenciador: Visualization Engine, Visual Intelligence, Design System, Motion, Custom Component Studio (HTML + CSS + Vanilla JS) y Custom Visual SDK. Visión y contratos; no entra en el MVP.
 
 **Con estos cinco documentos, el proyecto pasa de "arquitectura decidida" a "listo para que alguien empiece a programar".** Listo para pasar a Claude Code.

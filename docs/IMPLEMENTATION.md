@@ -96,6 +96,7 @@ Realtime (10) ──sync/broadcast── visual, filter_definition (Postgres)
 - Arquitectura de experiencia (qué UI es nuestra, qué UI es de una herramienta técnica externa, navegación por rol, anatomía del Report Builder) — **resuelto en `20-product-ui-ux.md`.**
 - Estándares de ingeniería, versionado por contrato, y la arquitectura de Puertos y Adaptadores (ningún tipo de proveedor cruza la frontera de su adaptador) — **resuelto en `21-engineering-standards.md`, normativo.**
 - Fuera de alcance todavía (huecos de producto, no de arquitectura): authoring visual completo, catálogo/lineage en UI, embedding, alertas por umbral, exportación programada, mobile, accesibilidad. Ver `00-documentacion-general.md` sección 4 y `AUDITORIA-EXTERNA.md`.
+- Dirección estratégica de visualización (diferenciador principal: Visualization Engine propio, Visual Intelligence, Design System, Motion, Custom Component Studio en HTML/CSS/Vanilla JS aislado, Custom Visual SDK) — **fijada en `22-visualization-engine.md`**; es visión, no entra en el MVP. `VisualSpec` nunca persiste configuración de un renderer.
 - **Nunca confundir una capacidad arquitectónica con la herramienta que la implementa hoy** (Semantic Model ≠ Cube, Matrix Engine ≠ TanStack Table, Visualization Engine ≠ ECharts) — **resuelto en `18-first-class-citizens.md`**, lectura obligatoria antes de tocar código de la Capa 8.
 
 ---

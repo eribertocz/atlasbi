@@ -250,7 +250,7 @@ Svelte ──mutation { ..., expectedVersion }──► API Gateway
 // packages/contracts/visual-spec.ts — versionado igual que el resto del documento
 interface VisualSpecV1 {
   version: 1;
-  adapter: 'echarts' | 'matrix';
+  kind: 'line' | 'bar' | 'kpi' | 'matrix'; // tipo de visual de la gramática propia — nunca un renderer
   measures: string[];
   dimensions: string[];
 }
@@ -261,6 +261,8 @@ interface FormattingSpecV1 {
   conditionalRules?: { if: string; style: Record<string, string> }[];
 }
 ```
+
+**Corrección posterior de este ejemplo:** la primera versión persistía `adapter: 'echarts' | 'matrix'` — el nombre del renderer dentro del documento del reporte, justo lo que `21-engineering-standards.md` §3.1 prohíbe. `VisualSpec` declara **qué** se visualiza (el `kind` de la gramática de la plataforma, *data roles*, encoding); **cuál** renderer lo dibuja lo decide el Visualization Compiler en tiempo de render (`22-visualization-engine.md` §2). Así, cambiar o sumar renderers nunca obliga a migrar reportes guardados. Los valores de `kind` de arriba son ilustrativos.
 
 **Segundo: `report.schema_version` ya existe en la tabla (sección 8), pero todavía no hay un mecanismo que lo use.** Sin esto, un `VisualSpec` que cambie de forma dentro de tres años deja huérfanos a los reportes creados hoy. La corrección: cada versión de `VisualSpec`/`FormattingSpec` trae su propia función de migración, aplicada de forma perezosa (al abrir el reporte, no en un *batch* masivo):
 

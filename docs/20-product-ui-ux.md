@@ -159,8 +159,8 @@ Suficiente para que un administrador sepa, de un vistazo, si algo está atrasado
 **Este panel derecho es la superficie donde viven directamente los First-Class Citizens ya definidos (`18-first-class-citizens.md`)** — no una pantalla nueva que inventar, es la interfaz de los contratos que ya existen:
 
 - **DATOS** → arrastra medidas/dimensiones del Semantic Model (Cube, vía Filter/Context Engine).
-- **VISUAL → Campos** → Visualization Engine (qué adaptador: ECharts, Matrix).
-- **VISUAL → Formato** → Formatting & Theme Engine (`18-first-class-citizens.md`, Tier 1 — todavía sin diseño detallado, pero este es el lugar exacto donde va a vivir cuando se diseñe).
+- **VISUAL → Campos** → Visualization Engine: el autor elige el **tipo** de visual y asigna campos a sus *data roles*, con sugerencias de Visual Intelligence. El renderer (ECharts, Matrix, otros a futuro) es un detalle interno que nunca se le muestra — `22-visualization-engine.md` §2–§3.
+- **VISUAL → Formato** → Formatting & Theme Engine (`18-first-class-citizens.md`, Tier 1 — todavía sin diseño detallado, pero este es el lugar exacto donde va a vivir cuando se diseñe; dirección del Visualization Design System en `22-visualization-engine.md` §4). Los defaults ya tienen que verse profesionales: el panel es para personalizar, no para arreglar.
 - **VISUAL → Interacciones** → Interaction Engine (cross-filter, drill).
 
 **Para un Matrix**, el panel de campos cambia de forma (no son los mismos "campos" que un chart):
@@ -254,4 +254,4 @@ nunca como un paso que el autor no técnico tiene que ejecutar
 | App Shell + navegación por rol | UX de drill/cross-filter dentro del canvas | *Layouts* mobile |
 | Principios de diseño (ya en `08-frontend.md` §11.5, no se repiten acá) | | **Data Studio y Model Studio completos** (sección 8) — nombrados y bosquejados, diseño detallado fuera del MVP |
 
-No hace falta detener el Milestone 0 para diseñar cien pantallas — pero tampoco se llega al Authoring Engine sin haber resuelto la anatomía de la sección 7, porque ahí es donde vive la mayor parte del producto real (`18-first-class-citizens.md`, "los siete donde vale la pena invertir ingeniería propia").
+No hace falta detener el Milestone 0 para diseñar cien pantallas — pero tampoco se llega al Authoring Engine sin haber resuelto la anatomía de la sección 7, porque ahí es donde vive la mayor parte del producto real (`18-first-class-citizens.md`, "los nueve donde vale la pena invertir ingeniería propia").

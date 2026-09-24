@@ -98,7 +98,7 @@ TECNOLOGÍA (reemplazable)
 | Puerto | Adaptador de hoy | Tecnología |
 | --- | --- | --- |
 | `SemanticRuntimePort` | `CubeAdapter` | Cube Core |
-| `VisualizationRenderer` | `EChartsAdapter`, `MatrixAdapter` | ECharts, TanStack Table |
+| `VisualizationRendererPort` | `EChartsAdapter`, `MatrixAdapter` (hoy); `VegaAdapter`, `DeckGLAdapter` como candidatos a evaluar — `22-visualization-engine.md` §2.2 | ECharts, TanStack Table |
 | `RealtimeSyncPort` | `ElectricAdapter` | ElectricSQL |
 | `AnalyticalEnginePort` | `DuckDBAdapter` (y `ClickHouseAdapter` cuando aplique, `01-motor-almacenamiento.md` §6.3) | DuckDB / ClickHouse |
 | `TransformationEngine` (`plan()`, `run()`, `backfill()`, `getLineage()`) | `SQLMeshAdapter` | SQLMesh |

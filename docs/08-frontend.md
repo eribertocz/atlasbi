@@ -281,6 +281,8 @@ Esto no se resuelve con una librería, es dirección de diseño deliberada, a ap
 - Modo oscuro como experiencia de diseño completa, no un CSS invertido a último momento.
 - Densidad de información alta, pero con espaciado que no la hace sentir apretada.
 
+Estos principios son del **UI Design System de la aplicación**. Los estándares propios de las visualizaciones (tipografía de ejes y etiquetas, paletas semánticas, anatomía de tooltips y leyendas, motion, estados) son un **Visualization Design System** separado: `22-visualization-engine.md` §4–§5.
+
 ### 11.6 Matrix Engine — subsistema propio, no "otro visual de ECharts"
 
 **Corrección de un hueco real, señalado en una revisión posterior: la versión anterior de esta sección solo nombraba una librería candidata, sin diseñar el subsistema. Una matriz tipo Power BI no es una tabla con estilos — es un motor con responsabilidades propias, y tratarla como "otro tipo de widget de ECharts" es un error de arquitectura que sale caro corregir después.**
@@ -309,18 +311,11 @@ Matrix Engine (capa 8, subsistema propio)
 
 ### 11.7 Visualization Engine — una capa de adaptadores, no "ECharts es nuestra arquitectura de visualización"
 
-**Corrección de un error de encuadre, señalado en la misma revisión: en el diseño hasta ahora, "ECharts" y "la capa de visualización" eran, en los hechos, la misma cosa — y no deberían serlo.** ECharts es un *renderer* — una de varias piezas intercambiables detrás de una capa de adaptadores, no la arquitectura en sí:
-
-```
-Visualization Engine (capa 8, contrato propio: recibe datos ya agregados + tipo de visual)
-        │
-        ├── ECharts adapter      → barras, líneas, torta, dispersión, mapas de calor (la mayoría de los casos)
-        ├── Matrix adapter       → TanStack Table + Virtual (sección 11.6)
-        ├── Map adapter          → si en el futuro hace falta un mapa geográfico real (ECharts lo cubre parcialmente, no siempre)
-        └── Custom Visual adapter → un hueco explícito para un visual a medida que ninguno de los anteriores resuelve bien
-```
+**Corrección de un error de encuadre, señalado en la misma revisión: en el diseño hasta ahora, "ECharts" y "la capa de visualización" eran, en los hechos, la misma cosa — y no deberían serlo.** ECharts es un *renderer* — una de varias piezas intercambiables detrás de una capa de adaptadores (`EChartsAdapter`, `MatrixAdapter` para la matriz de la sección 11.6, y otros a futuro), no la arquitectura en sí.
 
 **Por qué esto importa más allá de la prolijidad conceptual:** con esta separación, cambiar ECharts por otra librería de charts en el futuro (si aparece una razón real — regla 5 del proyecto) significa escribir un adaptador nuevo, no reescribir cada componente de dashboard que hoy asume ECharts directo. Es el mismo principio de protocolo-sobre-proveedor que ya se aplica en el resto del proyecto (S3-compatible, Postgres wire protocol) — acá aplicado a la capa de renderizado.
+
+**Decisión estratégica posterior: la visualización pasa a ser uno de los diferenciadores principales del producto.** La arquitectura completa — `VisualSpec` → Visualization Compiler → Visualization Engine → `VisualizationRendererPort` (ECharts hoy; Vega y deck.gl como candidatos) → Interaction Engine, más Visual Intelligence, Visualization Design System, Motion System, Custom Component Studio (HTML + CSS + Vanilla JS) y Custom Visual SDK — vive en **`22-visualization-engine.md`, documento canónico**. Esta sección no la repite. ECharts sigue siendo el renderer principal.
 
 ### 11.8 Lo que todavía no está diseñado — backlog explícito de esta capa
 
@@ -329,7 +324,7 @@ Para que quede honesto y no se pierda entre los ajustes ya hechos:
 - **Interaction Engine**: ~~cross-filter, drill-down/drill-through, tooltips, selección múltiple — hoy sin una sola línea de diseño~~. **Corrección: ya diseñado, ver `14-interaction-state-engine.md` — este backlog quedó obsoleto en ese punto, no repetir la afirmación.**
 - **State Engine**: undo/redo e historial de cambios del dashboard — conecta con la Capa 10 (colaboración) pero es una pieza propia.
 - **Los tres modos de uso sin diferenciar todavía**: Dashboard Viewer / Report Builder / Explore Mode, hoy mezclados conceptualmente en un solo documento.
-- Conditional formatting, temas de visualización, bookmarks, exportación (PDF/snapshot), responsive/mobile real, accesibilidad (teclado, screen readers, i18n) — huecos de alcance ya anotados en el documento general, sin resolver todavía.
+- Conditional formatting, temas de visualización, bookmarks, exportación (PDF/snapshot), responsive/mobile real, accesibilidad (teclado, screen readers, i18n) — huecos de alcance ya anotados en el documento general, sin resolver todavía. Para la visualización, la dirección (Design System, Motion, export, accesibilidad, extensibilidad) ya está fijada en `22-visualization-engine.md`; el diseño detallado sigue pendiente.
 
 ---
 
