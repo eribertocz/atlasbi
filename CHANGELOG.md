@@ -4,6 +4,30 @@ Versionado del producto según [`docs/21-engineering-standards.md`](docs/21-engi
 §2: SemVer `0.MINOR.PATCH` hasta 1.0; los contratos (API, Report Schema, Config Schema, DB
 Migration…) versionan por separado y se listan en cada release.
 
+## 0.1.1 — seguridad del runtime (2026-09-24)
+
+PATCH (`21-engineering-standards.md` §2.1: parche de seguridad, sin cambio de capacidad ni de
+contrato). Independiente del Paso 1.
+
+### Seguridad
+
+- **Node.js fijado en 24.21.0** (antes 24.12.0, del 10/12/2025). La versión anterior no incluía
+  cuatro _security releases_ de la línea 24: 24.13.0, 24.14.1, 24.17.0 y **24.18.1** (28/7/2026).
+- Correcciones relevantes para este proyecto que ahora quedan incluidas:
+  - **undici** actualizado a 7.29.x (el runtime reporta 7.29.1): es el cliente HTTP detrás de
+    `fetch`, que usa la CLI de plataforma (health checks).
+  - **CVE-2026-58041** (Medium): `node:sqlite` — un iterador de `SQLTagStore` podía re-ejecutar
+    escrituras. Relevante porque el Paso 1 usará `node:sqlite` al aprovisionar un catálogo SQLite.
+  - **llhttp** 9.4.3 (CVE-2026-58044, _request smuggling_ por truncado de cabeceras), y el resto
+    del aviso de julio de 2026 (HTTP/2, HTTPS Agent, Permission Model, `dns`, `zlib`):
+    <https://nodejs.org/en/blog/vulnerability/july-2026-security-releases>.
+- Instalado desde el MSI oficial de nodejs.org con SHA-256 verificado contra `SHASUMS256.txt` y
+  firma Authenticode válida de OpenJS Foundation (winget solo ofrecía hasta 24.19.0).
+
+### Contratos
+
+Sin cambios.
+
 ## 0.1.0 — bootstrap (2026-09-23)
 
 Paso 0 del orden de construcción (`CLAUDE.md`): un entorno de desarrollo "equipo local mínimo"
