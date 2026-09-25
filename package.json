@@ -11,6 +11,7 @@
     "preflight": "node tools/platform-cli/src/main.ts preflight",
     "bootstrap": "node tools/platform-cli/src/main.ts bootstrap",
     "dev": "node tools/platform-cli/src/main.ts dev",
+    "seed": "node tools/platform-cli/src/main.ts seed",
     "stack:up": "node tools/platform-cli/src/main.ts stack:up",
     "stack:down": "node tools/platform-cli/src/main.ts stack:down",
     "stack:logs": "node tools/platform-cli/src/main.ts stack:logs",

@@ -6,6 +6,15 @@ settings:
 
 catalogs:
   default:
+    '@duckdb/node-api':
+      specifier: 1.5.5-r.5
+      version: 1.5.5-r.5
+    '@opentelemetry/api':
+      specifier: 1.9.1
+      version: 1.9.1
+    '@opentelemetry/semantic-conventions':
+      specifier: 1.43.0
+      version: 1.43.0
     '@types/node':
       specifier: 24.13.6
       version: 24.13.6
@@ -74,7 +83,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6))
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6))
 
   packages/contracts:
     devDependencies:
@@ -86,7 +95,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6))
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6))
 
   packages/database:
     dependencies:
@@ -111,16 +120,53 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6))
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6))
+
+  packages/warehouse:
+    dependencies:
+      '@atlasbi/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@duckdb/node-api':
+        specifier: 'catalog:'
+        version: 1.5.5-r.5
+      '@opentelemetry/api':
+        specifier: 'catalog:'
+        version: 1.9.1
+      '@opentelemetry/semantic-conventions':
+        specifier: 'catalog:'
+        version: 1.43.0
+    devDependencies:
+      '@atlasbi/config':
+        specifier: workspace:*
+        version: link:../config
+      '@atlasbi/database':
+        specifier: workspace:*
+        version: link:../database
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.6
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6))
 
   tools/platform-cli:
     dependencies:
       '@atlasbi/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@atlasbi/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@atlasbi/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@atlasbi/warehouse':
+        specifier: workspace:*
+        version: link:../../packages/warehouse
       zod:
         specifier: 'catalog:'
         version: 4.6.5
@@ -133,7 +179,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6))
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6))
 
 packages:
 
@@ -142,6 +188,56 @@ packages:
 
   '@cacheable/utils@2.5.0':
     resolution: {integrity: sha512-buipgOVDkkPXNR5+xBpDw7Zk2n1EvU7qBJCNUcL7rhQ//kfpOXPAvQ511Os0vpLYJ1pZnvudNytkQt2hst3wqA==}
+
+  '@duckdb/node-api@1.5.5-r.5':
+    resolution: {integrity: sha512-ZMX+sel3DjSKbGuQ44Y5Tp5LwYjlJkhB5faKr+9sSMcxixDMSW+8vaTOD1uRDuN9o0udUoCY/XX9PI1haEZuZg==}
+
+  '@duckdb/node-bindings-darwin-arm64@1.5.5-r.5':
+    resolution: {integrity: sha512-WJdeLTFy4pRg60rkbp9smtlP1iIQ8ErtIJkxS+2LQtM1ZZMSByyW+3WPpNoKe7IwPtVl2fLlPw7tDmQW4Z974g==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@duckdb/node-bindings-darwin-x64@1.5.5-r.5':
+    resolution: {integrity: sha512-rN0KjX13MwVQ5V5ufykolty/tf4SaafOpGWcUA1Cegf98jPeRdsJsEE1IMXn8n3u6WvMSZEVJmHJ3ma4Hr7Vzg==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@duckdb/node-bindings-linux-arm64-musl@1.5.5-r.5':
+    resolution: {integrity: sha512-00z3mYHUBAucp3L73EoftKDdaGOaV8ENELejiT+PK7dFjTzdXxqhJwZ1LaQV1/zEhIecz+x23f6WvFhWw+7XXQ==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@duckdb/node-bindings-linux-arm64@1.5.5-r.5':
+    resolution: {integrity: sha512-CafH2AIvXtpwDynG3KB/4uEOHRGlFoB7auCRMIwH3BKNIobsANV5LSpDJ3tfyRCFIsK6e8AT1eseWVnu2Dv3cw==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@duckdb/node-bindings-linux-x64-musl@1.5.5-r.5':
+    resolution: {integrity: sha512-S5qEc7F+GjXt85T2xArjjvN5oc/IjtH6zsLJsuo8N3fQolheBCefemIMdZoK2Jik8a0sBxidiS6Ld4qprMPPDw==}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@duckdb/node-bindings-linux-x64@1.5.5-r.5':
+    resolution: {integrity: sha512-kCyq6BXhn6QXfwF8yVdVKriSSHP+rfVWcJ56cG8qZzlOZpxyvT5WGm6jMshxg4ditLlOsHsIN/D47RYrcjXuHQ==}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@duckdb/node-bindings-win32-arm64@1.5.5-r.5':
+    resolution: {integrity: sha512-L3Mroc23xhqOowWVElni8LgEmsm5e9DdG1y2pLka/1ug3Pl2vpQMl1Phxwz4UEMF8DOBbMgN5BBNrYwG2BFo+g==}
+    cpu: [arm64]
+    os: [win32]
+
+  '@duckdb/node-bindings-win32-x64@1.5.5-r.5':
+    resolution: {integrity: sha512-mBGFn8netT/AAhK4TOG6Fw47+Db68CxCVtQ9qfxZc1kZAjds+aYrh17Fd/u5CbTDdxILsrcyuF8q9cUcm54kQA==}
+    cpu: [x64]
+    os: [win32]
+
+  '@duckdb/node-bindings@1.5.5-r.5':
+    resolution: {integrity: sha512-sR7x91TfBunLqLbdvrcdiPCU+VGEQFPicxh1STZM402fuHW2ituPTAo2bY3IlntsvJShltrKF4R6B+JYPlAPZg==}
 
   '@eslint-community/eslint-utils@4.10.1':
     resolution: {integrity: sha512-cuadcxVFE8sDK6iWJbs8Sn0av2Nrh2QSGQhVlBW9AaAHqHwjWsZHT8LJ4hFGPh7ASBV2deFdM7H/DPjulmh8rg==}
@@ -213,6 +309,14 @@ packages:
 
   '@keyv/serialize@1.1.1':
     resolution: {integrity: sha512-dXn3FZhPv0US+7dtJsIi2R+c7qWYiReoEh5zUntWCf4oSpMNib8FDhSoed6m3QyZdx5hK7iLFkYk3rNxwt8vTA==}
+
+  '@opentelemetry/api@1.9.1':
+    resolution: {integrity: sha512-gLyJlPHPZYdAk1JENA9LeHejZe1Ti77/pTeFm/nMXmQH/HFZlcS/O2XJB+L8fkbrNSqhdtlvjBVjxwUYanNH5Q==}
+    engines: {node: '>=8.0.0'}
+
+  '@opentelemetry/semantic-conventions@1.43.0':
+    resolution: {integrity: sha512-eSYWTm620tTk45EKSedaUL8MFYI8hW164hIXsgIHyxu3VobUB3fFCu5t0hQby6OoWRPsG1KkKUG2M5UadiLiVg==}
+    engines: {node: '>=14'}
 
   '@oxc-project/types@0.150.0':
     resolution: {integrity: sha512-rDS5/31E9HfPl/CIzGrn0DOlvBbXFseQ5URJ9sYMfstbKLD/c6Gm9vmRzRGDdAXyOIL4zmO37lc9RIwYqVruZw==}
@@ -1071,6 +1175,47 @@ snapshots:
       hashery: 1.5.1
       keyv: 5.6.0
 
+  '@duckdb/node-api@1.5.5-r.5':
+    dependencies:
+      '@duckdb/node-bindings': 1.5.5-r.5
+
+  '@duckdb/node-bindings-darwin-arm64@1.5.5-r.5':
+    optional: true
+
+  '@duckdb/node-bindings-darwin-x64@1.5.5-r.5':
+    optional: true
+
+  '@duckdb/node-bindings-linux-arm64-musl@1.5.5-r.5':
+    optional: true
+
+  '@duckdb/node-bindings-linux-arm64@1.5.5-r.5':
+    optional: true
+
+  '@duckdb/node-bindings-linux-x64-musl@1.5.5-r.5':
+    optional: true
+
+  '@duckdb/node-bindings-linux-x64@1.5.5-r.5':
+    optional: true
+
+  '@duckdb/node-bindings-win32-arm64@1.5.5-r.5':
+    optional: true
+
+  '@duckdb/node-bindings-win32-x64@1.5.5-r.5':
+    optional: true
+
+  '@duckdb/node-bindings@1.5.5-r.5':
+    dependencies:
+      detect-libc: 2.1.2
+    optionalDependencies:
+      '@duckdb/node-bindings-darwin-arm64': 1.5.5-r.5
+      '@duckdb/node-bindings-darwin-x64': 1.5.5-r.5
+      '@duckdb/node-bindings-linux-arm64': 1.5.5-r.5
+      '@duckdb/node-bindings-linux-arm64-musl': 1.5.5-r.5
+      '@duckdb/node-bindings-linux-x64': 1.5.5-r.5
+      '@duckdb/node-bindings-linux-x64-musl': 1.5.5-r.5
+      '@duckdb/node-bindings-win32-arm64': 1.5.5-r.5
+      '@duckdb/node-bindings-win32-x64': 1.5.5-r.5
+
   '@eslint-community/eslint-utils@4.10.1(eslint@10.11.0)':
     dependencies:
       eslint: 10.11.0
@@ -1130,6 +1275,10 @@ snapshots:
       keyv: 5.6.0
 
   '@keyv/serialize@1.1.1': {}
+
+  '@opentelemetry/api@1.9.1': {}
+
+  '@opentelemetry/semantic-conventions@1.43.0': {}
 
   '@oxc-project/types@0.150.0': {}
 
@@ -1805,7 +1954,7 @@ snapshots:
       '@types/node': 24.13.6
       fsevents: 2.3.3
 
-  vitest@4.1.11(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6)):
+  vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6)):
     dependencies:
       '@vitest/expect': 4.1.11
       '@vitest/mocker': 4.1.11(vite@8.3.0(@types/node@24.13.6))
@@ -1828,6 +1977,7 @@ snapshots:
       vite: 8.3.0(@types/node@24.13.6)
       why-is-node-running: 2.3.0
     optionalDependencies:
+      '@opentelemetry/api': 1.9.1
       '@types/node': 24.13.6
     transitivePeerDependencies:
       - msw

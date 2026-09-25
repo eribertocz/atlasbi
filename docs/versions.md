@@ -5,6 +5,8 @@
 > **Corrección de expectativa, señalada en una revisión posterior: este archivo está intencionalmente incompleto — no es un olvido, es el orden correcto de trabajo.** Elegir versiones exactas *antes* de tener un vertical slice corriendo sería arbitrario — no hay forma de saber si Cube 1.7.x funciona bien con DuckDB 1.5.x y DuckLake hasta probarlo. **El primer trabajo real del Milestone 0 es precisamente construir la matriz de compatibilidad y completar esta tabla con evidencia, no de memoria.** Recién ahí `versions.md` + `pnpm-lock.yaml` + `uv.lock` + las etiquetas exactas de imagen en el `compose.yaml` se convierten en la fuente de verdad — y cada actualización posterior pasa por PR, nunca una edición silenciosa.
 >
 > **Estado al cerrar el Paso 0 (0.1.0 bootstrap, 2026-09-23, verificado en vivo):** completadas con evidencia las filas que el Paso 0 usa de verdad. Las demás siguen "completar" hasta el paso que las introduce — la matriz Cube/DuckDB/DuckLake es trabajo de los Pasos 1–3, no algo que se pueda verificar sin ese código corriendo.
+>
+> **Paso 1 (DuckDB + DuckLake, 2026-09-25):** DuckDB, DuckLake, `@duckdb/node-api` y la API de OpenTelemetry fijados con evidencia de la Fase 0 del Paso 1; la matriz de compatibilidad del lakehouse arranca con la plataforma validada y el resto de los consumidores pendientes de su paso.
 
 | Pieza | Versión fijada | Notas |
 | --- | --- | --- |
@@ -13,8 +15,8 @@
 | uv | **≥ 0.11** (verificado con 0.11.21) | Gestiona el Python de cada paquete de datos; cada uno tiene su propio entorno |
 | Python | **3.13** (patch exacto con `uv python pin` al crear el primer paquete Python, Paso 2) | El máximo soportado por los tres: Airflow 3.3.2 (README: 3.10–3.14), dlt 1.30.0 (clasificadores PyPI: 3.10–3.14), SQLMesh 0.236.2 (matriz de CI de `pr.yaml`: 3.9–3.13) |
 | PostgreSQL | **17.11** (`docker.io/library/postgres:17.11-trixie`) | Se eligió 17 y no 18.6 con evidencia: Airflow 3.3.2 soporta 14–18 y ElectricSQL documenta "cualquier Postgres ≥ 14", pero la extensión `postgres` de DuckDB — el camino del catálogo de DuckLake, la pieza más crítica — corre su CI de integración solo contra 17, igual que el CI de ElectricSQL. Revisar la 18 cuando el CI de `duckdb-postgres` la cubra |
-| DuckDB | _(completar — validar contra el driver de Cube, §3.2.2 de `17-self-service-calculations.md`)_ | No adoptar DuckDB 2.0 hasta que salga de alfa (proyectado segunda mitad de octubre 2026) |
-| DuckLake | _(completar)_ | v1.0 production-ready desde abril 2026 |
+| DuckDB | **1.5.5** (embebido vía `@duckdb/node-api` 1.5.5-r.5) — desde el Paso 1 | Elegido **por mérito propio**, no por el driver de Cube: 1.5.2 es la primera versión con DuckLake 1.0 y 1.5.5 (22/7/2026) es el último patch de esa línea; la 1.4.x LTS no trae DuckLake 1.0. La compatibilidad con los demás consumidores vive en la **matriz del lakehouse** (abajo). No adoptar DuckDB 2.0 hasta que salga de alfa (proyectado segunda mitad de octubre 2026) |
+| DuckLake | **formato de catálogo 1.0**; extensiones `ducklake` d8a1881e, `postgres_scanner` 41223e5, `sqlite_scanner` f79b1db (las que instala `pnpm bootstrap` para DuckDB 1.5.5 en `windows_amd64`) | v1.0 production-ready desde abril 2026. El runtime rechaza cualquier otro formato (`SUPPORTED_CATALOG_FORMAT`) y nunca pasa `AUTOMATIC_MIGRATION`: cambiar de formato es una migración administrativa explícita que obliga a revalidar la matriz |
 | SQLMesh | _(completar)_ | Bajo Linux Foundation desde marzo 2026 |
 | dlt | _(completar — confirmar soporte `destination="ducklake"`)_ | Ver `03-ingesta.md` |
 | Cube Core | _(completar — confirmar si ya incorpora la migración del PR `cube-js/cube#11165`)_ | Validar `checkSqlAuth` contra esta versión exacta antes de escribir el código final de la Capa 17 |
@@ -50,5 +52,24 @@ La fuente de verdad ejecutable es el `catalog` de `pnpm-workspace.yaml` + `packa
 | Prettier | **3.9.8** | 3.9.9 (2026-09-23) no pasaba el `minimumReleaseAge` |
 | Vitest | **4.1.11** | Vitest 5.0.0 salió el 2026-09-03 — demasiado nuevo (regla 6) |
 | @types/node | **24.13.6** | Misma línea mayor que el runtime (Node 24), no la última (26) |
+
+## Lakehouse (Paso 1)
+
+| Pieza | Versión | Notas |
+| --- | --- | --- |
+| `@duckdb/node-api` | **1.5.5-r.5** (con `@duckdb/node-bindings-win32-x64` y demás binarios de la misma versión) | Cliente oficial de DuckDB para Node (MIT), publicado el 13/9/2026. Sus tipos solo se importan dentro de `packages/warehouse/src/adapters/duckdb/**` (regla de ESLint, `21` §3.2) |
+| `@opentelemetry/api` | **1.9.1** | Solo la API: no-op hasta que el Paso 5 registre el SDK |
+| `@opentelemetry/semantic-conventions` | **1.43.0** | Solo la entrada **estable** (una regla de ESLint prohíbe `…/incubating`): `db.system.name`, `db.namespace`, `db.operation.name`, `error.type`, métrica `db.client.operation.duration` |
+
+### Matriz de compatibilidad del lakehouse
+
+La versión de DuckDB de la plataforma **no se acopla** a la del driver de Cube: cada consumidor del lakehouse es una fila, y lo que tiene que coincidir es el **formato del catálogo**, no la versión del motor. Una fila lectora nueva, o un DuckDB nuevo en cualquier fila, se valida con un test antes de fijarse — nunca se supone.
+
+| Consumidor | Rol | DuckDB | Extensión `ducklake` | Formato de catálogo | Estado |
+| --- | --- | --- | --- | --- | --- |
+| Plataforma (`@atlasbi/warehouse`, TypeScript) | Aprovisiona, escribe, lee | 1.5.5 (node-api 1.5.5-r.5) | d8a1881e | 1.0 | **Validada** — Paso 1, 2026-09-25: baterías de contrato de los dos puertos con los dos catálogos (`packages/warehouse/test/integration`) |
+| SQLMesh (Python) | Escribe (`stg_*`/`mart_*`) | _(Paso 2; PyPI tiene `duckdb` 1.5.5)_ | — | 1.0 | Pendiente — Paso 2 |
+| dlt (Python) | Escribe (ingesta) | _(Paso 7)_ | — | 1.0 | Pendiente — Paso 7 |
+| Cube Core 1.7.43 (`@cubejs-backend/duckdb-driver`) | Lee | node-api 1.5.5-r.5 | — | 1.0 | Compatible por formato; **pendiente de validar "la plataforma escribe → Cube lee"** en el Paso 3 |
 
 **Regla de actualización:** cambiar una fila de esta tabla es, en sí mismo, un cambio que pasa por PR — nunca una edición silenciosa del `compose.yaml`/`package.json` sin que este archivo se actualice en el mismo commit.

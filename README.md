@@ -35,23 +35,33 @@ proyectos Podman de la máquina no se ven afectados). Si el standalone no está 
 ```bash
 corepack enable     # una vez por máquina
 pnpm install
-pnpm bootstrap      # crea .env desde .env.example, levanta la infraestructura, aplica migraciones
+pnpm bootstrap      # crea .env, levanta la infraestructura, aplica migraciones, instala las
+                    # extensiones de DuckDB (la única descarga) y aprovisiona el lakehouse
+pnpm seed           # opcional: dataset de desarrollo en el lakehouse (20.000 filas)
 ```
+
+**El lakehouse** (DuckDB + DuckLake, [`docs/01`](docs/01-motor-almacenamiento.md) §6.6–6.7) usa por
+defecto un catálogo PostgreSQL en el Postgres local (base `lakehouse`) y guarda los datos en
+`.data/lakehouse/`. Para un catálogo SQLite portátil (un solo proceso que escribe), poné
+`ATLASBI_LAKEHOUSE_CATALOG_TYPE=sqlite` en `.env` y corré `pnpm bootstrap` otra vez. Si ya tenías un
+`.env` de antes del Paso 1, agregale `ATLASBI_LAKEHOUSE_CATALOG_URL` desde `.env.example`:
+`bootstrap` nunca reescribe un `.env` existente.
 
 Turborepo envía telemetría anónima por defecto; para desactivarla en tu máquina:
 `pnpm exec turbo telemetry disable`.
 
 ## Día a día
 
-| Comando                                              | Qué hace                                                                                                                                                          |
-| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm dev`                                           | Verifica prerrequisitos y `.env`, levanta la infraestructura local (Postgres, OTel Collector), aplica migraciones pendientes y espera a que cada pieza esté lista |
-| `pnpm preflight`                                     | Solo verifica la máquina: versiones, compose provider, puertos libres. No cambia nada                                                                             |
-| `pnpm stack:up` / `stack:down` / `stack:logs`        | Todo en contenedores / detener / ver logs                                                                                                                         |
-| `pnpm reset:local`                                   | **Destructivo**: borra la infraestructura local y sus datos (pide confirmación). `.env` no se toca                                                                |
-| `pnpm typecheck` / `pnpm lint` / `pnpm format:check` | Chequeos estáticos                                                                                                                                                |
-| `pnpm test`                                          | Unit tests (sin infraestructura)                                                                                                                                  |
-| `pnpm test:integration`                              | Tests contra Postgres real — requiere `pnpm dev` corriendo                                                                                                        |
+| Comando                                              | Qué hace                                                                                                                                                                                                                             |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm dev`                                           | Verifica prerrequisitos y `.env`, levanta la infraestructura local (Postgres, OTel Collector), aplica migraciones pendientes y espera a que cada pieza —incluido el lakehouse— esté lista. Nunca descarga ni crea nada del lakehouse |
+| `pnpm preflight`                                     | Solo verifica la máquina: versiones, compose provider, puertos libres, extensiones de DuckDB y carpetas del lakehouse. No cambia nada                                                                                                |
+| `pnpm seed`                                          | Carga el dataset de desarrollo en el lakehouse (idempotente; nunca corre solo)                                                                                                                                                       |
+| `pnpm stack:up` / `stack:down` / `stack:logs`        | Todo en contenedores / detener / ver logs                                                                                                                                                                                            |
+| `pnpm reset:local`                                   | **Destructivo**: borra la infraestructura local, sus datos y `.data/lakehouse` (pide confirmación). `.env` y las extensiones de DuckDB no se tocan                                                                                   |
+| `pnpm typecheck` / `pnpm lint` / `pnpm format:check` | Chequeos estáticos                                                                                                                                                                                                                   |
+| `pnpm test`                                          | Unit tests (sin infraestructura)                                                                                                                                                                                                     |
+| `pnpm test:integration`                              | Tests contra Postgres y DuckDB/DuckLake reales — requiere `pnpm bootstrap` hecho y `pnpm dev` corriendo                                                                                                                              |
 
 La infraestructura local publica sus puertos solo en `127.0.0.1`: Postgres en **55432** (no 5432,
 para no chocar con un Postgres ya instalado), OTLP en 4317/4318 y el health check del Collector

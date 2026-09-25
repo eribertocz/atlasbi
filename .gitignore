@@ -13,6 +13,9 @@ dist/
 coverage/
 .eslintcache
 
+# Local data: lakehouse files, SQLite catalogs and the DuckDB extension cache
+.data/
+
 # Local configuration and secrets — only .env.example is versioned
 .env
 .env.*

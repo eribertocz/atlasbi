@@ -97,6 +97,8 @@ Realtime (10) ──sync/broadcast── visual, filter_definition (Postgres)
 - Estándares de ingeniería, versionado por contrato, y la arquitectura de Puertos y Adaptadores (ningún tipo de proveedor cruza la frontera de su adaptador) — **resuelto en `21-engineering-standards.md`, normativo.**
 - Fuera de alcance todavía (huecos de producto, no de arquitectura): authoring visual completo, catálogo/lineage en UI, embedding, alertas por umbral, exportación programada, mobile, accesibilidad. Ver `00-documentacion-general.md` sección 4 y `AUDITORIA-EXTERNA.md`.
 - Dirección estratégica de visualización (diferenciador principal: Visualization Engine propio, Visual Intelligence, Design System, Motion, Custom Component Studio en HTML/CSS/Vanilla JS aislado, Custom Visual SDK) — **fijada en `22-visualization-engine.md`**; es visión, no entra en el MVP. `VisualSpec` nunca persiste configuración de un renderer.
+- **Bloqueante antes del SQL Lab (medido en el Paso 1):** el puerto de solo lectura del lakehouse es suficiente para la plataforma, no para SQL libre de usuarios humanos — la lista única de pendientes está en `08-frontend.md` §10.3.
+- **Decisión pendiente antes del Paso 3:** el repositorio `minio/minio` está archivado; la pieza S3-compatible local se reevalúa con la regla 7 (`11-infraestructura.md` §4.4).
 - **Nunca confundir una capacidad arquitectónica con la herramienta que la implementa hoy** (Semantic Model ≠ Cube, Matrix Engine ≠ TanStack Table, Visualization Engine ≠ ECharts) — **resuelto en `18-first-class-citizens.md`**, lectura obligatoria antes de tocar código de la Capa 8.
 
 ---

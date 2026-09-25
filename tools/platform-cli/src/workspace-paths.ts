@@ -9,6 +9,8 @@ export const WORKSPACE_FILES = {
   envExampleFile: path.join(WORKSPACE_ROOT, '.env.example'),
   nodeVersionFile: path.join(WORKSPACE_ROOT, '.node-version'),
   rootPackageJson: path.join(WORKSPACE_ROOT, 'package.json'),
+  /** Default home of lakehouse data and SQLite catalogs — `reset:local` deletes it. */
+  lakehouseDataDirectory: path.join(WORKSPACE_ROOT, '.data', 'lakehouse'),
 } as const;
 
 /** Compose project name, also the word typed to confirm destructive commands. */

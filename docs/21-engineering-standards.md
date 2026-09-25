@@ -12,6 +12,13 @@
 Project AtlasBI (codename provisional — nunca la marca pública)
 ```
 
+**Política de naming, fijada en el Paso 1 (para que un renombre futuro sea mecánico):**
+
+1. `AtlasBI` es un **codename provisional**; puede cambiar antes de 1.0, después de una revisión legal y de marca.
+2. **Nunca llevan el codename:** contratos, tipos e interfaces de dominio (`AnalyticalQueryPort`, `QueryResult`, `LakehouseError`, `VisualSpec`…); objetos de base de datos (tablas, columnas, schemas); formatos persistidos (Report Document, `VisualSpec`); identificadores de almacenamiento que sobreviven a un renombre (la base del catálogo es `lakehouse`, el alias adjunto es `lake`, las carpetas son `.data/lakehouse/…` y `.data/duckdb/…`); nombres de telemetría (`db.*` estándar, `lakehouse.catalog_type`); superficies públicas para terceros (API/OpenAPI, tokens CSS, globales y protocolo de mensajes del runtime de Custom Components, IDs de esquema de manifiestos — `22-visualization-engine.md` §9.6).
+3. **Pueden usarlo:** el scope de paquetes (`@atlasbi/*`), el prefijo de variables de entorno (`ATLASBI_*`), el nombre del repo y del proyecto de compose, los *defaults* de desarrollo de `.env.example`, los prefijos de recursos temporales de tests, la documentación, y el nombre visible — siempre desde **una única constante** (`PRODUCT_DISPLAY_NAME` en `tools/platform-cli/src/product.ts`), nunca como literal disperso.
+4. **Un renombre tiene que ser mecánico** (buscar y reemplazar, regenerar el lockfile, recrear volúmenes de desarrollo). Si alguna vez deja de serlo, es un bug de naming a corregir, no una deuda aceptada.
+
 ---
 
 ## 2. Una versión global del producto, y contratos que evolucionan por separado
@@ -100,7 +107,7 @@ TECNOLOGÍA (reemplazable)
 | `SemanticRuntimePort` | `CubeAdapter` | Cube Core |
 | `VisualizationRendererPort` | `EChartsAdapter`, `MatrixAdapter` (hoy); `VegaAdapter`, `DeckGLAdapter` como candidatos a evaluar — `22-visualization-engine.md` §2.2 | ECharts, TanStack Table |
 | `RealtimeSyncPort` | `ElectricAdapter` | ElectricSQL |
-| `AnalyticalEnginePort` | `DuckDBAdapter` (y `ClickHouseAdapter` cuando aplique, `01-motor-almacenamiento.md` §6.3) | DuckDB / ClickHouse |
+| `AnalyticalQueryPort` (solo lectura) + `LakehouseAdminPort` (administración/escritura) — antes un único `AnalyticalEnginePort`; separados en el Paso 1 para que el futuro SQL Lab nunca reciba un puerto con `execute` (`01-motor-almacenamiento.md` §6.7 y §7) | `DuckDBAnalyticalQueryEngine` + `DuckDBLakehouseAdmin` en `packages/warehouse/src/adapters/duckdb/` (y un adaptador ClickHouse cuando aplique, `01` §6.3) | DuckDB + DuckLake / ClickHouse |
 | `TransformationEngine` (`plan()`, `run()`, `backfill()`, `getLineage()`) | `SQLMeshAdapter` | SQLMesh |
 | `MetadataCatalogPort` | `OpenMetadataAdapter` | OpenMetadata |
 | `SecretProvider` (ya definido, `11-infraestructura.md` §4.7) | `EnvSecretProvider`, `OpenBaoAdapter`, `CloudSecretAdapter` | — |

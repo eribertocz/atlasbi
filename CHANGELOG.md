@@ -4,6 +4,55 @@ Versionado del producto según [`docs/21-engineering-standards.md`](docs/21-engi
 §2: SemVer `0.MINOR.PATCH` hasta 1.0; los contratos (API, Report Schema, Config Schema, DB
 Migration…) versionan por separado y se listan en cada release.
 
+## Unreleased — Paso 1: motor de almacenamiento (DuckDB + DuckLake)
+
+Queda en "Unreleased" hasta cerrar el Paso 2: la versión `0.2.0` ("vertical slice de datos",
+`21-engineering-standards.md` §2.1) se publica con la transformación.
+
+### Agregado
+
+- **`@atlasbi/warehouse`**: DuckDB 1.5.5 embebido con DuckLake 1.0, detrás de dos puertos propios —
+  `AnalyticalQueryPort` (solo lectura) y `LakehouseAdminPort` (administración/escritura). Ningún tipo
+  de DuckDB sale del adaptador (ESLint lo impide fuera de `src/adapters/duckdb/`).
+- **Catálogo PostgreSQL** (por defecto, base `lakehouse`, escritura concurrente real) **o SQLite**
+  (portátil, un proceso escritor, con su límite medido y el remedio en `docs/01` §6.6); un catálogo
+  en archivo DuckDB se rechaza.
+- **Resultados sin pérdida**: enteros de 64/128 bits y `DECIMAL` como string exacto, `TIMESTAMPTZ`
+  en UTC desde el instante, `TIMESTAMP` sin zona, `BLOB` en base64, filas posicionales.
+- **Solo lectura reforzada en el motor** (`READ_ONLY`, acceso a archivos restringido, configuración
+  congelada, un único `SELECT`); lo que falta antes del SQL Lab queda en una lista única
+  (`08-frontend.md` §10.3).
+- **Política _Inlining v1_** persistida en el catálogo al aprovisionar, con vaciado explícito.
+- **`pnpm bootstrap`** crea la base del catálogo, instala las extensiones de DuckDB en
+  `.data/duckdb/extensions` (la única descarga) y aprovisiona el lakehouse; **`pnpm dev`** lo
+  verifica (`Lakehouse healthy — Catalog: …`) sin instalar, descargar ni crear nada;
+  **`pnpm preflight`** revisa las extensiones y las carpetas sin red; **`pnpm seed`** (nuevo) carga
+  `lake.fixture.sales_orders` (20.000 filas determinísticas); **`pnpm reset:local`** también borra
+  `.data/lakehouse`.
+- OpenTelemetry (solo la API): un span `CLIENT` y `db.client.operation.duration` por sentencia, con
+  convenciones estables y sin SQL, literales ni credenciales.
+- Credenciales del catálogo vía secret de DuckDB (`META_SECRET`), nunca en la cadena de `ATTACH`, y
+  redacción de credenciales en todo mensaje de error.
+- Baterías de contrato de los dos puertos en `@atlasbi/contracts/testing`; `ensureDatabaseExists` y
+  `@atlasbi/database/testing` en `@atlasbi/database`.
+- Política de naming del codename (`21` §1) y `PRODUCT_DISPLAY_NAME` como única fuente del nombre
+  visible en la CLI.
+
+### Contratos
+
+- **Config Schema v1 → v2**: sección `lakehouse` (`ATLASBI_LAKEHOUSE_CATALOG_TYPE`,
+  `…_DATA_PATH`, `…_SQLITE_PATH`, `ATLASBI_DUCKDB_EXTENSION_DIRECTORY`) y secreto
+  `lakehouse.catalog-url` (`ATLASBI_LAKEHOUSE_CATALOG_URL`, obligatorio con catálogo PostgreSQL).
+  Un `.env` existente se completa a mano desde `.env.example`.
+- **Nuevos:** `AnalyticalQueryPort` v1, `LakehouseAdminPort` v1 (reemplazan al `AnalyticalEnginePort`
+  que describía `21` §3), formato de catálogo DuckLake **1.0**.
+- DB Migration: sin cambios (la carpeta sigue vacía hasta el Paso 4).
+
+### Corrección
+
+- La nota de 0.1.1 anticipaba que el Paso 1 usaría `node:sqlite` para aprovisionar un catálogo
+  SQLite. Finalmente no lo usa: se eligió el camino sin WAL (`docs/01` §6.6).
+
 ## 0.1.1 — seguridad del runtime (2026-09-24)
 
 PATCH (`21-engineering-standards.md` §2.1: parche de seguridad, sin cambio de capacidad ni de

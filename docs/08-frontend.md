@@ -169,6 +169,15 @@ Se repite seguido ────────────────────�
 Fase futura: abrir a más roles ───────► requiere un servicio de consulta aislado, no un chequeo de texto
 ```
 
+**Bloqueante antes de construir el SQL Lab (agregado en el Paso 1) — lista única, la de referencia para todo el proyecto:** el SQL Lab va a correr sobre `AnalyticalQueryPort` (`01-motor-almacenamiento.md` §6.7), que ya adjunta el lakehouse en `READ_ONLY`, bloquea el acceso a archivos fuera de la carpeta de datos, congela la configuración y solo acepta un único `SELECT`. Eso alcanza para la plataforma; para usuarios humanos con SQL libre quedan estos puntos, todos a resolver antes de exponer el SQL Lab:
+
+1. **Lectura de las tablas internas del catálogo de DuckLake** (`__ducklake_metadata_lake.*`) con un `SELECT`: residual medido y aceptado en el Paso 1.
+2. **Lectura directa de los Parquet de la carpeta de datos** (`read_parquet(...)`), que se saltaría cualquier filtro de fila futuro: residual medido y aceptado en el Paso 1.
+3. **`duckdb_secrets()`** muestra host, base y usuario del catálogo (la contraseña sale redactada): residual medido y aceptado en el Paso 1.
+4. **`PRAGMA` está rechazado en el puerto de lectura** (el filtro por palabra clave inicial lo trata como administración). Un SQL Lab probablemente quiera introspección inofensiva (`PRAGMA table_info`, `SHOW`, `DESCRIBE`): decidir una *allowlist* explícita de sentencias de introspección, o mantener el rechazo y ofrecerla por otra vía.
+
+Los tres primeros se cierran con el servicio de consulta aislado del punto 2 y una *allowlist* de objetos a nivel de conexión; el test que hoy los fija (`packages/warehouse/test/integration/read-only-hardening.test.ts`) tiene que pasar a exigir que esas lecturas fallen.
+
 **Por qué esto sigue siendo mejor que "no tener SQL Lab":** para el caso de uso real (un data steward respondiendo una pregunta puntual sin esperar a que se defina una métrica oficial), restringir por rol de confianza es una solución honesta y suficiente — la vista filtrada por rol de la versión anterior de este documento no desaparece, sigue siendo útil como capa adicional de higiene, pero ya no se presenta como la frontera de seguridad en sí.
 
 

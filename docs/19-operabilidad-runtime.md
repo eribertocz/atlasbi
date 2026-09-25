@@ -15,7 +15,7 @@
 | Cube Core | Sí | Servicio |
 | Cube Store | Sí | Servicio |
 | Postgres | Sí | Servicio |
-| Object storage (MinIO en local, S3-compatible en nube) | Sí en local | Servicio |
+| Object storage (MinIO en local, S3-compatible en nube) | Sí en local | Servicio — **decisión pendiente antes del Paso 3:** el repositorio `minio/minio` está archivado, así que la pieza local S3-compatible se reevalúa con la regla 7 antes de agregarla al compose. Hasta entonces el lakehouse usa una carpeta local (Paso 1) |
 | OTel Collector | Sí | Servicio |
 | Airflow | Sí, cuando se habilita orquestación (perfil MVP en adelante, sección 4) | Servicios de Airflow |
 | ElectricSQL | Sí, fase realtime | Servicio |
@@ -58,7 +58,7 @@ pnpm dev          # ver sección 3
 | `pnpm stack:up` / `stack:down` / `stack:logs` | Todo containerizado (formato OCI) — para probar cómo se comportaría una instalación real, y para los tests E2E de `15-testing-cicd.md` |
 | `pnpm preflight` | Verifica que la máquina tiene lo necesario (Node, pnpm, uv, Podman, compose provider, puertos libres) antes de arrancar nada — solo verifica, nunca instala ni cambia nada |
 | `pnpm test` / `pnpm test:integration` / `pnpm test:e2e` | La pirámide de testing de `15-testing-cicd.md` — `test` son unit tests sin infraestructura; `test:integration` necesita `pnpm dev` corriendo (Postgres real); `test:e2e` llega con el primer recorrido de punta a punta |
-| `pnpm seed` | Carga datos de demo (sección 6) — nunca corre solo, siempre a pedido explícito. Llega en el Paso 4 (antes no hay tablas que sembrar) |
+| `pnpm seed` | Carga datos de demo (sección 6) — nunca corre solo, siempre a pedido explícito. Llega en el Paso 1 con el dataset del lakehouse; la organización y los usuarios demo se suman en el Paso 4 |
 | `pnpm reset:local` | **Destructivo, siempre explícito.** Pide escribir `atlasbi` para confirmar (o `--confirm=atlasbi` en uso no interactivo) y borra los volúmenes; `.env` no se toca. Nunca se esconde un borrado de datos dentro de `dev` — si `pnpm dev` alguna vez necesita limpiar algo, lo pide, no lo hace solo |
 
 **Por qué `pnpm dev` y `pnpm stack:up` son comandos distintos, no el mismo con una bandera:** durante desarrollo, *hot reload* en el código propio (Web, API Gateway) es lo que hace productivo el día a día — nadie quiere reconstruir un contenedor cada vez que cambia una línea de Svelte. Pero esa velocidad esconde diferencias reales con producción (variables de entorno, healthchecks, tiempos de arranque). `stack:up` es la versión honesta — todo en contenedores, la misma forma en que corre de verdad — y es la que se usa para el vertical slice de validación (`16-mvp-definicion-terminado.md`) y para CI.
@@ -90,6 +90,8 @@ pnpm dev
 ```
 
 Si algo no está saludable, `pnpm dev` no imprime el resumen de arriba como si todo estuviera bien — muestra explícitamente qué pieza falló y por qué, antes de dejar que alguien abra el navegador y se encuentre con errores confusos más adelante.
+
+**Alcance real a partir del Paso 1:** el resumen lista Postgres, Migrations, OTel Collector y **Lakehouse** (`healthy — Catalog: PostgreSQL`, o `healthy — Catalog: SQLite (single-writer mode — recommended for individual development)`; depende de Postgres solo si el catálogo es PostgreSQL). `pnpm bootstrap` agrega, una sola vez, la base del catálogo, las extensiones de DuckDB (la única descarga, línea `DuckDB extensions`) y el aprovisionamiento del lakehouse; `pnpm dev` solo verifica — nunca instala, descarga ni crea nada (`01-motor-almacenamiento.md` §6.7). `pnpm preflight` verifica sin red las extensiones y que las carpetas del lakehouse se puedan escribir.
 
 **Alcance real a partir del Paso 0 (0.1.0):** el resumen solo lista lo que existe — Postgres, Migrations, OTel Collector. Web, API y Cube se suman a la cadena en sus pasos (3, 5, 6); hasta que exista algo con *hot reload*, `pnpm dev` termina después del resumen y la infraestructura queda corriendo en segundo plano (`pnpm stack:down` la detiene).
 
@@ -145,6 +147,8 @@ Después de `pnpm bootstrap`, `pnpm seed` genera, **solo en desarrollo**:
 
 Esto es lo que hace posible correr el script de la demo de aceptación (`16-mvp-definicion-terminado.md`, sección 4) sin depender de que una fuente externa real ya esté conectada.
 
+**Implementado en el Paso 1 — solo el dataset:** `pnpm seed` reemplaza `lake.fixture.sales_orders`, 20.000 filas determinísticas (cada columna es función del número de fila: mismas filas en cualquier máquina y en los dos catálogos), y termina con el vaciado explícito de *Inlining v1*. Es idempotente, se niega a correr con `ATLASBI_ENV=production`, y es la base de los primeros modelos del Paso 2 hasta que la ingesta real (Paso 7) lo reemplace. La organización, los usuarios y el reporte demo llegan con el Paso 4.
+
 ---
 
 ## 7. Configuración — contrato, no solo `.env`
@@ -170,6 +174,8 @@ Validación al arrancar (parte de `pnpm dev`/`pnpm bootstrap` y del bootstrap de
 - `loadConfig()` valida la configuración no secreta y la traduce a un objeto de dominio (`{ environment, secretProvider, telemetry }`) — ningún código lee nombres de variables de entorno directo. Un `KEY=` vacío cuenta como "no definido".
 - Los secretos nunca se leen como configuración: pasan por el puerto `SecretProvider` (`11-infraestructura.md` §4.7) con claves lógicas (`database.url`); el adaptador `EnvSecretProvider` las mapea a `ATLASBI_DATABASE_URL`. `assertSecretsAvailable()` resuelve todos los obligatorios al arrancar y lista **todos** los faltantes de una vez, nombrando la variable a definir.
 - El puerto de host de Postgres por defecto es **55432**, no 5432, para no chocar con un Postgres ya instalado en la máquina (caso real encontrado al implementar).
+
+**Paso 1 — "Config Schema v2":** agrega la sección `lakehouse` del objeto de dominio. `ATLASBI_LAKEHOUSE_CATALOG_TYPE` es `postgres` (por defecto) o `sqlite`, y `duckdb` se rechaza explicando por qué; `ATLASBI_LAKEHOUSE_DATA_PATH`, `ATLASBI_LAKEHOUSE_SQLITE_PATH` y `ATLASBI_DUCKDB_EXTENSION_DIRECTORY` son opcionales, con *defaults* bajo `.data/` y rutas relativas a la raíz del repo. El secreto nuevo `lakehouse.catalog-url` (`ATLASBI_LAKEHOUSE_CATALOG_URL`) solo es obligatorio con catálogo PostgreSQL. Como `bootstrap` nunca reescribe un `.env` existente, quien ya tenía uno lo completa a mano desde `.env.example`: `pnpm dev` falla en segundos nombrando la variable que falta.
 
 ---
 

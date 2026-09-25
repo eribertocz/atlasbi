@@ -9,7 +9,8 @@ import {
   MigrationFailedError,
   migrateToLatest,
 } from '../../src/index.ts';
-import { createThrowawayDatabase, type ThrowawayDatabase } from './support/throwaway-database.ts';
+import { createThrowawayDatabase, type ThrowawayDatabase } from '../../src/testing/index.ts';
+import { developmentAdminUrl } from './support/development-admin-url.ts';
 
 const fixtures = (name: string) =>
   fileURLToPath(new URL(`../fixtures/migrations/${name}`, import.meta.url));
@@ -18,7 +19,7 @@ describe('platform migrations against a real Postgres', () => {
   let database: ThrowawayDatabase;
 
   beforeEach(async () => {
-    database = await createThrowawayDatabase();
+    database = await createThrowawayDatabase(await developmentAdminUrl());
   });
 
   afterEach(async () => {
@@ -76,7 +77,7 @@ describe('platform migrations against a real Postgres', () => {
 
 describe('checkDatabaseConnection', () => {
   it('succeeds against a reachable database', async () => {
-    const database = await createThrowawayDatabase();
+    const database = await createThrowawayDatabase(await developmentAdminUrl());
     try {
       await expect(checkDatabaseConnection(database.connectionString)).resolves.toBeUndefined();
     } finally {

@@ -9,7 +9,9 @@
   },
   "dependencies": {
     "@atlasbi/config": "workspace:*",
+    "@atlasbi/contracts": "workspace:*",
     "@atlasbi/database": "workspace:*",
+    "@atlasbi/warehouse": "workspace:*",
     "zod": "catalog:"
   },
   "devDependencies": {

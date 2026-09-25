@@ -85,6 +85,8 @@ Este proyecto tiene que soportar dos modos de despliegue distintos, y la forma d
 
 **Modo local:** un solo `podman compose up` — Postgres en un container, **MinIO** (self-hosteado, habla la misma API S3 que cualquier proveedor cloud) en vez de un bucket remoto, y el frontend en otro container. Nada depende de una cuenta en la nube.
 
+**Pendiente antes del Paso 3 (señalado en el Paso 1):** el repositorio `minio/minio` está archivado. La pieza S3-compatible local se reevalúa con la regla 7 (MinIO en una versión mantenida, u otra alternativa self-hosteable que hable S3) antes de agregarla al compose; el lakehouse del Paso 1 usa una carpeta local y no depende de ella.
+
 **Modo nube:** el usuario elige, pieza por pieza, dónde vive cada componente — porque cada uno habla un protocolo estándar, se pueden combinar proveedores distintos sin fricción (por ejemplo: catálogo en Neon, datos en Cloudflare R2, frontend en DigitalOcean). OpenTofu resuelve esto con **un módulo por proveedor** (uno para "bucket S3 en DigitalOcean", otro para "bucket S3 en AWS", etc.); el usuario solo cambia una variable de configuración para elegir cuál usar, y el resto de la plataforma sigue hablándole a "un endpoint S3 genérico" sin enterarse de cuál es.
 
 **Regla de diseño que se desprende de esto:** ninguna capa de este proyecto puede importar el SDK propietario de un proveedor específico (por ejemplo, el SDK de AWS) directo en su código de aplicación — siempre a través del protocolo estándar (cliente S3 genérico, driver de Postgres estándar). El único lugar donde el nombre de un proveedor concreto aparece es en la configuración de OpenTofu de ese despliegue puntual, nunca en el código de las capas 1 a 10.
