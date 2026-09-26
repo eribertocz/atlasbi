@@ -4,10 +4,11 @@ Versionado del producto según [`docs/21-engineering-standards.md`](docs/21-engi
 §2: SemVer `0.MINOR.PATCH` hasta 1.0; los contratos (API, Report Schema, Config Schema, DB
 Migration…) versionan por separado y se listan en cada release.
 
-## Unreleased — Pasos 1 y 2: vertical slice de datos (será 0.2.0)
+## 0.2.0 — vertical slice de datos (2026-09-26)
 
-Queda en "Unreleased" hasta cerrar el Paso 2: la versión `0.2.0` ("vertical slice de datos",
-`21-engineering-standards.md` §2.1) se publica con la transformación.
+Pasos 1 y 2 del orden de construcción: el lakehouse (DuckDB + DuckLake) y la transformación
+(SQLMesh) sobre él, desde el fixture hasta el primer resultado analítico,
+`marts.mart_sales_orders`.
 
 ### Agregado — Paso 2: transformación (SQLMesh)
 
