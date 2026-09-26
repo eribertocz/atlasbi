@@ -260,3 +260,17 @@ Cambiar una columna de la tabla `report` (`19-operabilidad-runtime.md` §8) nunc
 ## 10. Qué es bloqueante ahora
 
 Todo este documento es bloqueante **antes de generar código de cualquier capa** — no después. Las convenciones de las primeras 10.000 líneas son las que después cuesta corregir; corregirlas ahora, en un documento, cuesta una lectura.
+
+---
+
+## 11. Licencia del producto
+
+**Decisión de producto (2026-09-26): AtlasBI se publica como software 100 % open source, bajo la licencia Apache 2.0.** Todo lo que vive en este repositorio —paquetes, CLI, modelos, configuración y documentación— se distribuye bajo Apache-2.0.
+
+**La licencia del producto no se extiende a las herramientas que corren como servicios separados.** PostgreSQL, Cube Core, Cube Store, Garage, Apache Airflow, OpenMetadata, ElectricSQL o el OpenTelemetry Collector no necesitan tener la misma licencia que AtlasBI. La arquitectura de Puertos y Adaptadores (§3) lo garantiza: AtlasBI nunca embebe ni modifica el código fuente de esas herramientas; les habla por red, con su protocolo o su API (protocolo de Postgres, S3, HTTP), desde un adaptador propio. Cada una corre como un proceso aparte y conserva su propia licencia.
+
+**Ejemplo: Garage (AGPL-3.0).** El object storage del nivel "equipo local" (`11-infraestructura.md` §4.4) corre como un contenedor aparte, con la imagen oficial del proyecto Garage, sin cambios. AtlasBI nunca modifica su código ni lo distribuye junto con el propio: el `compose.yaml` solo referencia esa imagen publicada, que cada instalación descarga de su origen, y la plataforma le habla por la API S3. Por eso la AGPL de Garage no genera ninguna obligación de licencia cruzada sobre AtlasBI. Si algún día hiciera falta modificar Garage, ese cambio iría upstream o a un fork público bajo su propia AGPL, nunca a este repositorio.
+
+**Lo que sí queda alcanzado: las dependencias embebidas.** Las librerías que corren dentro de los procesos de AtlasBI —paquetes npm y Python que su código importa— se distribuyen junto con él, así que su licencia tiene que ser compatible con Apache-2.0. Las permisivas (MIT, BSD, ISC, Apache-2.0) no tienen restricción; las de copyleft débil (MPL-2.0, LGPL) se evalúan caso por caso; las de copyleft fuerte (GPL, AGPL) nunca se embeben, a lo sumo corren como servicio separado, como Garage. Es la misma razón por la que `04-semantico.md` §6.5 ya marcaba la AGPL de Sidemantic como un punto a cuidar.
+
+**Esta sección es el criterio de ingeniería del proyecto, no una opinión legal.** Antes de la primera publicación, una revisión legal la confirma, igual que el nombre público (§1).
