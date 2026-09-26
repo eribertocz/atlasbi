@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
+import { readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { AnalyticalQueryPort } from '@atlasbi/contracts';
@@ -51,6 +51,7 @@ for (const catalogType of CATALOG_TYPES) {
         'CREATE TABLE lake.main.intruder (a INTEGER)',
         "CALL ducklake_flush_inlined_data('lake')",
         "SELECT * FROM ducklake_flush_inlined_data('lake')",
+        "SELECT * FROM ducklake_merge_adjacent_files('lake')",
         'DELETE FROM __ducklake_metadata_lake.ducklake_snapshot',
         `COPY (SELECT 1) TO '${leakFile}'`,
         `SELECT * FROM read_csv('${outsideFile}')`,
@@ -65,10 +66,13 @@ for (const catalogType of CATALOG_TYPES) {
         'DROP SECRET lake_catalog',
       ];
 
+      const filesBefore = await readdir(lakehouse.settings.dataPath, { recursive: true });
       for (const statement of attempts) {
         await expectLakehouseError(port.query(statement), 'read_only_violation', statement);
       }
       expect(existsSync(leakFile)).toBe(false);
+      // A rejected flush used to write its Parquet file before failing: nothing may appear on disk.
+      expect(await readdir(lakehouse.settings.dataPath, { recursive: true })).toEqual(filesBefore);
       await expect(port.query('SELECT count(*) FROM guarded')).resolves.toMatchObject({
         rows: [['1002']],
       });
@@ -81,7 +85,7 @@ for (const catalogType of CATALOG_TYPES) {
         'SELECT count(*) FROM __ducklake_metadata_lake.ducklake_snapshot',
       );
       const parquet = await port.query(
-        `SELECT count(*) FROM read_parquet('${forwardSlashes(lakehouse.settings.dataPath)}/**/*.parquet')`,
+        `SELECT count(*) FROM read_parquet('${forwardSlashes(lakehouse.settings.dataPath)}/main/guarded/**/*.parquet')`,
       );
       const secrets = await port.query('SELECT * FROM duckdb_secrets()');
 

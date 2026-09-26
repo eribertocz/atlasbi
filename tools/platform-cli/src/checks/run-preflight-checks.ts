@@ -4,6 +4,7 @@ import { checkContainerRuntime } from './container-checks.ts';
 import { checkEnvFile, checkPorts } from './environment-checks.ts';
 import { checkLakehouse } from './lakehouse-checks.ts';
 import { checkNode, checkPackageManager, checkUv } from './toolchain-checks.ts';
+import { checkTransform } from './transform-checks.ts';
 
 export async function runPreflightChecks(): Promise<CheckResult[]> {
   return [
@@ -14,5 +15,6 @@ export async function runPreflightChecks(): Promise<CheckResult[]> {
     await checkPorts(readLocalInfraPorts()),
     checkEnvFile(),
     ...(await checkLakehouse()),
+    await checkTransform(),
   ];
 }

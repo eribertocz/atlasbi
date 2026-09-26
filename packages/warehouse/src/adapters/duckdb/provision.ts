@@ -9,10 +9,14 @@ import type { LakehouseSettings } from '../../lakehouse-settings.ts';
 import { LAKE_ALIAS } from './attach-statement.ts';
 import { readRows, scalarText } from './internal-reads.ts';
 import { LakehouseEngine } from './lakehouse-engine.ts';
+import { ensureLakehouseIdentity } from './lakehouse-identity.ts';
 import { quoteLiteral } from './sql-literals.ts';
 import type { TelemetryProviders } from './telemetry.ts';
 
 export interface ProvisionResult {
+  /** The lakehouse's identity (a UUID): kept if it already had one, created otherwise. */
+  lakehouseId: string;
+  identityCreated: boolean;
   catalogType: LakehouseCatalogType;
   catalogFormatVersion: string;
   /** False when the catalog already carried the Inlining v1 row limit. */
@@ -21,7 +25,8 @@ export interface ProvisionResult {
 
 /**
  * The only path that may create a lakehouse (CREATE_IF_NOT_EXISTS), run by bootstrap alone.
- * Idempotent: on an existing lakehouse it only re-asserts the inlining policy. The data path is
+ * Idempotent: on an existing lakehouse it only re-asserts the inlining policy and keeps its
+ * identity (a lakehouse provisioned before identities existed gets one here). The data path is
  * still checked strictly, so pointing at the wrong folder fails instead of creating a second lake.
  */
 export async function provisionLakehouse(
@@ -49,7 +54,10 @@ export async function provisionLakehouse(
       const statement = `CALL ${LAKE_ALIAS}.set_option('data_inlining_row_limit', ${INLINING_POLICY.rowLimit})`;
       await engine.run(statement, (connection) => connection.run(statement));
     }
+    const identity = await ensureLakehouseIdentity(engine);
     return {
+      lakehouseId: identity.lakehouseId,
+      identityCreated: identity.created,
       catalogType: settings.catalog.type,
       catalogFormatVersion: format,
       inliningPolicyApplied: applyPolicy,

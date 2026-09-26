@@ -12,6 +12,7 @@ import type { DuckDBConnection, DuckDBResultReader } from '@duckdb/node-api';
 import { INLINING_POLICY, SUPPORTED_CATALOG_FORMAT } from '../../lakehouse-policies.ts';
 import { LAKE_ALIAS } from './attach-statement.ts';
 import { readRows, scalarText } from './internal-reads.ts';
+import { requireLakehouseIdentity } from './lakehouse-identity.ts';
 import type { LakehouseEngine } from './lakehouse-engine.ts';
 import { quoteLiteral } from './sql-literals.ts';
 import { prepareSingleStatement } from './statement-guard.ts';
@@ -70,6 +71,7 @@ export class DuckDBLakehouseAdmin implements LakehouseAdminPort {
       "SELECT current_setting('ducklake_default_data_inlining_row_limit') AS value",
     );
     return {
+      lakehouseId: await requireLakehouseIdentity(this.#engine),
       catalogType: this.#engine.catalogType,
       catalogFormatVersion: format,
       engineVersion: engineVersion ?? '',

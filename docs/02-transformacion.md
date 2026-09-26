@@ -174,6 +174,8 @@ SNAPSHOT — opcional, sobre cualquiera de los dos, con motivo explícito y rete
 
 Congelar un estado para auditoría no es un intermedio: es un **snapshot**, con su motivo y su retención.
 
+**Partición física — solo con una razón medida, nunca por defecto.** En un modelo incremental por tiempo, SQLMesh particiona por defecto por su columna de tiempo (`partition_by_time_column`), y sobre DuckLake eso se traduce en `SET PARTITIONED BY (<columna>)`: un archivo por día. Medido en la Fase 0 del Paso 2, el mismo mart de 20.000 filas ocupa **365 archivos de ~2 KiB** particionado por día, contra **un archivo de 259 KiB** sin partición; y la compactación de DuckLake no junta archivos de particiones distintas. **Regla del proyecto: todo modelo incremental sobre DuckLake declara `partition_by_time_column false`.** Particionar (`partitioned_by`, con la granularidad que corresponda: año, mes) exige la misma evidencia que materializar un intermedio: una medición que muestre que las consultas reales se benefician más de lo que cuestan los archivos extra.
+
 **Qué guarda DuckLake en modo Import:**
 
 | Contenido | ¿Obligatorio? |
@@ -217,11 +219,26 @@ Cada entorno (`dev`, `staging`, `prod`) es una vista lógica sobre las mismas ta
 
 SQLMesh necesita un *state backend* propio para llevar el registro de qué se aplicó, cuándo, y con qué plan. En vez de levantar una base nueva solo para esto, se reutiliza el Postgres que ya existe como catálogo de DuckLake (capa 1) — pero en una base separada (`sqlmesh_state`, distinta de `lakehouse`, la base del catálogo de DuckLake desde el Paso 1). Esto no rompe la regla de responsabilidad única: son dos consumidores del mismo servidor Postgres, cada uno con su propio namespace, sin que uno lea las tablas del otro.
 
+**Un state por lakehouse (implementado en el Paso 2).** Dentro de `sqlmesh_state`, cada lakehouse tiene su propio esquema, `sqlmesh_<identidad sin guiones>`, derivado de la identidad que le asignó el aprovisionamiento (`01-motor-almacenamiento.md` §6.7). Reproducido en vivo antes de corregirlo: con un solo state compartido, `plan` sobre el lakehouse SQLite respondía *No changes* porque el state decía que el mart ya existía — lo había construido el lakehouse PostgreSQL — y el mart no estaba. Con el state atado a la identidad, un lakehouse nuevo (otro catálogo, o el mismo recreado después de `pnpm reset:local` + `pnpm bootstrap`) siempre empieza con un state vacío y reconstruye todo, aunque la base `sqlmesh_state` haya sobrevivido. Los tests de integración cubren los dos casos (dos lakehouses sobre el mismo state; un lakehouse recreado en la misma ruta con el state intacto). Un esquema de state cuyo lakehouse ya no existe queda sin uso y no afecta a nadie; limpiarlo es una tarea de mantenimiento todavía no programada (candidata al Paso 8).
+
 ### 6.4 Tests, audits y calidad de datos
 
 - **Unit tests** (`tests/*.yaml`): corren contra datos de ejemplo (fixtures), antes de tocar cualquier dato real — verifican la lógica del SQL en sí.
 - **Audits**: assertions que corren sobre los datos reales después de materializar (`not_null`, `unique`, `accepted_values`, custom en SQL) — el equivalente directo a `dbt test`, pero integrado al mismo flujo `plan`/`apply`.
 - **Gate de CI**: un plan que falla un audit no se promueve a `prod`. Esto es lo que reemplaza la ausencia total de tests de Power Query.
+
+### 6.5 Cómo corre SQLMesh en la plataforma (implementado en el Paso 2)
+
+Medido en la Fase 0 del Paso 2 (SQLMesh 0.236.2, DuckDB 1.5.5, DuckLake 1.0) antes de programarlo:
+
+- **Solo a través de `pnpm transform <comando>`** (`packages/transform`, runner en TypeScript). **Ejecutar `uv run sqlmesh` directamente no está soportado**: SQLMesh adjunta DuckLake con `ATTACH IF NOT EXISTS` y sin `CREATE_IF_NOT_EXISTS false`, así que apuntado a un catálogo equivocado **crea en silencio un lakehouse vacío** (medido: 28 tablas nuevas en una base vacía con solo un `SELECT 1`). El runner abre antes el lakehouse con el puerto administrativo, que nunca lo crea (`01-motor-almacenamiento.md` §6.7), y recién ahí lanza SQLMesh. `config.py` se niega a cargar sin las variables que pone el runner.
+- **Secretos solo en el proceso de SQLMesh.** La CLI los resuelve con `SecretProvider` y se los pasa al proceso hijo; ninguna otra variable `ATLASBI_*` le llega. La contraseña del catálogo va en un secret postgres sin nombre de DuckDB, nunca en el `ATTACH` (con contraseña incorrecta, el error nombra base y usuario, no la contraseña). El state vive en la base `sqlmesh_state` (§6.3, secreto `transform.state-url`), en el esquema del lakehouse que el runner acaba de verificar: el runner le pasa a SQLMesh el `lakehouseId` del *health* y `config.py` rechaza cualquier otro nombre de esquema.
+- **Sin red en ejecución.** Nunca se usa la opción `extensions` de SQLMesh (instala antes de que se pueda fijar el directorio, y descargaría a `~/.duckdb`); `connector_config` fija el directorio de extensiones del proyecto y apaga la instalación automática, y el `ATTACH` carga `ducklake`/`postgres`/`sqlite` desde ahí. `uv run --frozen --offline` usa exactamente `uv.lock`.
+- **Qué deja en DuckLake:** el staging (`kind VIEW`) es una vista sobre otra vista — cero datos copiados; el mart es una tabla física `sqlmesh__marts.<modelo>__<huella>` más la vista `marts.<modelo>` que Cube y la plataforma consultan. DuckLake guarda las vistas con un marcador de catálogo, así que funcionan con cualquier alias.
+- **Partición:** `partition_by_time_column false` en todo modelo incremental (§6.1.1).
+- **Parche temporal y experimental (regla 6), `project/ducklake_compat.py`:** SQLMesh borra tablas y vistas con `DROP … CASCADE` y DuckLake no lo soporta, así que su *janitor* nunca puede borrar una versión vieja de un modelo — cada cambio dejaría una tabla física completa para siempre. El parche declara `SCHEMA` como el único tipo con cascada, que es lo que propone el arreglo upstream (issue SQLMesh/sqlmesh#6032, PR #6034). Un test de alerta falla, con instrucciones, el día que la versión fijada de SQLMesh traiga el arreglo y el parche sobre.
+- **Guardas automáticas de §6.1.2:** una regla propia del linter de SQLMesh (`project/linter/`) rechaza `ATTACH`, `INSTALL`, `LOAD`, `SET`, secrets y `COPY` en cualquier modelo, y un test rechaza módulos de red en modelos Python.
+- **Particularidades de Windows:** redirigir la salida de SQLMesh a `NUL` lo hace terminar con código 1 aunque haya hecho el trabajo (el runner nunca lo hace); los logs van a `packages/transform/logs/` y la caché a `project/.cache/`, ambos fuera de Git y sin secretos.
 
 ---
 
@@ -236,13 +253,14 @@ SQLMesh necesita un *state backend* propio para llevar el registro de qué se ap
 
 ## 8. Por dónde empezar a construir (paso a paso concreto)
 
-1. `pip install "sqlmesh[web,duckdb]"` dentro de `packages/transform` (entorno Python propio, no mezclado con el resto del monorepo TS).
-2. `sqlmesh init` con DuckDB como motor, adjuntando el lakehouse DuckLake de la capa 1 (catálogo PostgreSQL, base `lakehouse`) como destino de los `mart_*`.
-3. Configurar `state_connection` contra el mismo Postgres del catálogo DuckLake, en un esquema separado (`sqlmesh_state`).
-4. Escribir el primer modelo `stg_` (una vista) sobre el dataset de desarrollo del Paso 1 (`lake.fixture.sales_orders`). La primera fuente externa real llega en el Paso 7, directa o con ingesta según §6.1.2.
-5. Agregar un audit `not_null` + `unique` sobre la llave primaria de ese modelo antes de considerarlo terminado.
-6. Correr `sqlmesh plan` para ver la clasificación breaking/non-breaking y aplicar contra un entorno `dev` antes de tocar `prod`.
-7. Recién cuando haya 2-3 modelos `mart_*` estables y testeados, pasar a la capa semántica (documento siguiente).
+**Corrección, hecha al construir el Paso 2:** la versión anterior decía `pip install "sqlmesh[web,duckdb]"` — ese extra `duckdb` no existe (DuckDB es dependencia base de SQLMesh) y la UI web no se usa. Así quedó construido:
+
+1. `packages/transform` es un proyecto uv propio (`pyproject.toml`, `uv.lock`, `.python-version` = 3.13.14): `sqlmesh[postgres]==0.236.2` (el extra `postgres` es para el state) y `duckdb==1.5.5`, igual que la plataforma. `pnpm bootstrap` corre `uv sync --frozen` una vez; nunca comparte entorno con `packages/ingestion`.
+2. El proyecto SQLMesh vive en `packages/transform/project/`: `config.py` (todo desde las variables del runner), `external_models.yaml` (el fixture del Paso 1 como fuente), `models/`, `tests/`, `linter/`.
+3. `state_connection` apunta a la base `sqlmesh_state` del mismo Postgres, que `pnpm bootstrap` crea; `state_schema` es el del lakehouse (§6.3).
+4. Primer modelo: `staging.stg_sales_orders` (`VIEW`) sobre `lake.fixture.sales_orders`; primer resultado analítico: `marts.mart_sales_orders` (`INCREMENTAL_BY_TIME_RANGE` por `order_date`, grano pedido, sin partición por día), con audits `not_null`, `unique_values` y `accepted_values` y un unit test.
+5. `pnpm transform test` (sin lakehouse) y `pnpm transform plan` para desplegar — siempre por la CLI (§6.5). En CI, el `plan` a `prod` sigue las reglas de `15-testing-cicd.md`.
+6. La primera fuente externa real llega en el Paso 7, directa o con ingesta según §6.1.2; la capa semántica (Paso 3) lee `marts.mart_sales_orders`.
 
 ---
 

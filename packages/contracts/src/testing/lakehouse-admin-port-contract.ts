@@ -77,9 +77,13 @@ export function describeLakehouseAdminPortContract(
       }
     });
 
-    it('reports a supported catalog format and the Inlining v1 row limit', async () => {
+    it('reports a stable identity, a supported catalog format and the Inlining v1 row limit', async () => {
       const health = await admin.checkHealth();
 
+      expect(health.lakehouseId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      );
+      expect((await admin.checkHealth()).lakehouseId).toBe(health.lakehouseId);
       expect(LAKEHOUSE_CATALOG_TYPES).toContain(health.catalogType);
       expect(health.catalogFormatVersion).toBe('1.0');
       expect(health.engineVersion).not.toBe('');

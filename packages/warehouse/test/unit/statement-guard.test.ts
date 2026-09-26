@@ -56,6 +56,31 @@ describe('prepareSingleStatement', () => {
     expect(count.getRowsJson()).toEqual([['0']]);
   });
 
+  it('refuses DuckLake maintenance functions on the read port, even inside a SELECT', async () => {
+    for (const sql of [
+      "SELECT * FROM ducklake_flush_inlined_data('lake')",
+      "select * from DUCKLAKE_MERGE_ADJACENT_FILES('lake')",
+      "SELECT * FROM ducklake_expire_snapshots('lake', older_than => now())",
+      "SELECT * FROM lake.set_option('data_inlining_row_limit', 0)",
+    ]) {
+      const error = await rejection(prepareSingleStatement(connection, sql, 'read'));
+      expect(error.code, sql).toBe('read_only_violation');
+    }
+  });
+
+  it('still allows the read-only DuckLake functions to reach the engine', async () => {
+    // No DuckLake here: the guard lets them through and the engine is what answers.
+    const outcome: unknown = await prepareSingleStatement(
+      connection,
+      "SELECT * FROM ducklake_snapshots('lake')",
+      'read',
+    ).then(
+      () => 'prepared',
+      (reason: unknown) => reason,
+    );
+    expect(outcome instanceof LakehouseError && outcome.code === 'read_only_violation').toBe(false);
+  });
+
   it('allows one write statement, but no batches and no explicit transactions', async () => {
     await expect(
       prepareSingleStatement(connection, 'INSERT INTO guarded VALUES (1)', 'write'),

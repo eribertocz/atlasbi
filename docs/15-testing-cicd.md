@@ -24,7 +24,7 @@
 
 | Paquete | Mecanismo | Ya documentado en |
 | --- | --- | --- |
-| `packages/transform` | *Unit tests* de SQLMesh (`tests/*.yaml`, contra fixtures) + *audits* (`not_null`, `unique`, custom) | `02-transformacion.md` |
+| `packages/transform` | *Unit tests* de SQLMesh (`tests/*.yaml`, contra fixtures, DuckDB en memoria) + linter con la regla propia de §6.1.2 + *audits* (`not_null`, `unique_values`, `accepted_values`) + test de alerta del parche temporal de DuckLake — todo en `pnpm test`; `plan`/`run`/`audit` contra lakehouses descartables con los dos catálogos en `pnpm test:integration` | `02-transformacion.md` §6.4–6.5 |
 | `packages/ingestion` | `pytest` sobre cada `@dlt.resource`, con la fuente real mockeada (nunca pegarle a la API real en CI) | `03-ingesta.md` (implícito, formalizado acá) |
 | `packages/semantic` | Validación del modelo con el CLI de Cube (`cube validate`, ver corrección abajo) + tests de integración contra la API de Cube con datos de prueba | `04-semantico.md` (implícito) |
 | `packages/api-gateway` | Tests de cada procedimiento tRPC con un cliente de prueba, mockeando Cube | Nuevo |

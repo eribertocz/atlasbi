@@ -4,12 +4,39 @@ Versionado del producto según [`docs/21-engineering-standards.md`](docs/21-engi
 §2: SemVer `0.MINOR.PATCH` hasta 1.0; los contratos (API, Report Schema, Config Schema, DB
 Migration…) versionan por separado y se listan en cada release.
 
-## Unreleased — Paso 1: motor de almacenamiento (DuckDB + DuckLake)
+## Unreleased — Pasos 1 y 2: vertical slice de datos (será 0.2.0)
 
 Queda en "Unreleased" hasta cerrar el Paso 2: la versión `0.2.0` ("vertical slice de datos",
 `21-engineering-standards.md` §2.1) se publica con la transformación.
 
-### Agregado
+### Agregado — Paso 2: transformación (SQLMesh)
+
+- **`packages/transform`**: proyecto SQLMesh 0.236.2 (Python 3.13.14, entorno uv propio con
+  `uv.lock` y `exclude-newer = "1 day"`, el mismo freno que pnpm) sobre el lakehouse del Paso 1.
+  `staging.stg_sales_orders` (vista, sin copia de datos) → `marts.mart_sales_orders` (resultado
+  analítico, incremental por fecha, grano pedido, un solo archivo: sin partición por día), con
+  audits y un unit test.
+- **`pnpm transform <comando>`**: la única forma soportada de correr SQLMesh. Verifica el
+  lakehouse antes de que SQLMesh lo adjunte (SQLMesh crearía uno vacío en silencio sobre un
+  catálogo equivocado), le pasa los secretos solo a ese proceso y resume las fallas en una línea.
+  `test` y `lint` corren sin lakehouse.
+- **Un state de SQLMesh por lakehouse**: esquema `sqlmesh_<identidad>` dentro de `sqlmesh_state`.
+  Con un state compartido, un lakehouse que nunca construyó el mart recibía _No changes_; ahora
+  un lakehouse nuevo —otro catálogo, o el mismo recreado por `reset:local` + `bootstrap`— empieza
+  siempre con un state vacío (`docs/02` §6.3).
+- **Identidad del lakehouse**: `provisionLakehouse()` le asigna un UUID guardado en su catálogo
+  (`lake.platform.lakehouse_identity`) y `checkHealth()` lo devuelve (`docs/01` §6.7). Un
+  lakehouse aprovisionado antes de este cambio pide `pnpm bootstrap`, que se la agrega.
+- **`pnpm bootstrap`** prepara el entorno Python (`uv sync --frozen`, la única descarga) y la base
+  `sqlmesh_state`; **`pnpm preflight`** verifica sin red que el entorno coincida con `uv.lock`.
+- **Guardas de la política de materialización** (`docs/02` §6.1.2): regla propia del linter de
+  SQLMesh que rechaza `ATTACH`, `INSTALL`, `SET`, secrets y `COPY` en modelos; test que rechaza
+  módulos de red en modelos Python.
+- **Parche temporal y experimental** para que el janitor de SQLMesh pueda borrar versiones viejas
+  en DuckLake (no soporta `DROP … CASCADE`; issue SQLMesh/sqlmesh#6032, PR #6034), con un test de
+  alerta que avisa cuando sobra.
+
+### Agregado — Paso 1: motor de almacenamiento (DuckDB + DuckLake)
 
 - **`@atlasbi/warehouse`**: DuckDB 1.5.5 embebido con DuckLake 1.0, detrás de dos puertos propios —
   `AnalyticalQueryPort` (solo lectura) y `LakehouseAdminPort` (administración/escritura). Ningún tipo
@@ -47,9 +74,22 @@ Queda en "Unreleased" hasta cerrar el Paso 2: la versión `0.2.0` ("vertical sli
 - **Nuevos:** `AnalyticalQueryPort` v1, `LakehouseAdminPort` v1 (reemplazan al `AnalyticalEnginePort`
   que describía `21` §3), formato de catálogo DuckLake **1.0**.
 - DB Migration: sin cambios (la carpeta sigue vacía hasta el Paso 4).
+- **Paso 2 — Config Schema v2 → v3**: secreto `transform.state-url` (`ATLASBI_TRANSFORM_STATE_URL`),
+  obligatorio para `pnpm bootstrap` y `pnpm transform` (no para `pnpm dev`). Un `.env` existente
+  se completa a mano desde `.env.example`.
+- **Paso 2 — `LakehouseAdminPort` v1:** `LakehouseHealth` suma `lakehouseId` (aditivo, dentro de
+  la misma versión sin publicar; la batería de contrato exige un UUID estable).
+- **Paso 2 — primer resultado analítico:** `marts.mart_sales_orders` (lo que leerá la capa
+  semántica en el Paso 3).
 
 ### Corrección
 
+- **Puerto de lectura (encontrado en el Paso 2):** `SELECT * FROM ducklake_flush_inlined_data(…)`
+  fallaba por `READ_ONLY`, pero después de escribir un archivo Parquet huérfano en la carpeta de
+  datos. El puerto de lectura ahora solo admite las funciones `ducklake_*` de consulta
+  (`docs/01` §6.7), con un test que verifica que ningún ataque deja archivos nuevos.
+- Los tests unitarios del warehouse dejaban una carpeta temporal vacía por corrida; ahora
+  reutilizan una sola.
 - La nota de 0.1.1 anticipaba que el Paso 1 usaría `node:sqlite` para aprovisionar un catálogo
   SQLite. Finalmente no lo usa: se eligió el camino sin WAL (`docs/01` §6.6).
 

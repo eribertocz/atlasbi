@@ -18,6 +18,12 @@ export interface FlushResult {
 }
 
 export interface LakehouseHealth {
+  /**
+   * UUID assigned once, when the lakehouse is provisioned. A lakehouse created again — even at the
+   * same location — gets a new one; a copied or relocated lakehouse keeps it. Other state that
+   * belongs to one lakehouse (SQLMesh's) is keyed by it.
+   */
+  lakehouseId: string;
   catalogType: LakehouseCatalogType;
   /** Persisted catalog format; the adapter rejects formats it does not support. */
   catalogFormatVersion: string;

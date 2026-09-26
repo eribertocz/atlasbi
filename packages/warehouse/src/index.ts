@@ -16,6 +16,8 @@ export type { ProvisionResult } from './adapters/duckdb/provision.ts';
 export type { TelemetryProviders } from './adapters/duckdb/telemetry.ts';
 export { DEVELOPMENT_DATASET, seedDevelopmentDataset } from './development-dataset.ts';
 export type { SeedResult } from './development-dataset.ts';
+export { resolveLakehouseLocation } from './lakehouse-location.ts';
+export type { LakehouseLocation } from './lakehouse-location.ts';
 export { INLINING_POLICY, SUPPORTED_CATALOG_FORMAT } from './lakehouse-policies.ts';
 export { describeCatalogType } from './lakehouse-settings.ts';
 export type { LakehouseCatalog, LakehouseSettings } from './lakehouse-settings.ts';

@@ -1,4 +1,7 @@
 pnpm-lock.yaml
+uv.lock
+**/.venv/
+**/.cache/
 .turbo/
 coverage/
 

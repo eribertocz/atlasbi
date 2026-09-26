@@ -6,6 +6,7 @@ import { runPreflight } from './commands/preflight.ts';
 import { runResetLocal } from './commands/reset-local.ts';
 import { runSeed } from './commands/seed.ts';
 import { runStackDown, runStackLogs, runStackUp } from './commands/stack.ts';
+import { runTransform } from './commands/transform.ts';
 import { describeFailure } from './lakehouse-environment.ts';
 
 const COMMANDS: Record<string, (args: readonly string[]) => Promise<void>> = {
@@ -13,6 +14,7 @@ const COMMANDS: Record<string, (args: readonly string[]) => Promise<void>> = {
   bootstrap: runBootstrap,
   dev: runDev,
   seed: runSeed,
+  transform: runTransform,
   'stack:up': runStackUp,
   'stack:down': runStackDown,
   'stack:logs': runStackLogs,

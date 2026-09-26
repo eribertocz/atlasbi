@@ -1,0 +1,61 @@
+test_mart_sales_orders_keeps_only_the_interval:
+  model: marts.mart_sales_orders
+  inputs:
+    staging.stg_sales_orders:
+      rows:
+        - {
+            order_id: 1,
+            order_date: 2025-01-02,
+            customer_id: 7,
+            region: North,
+            product_category: Hardware,
+            quantity: 2,
+            unit_price: 10.50,
+            amount: 21.00,
+          }
+        - {
+            order_id: 2,
+            order_date: 2025-01-31,
+            customer_id: 8,
+            region: South,
+            product_category: Software,
+            quantity: 1,
+            unit_price: 5.00,
+            amount: 5.00,
+          }
+        - {
+            order_id: 3,
+            order_date: 2025-02-01,
+            customer_id: 9,
+            region: East,
+            product_category: Services,
+            quantity: 3,
+            unit_price: 1.25,
+            amount: 3.75,
+          }
+  outputs:
+    query:
+      rows:
+        - {
+            order_id: 1,
+            order_date: 2025-01-02,
+            customer_id: 7,
+            region: North,
+            product_category: Hardware,
+            quantity: 2,
+            unit_price: 10.50,
+            amount: 21.00,
+          }
+        - {
+            order_id: 2,
+            order_date: 2025-01-31,
+            customer_id: 8,
+            region: South,
+            product_category: Software,
+            quantity: 1,
+            unit_price: 5.00,
+            amount: 5.00,
+          }
+  vars:
+    start: 2025-01-01
+    end: 2025-01-31

@@ -1,0 +1,13 @@
+# Sources this project reads that SQLMesh does not manage (docs/02 §6.1.1). Build step 2 reads only
+# the development dataset of step 1 (`pnpm seed`); external registered sources arrive in step 7.
+- name: lake.fixture.sales_orders
+  description: Deterministic development dataset (packages/warehouse, DEVELOPMENT_DATASET).
+  columns:
+    order_id: BIGINT
+    order_date: DATE
+    customer_id: BIGINT
+    region: VARCHAR
+    product_category: VARCHAR
+    quantity: INTEGER
+    unit_price: DECIMAL(10, 2)
+    amount: DECIMAL(12, 2)

@@ -7,6 +7,7 @@ import {
   loadConfig,
   loadLakehouseConfig,
   requiredSecretKeys,
+  transformSecretKeys,
 } from '../../src/index.ts';
 
 const BASE = path.resolve('/workspace');
@@ -108,5 +109,16 @@ describe('lakehouse configuration (Config Schema v2)', () => {
 
     expect(requiredSecretKeys(postgres)).toEqual(['database.url', 'lakehouse.catalog-url']);
     expect(requiredSecretKeys(sqlite)).toEqual(['database.url']);
+  });
+
+  it('adds the SQLMesh state database for transformations only', () => {
+    expect(transformSecretKeys(loadLakehouseConfig({}))).toEqual([
+      'database.url',
+      'lakehouse.catalog-url',
+      'transform.state-url',
+    ]);
+    expect(
+      transformSecretKeys(loadLakehouseConfig({ ATLASBI_LAKEHOUSE_CATALOG_TYPE: 'sqlite' })),
+    ).toEqual(['database.url', 'transform.state-url']);
   });
 });

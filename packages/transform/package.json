@@ -1,0 +1,27 @@
+{
+  "name": "@atlasbi/transform",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --dir test/unit --test-timeout 120000",
+    "test:integration": "vitest run --dir test/integration --test-timeout 300000 --hook-timeout 300000"
+  },
+  "dependencies": {
+    "@atlasbi/warehouse": "workspace:*"
+  },
+  "devDependencies": {
+    "@atlasbi/config": "workspace:*",
+    "@atlasbi/contracts": "workspace:*",
+    "@atlasbi/database": "workspace:*",
+    "@types/node": "catalog:",
+    "@types/pg": "catalog:",
+    "pg": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

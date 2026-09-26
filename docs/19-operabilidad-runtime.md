@@ -59,6 +59,7 @@ pnpm dev          # ver sección 3
 | `pnpm preflight` | Verifica que la máquina tiene lo necesario (Node, pnpm, uv, Podman, compose provider, puertos libres) antes de arrancar nada — solo verifica, nunca instala ni cambia nada |
 | `pnpm test` / `pnpm test:integration` / `pnpm test:e2e` | La pirámide de testing de `15-testing-cicd.md` — `test` son unit tests sin infraestructura; `test:integration` necesita `pnpm dev` corriendo (Postgres real); `test:e2e` llega con el primer recorrido de punta a punta |
 | `pnpm seed` | Carga datos de demo (sección 6) — nunca corre solo, siempre a pedido explícito. Llega en el Paso 1 con el dataset del lakehouse; la organización y los usuarios demo se suman en el Paso 4 |
+| `pnpm transform <comando>` | Corre SQLMesh (`plan`, `run`, `test`, `audit`, `lint`…) sobre el lakehouse — **la única forma soportada** (`02-transformacion.md` §6.5): verifica el lakehouse antes y le pasa los secretos solo a ese proceso. `test` y `lint` corren sin lakehouse ni secretos |
 | `pnpm reset:local` | **Destructivo, siempre explícito.** Pide escribir `atlasbi` para confirmar (o `--confirm=atlasbi` en uso no interactivo) y borra los volúmenes; `.env` no se toca. Nunca se esconde un borrado de datos dentro de `dev` — si `pnpm dev` alguna vez necesita limpiar algo, lo pide, no lo hace solo |
 
 **Por qué `pnpm dev` y `pnpm stack:up` son comandos distintos, no el mismo con una bandera:** durante desarrollo, *hot reload* en el código propio (Web, API Gateway) es lo que hace productivo el día a día — nadie quiere reconstruir un contenedor cada vez que cambia una línea de Svelte. Pero esa velocidad esconde diferencias reales con producción (variables de entorno, healthchecks, tiempos de arranque). `stack:up` es la versión honesta — todo en contenedores, la misma forma en que corre de verdad — y es la que se usa para el vertical slice de validación (`16-mvp-definicion-terminado.md`) y para CI.
@@ -90,6 +91,8 @@ pnpm dev
 ```
 
 Si algo no está saludable, `pnpm dev` no imprime el resumen de arriba como si todo estuviera bien — muestra explícitamente qué pieza falló y por qué, antes de dejar que alguien abra el navegador y se encuentre con errores confusos más adelante.
+
+**Paso 2:** `pnpm bootstrap` además prepara el entorno Python de `packages/transform` (`uv sync --frozen`, la única descarga de esa pieza) y la base `sqlmesh_state`; `pnpm preflight` verifica sin red que el entorno coincida con `uv.lock`. `pnpm dev` no corre SQLMesh: es un job, no un servicio (§1) — lo programa Airflow en el Paso 8.
 
 **Alcance real a partir del Paso 1:** el resumen lista Postgres, Migrations, OTel Collector y **Lakehouse** (`healthy — Catalog: PostgreSQL`, o `healthy — Catalog: SQLite (single-writer mode — recommended for individual development)`; depende de Postgres solo si el catálogo es PostgreSQL). `pnpm bootstrap` agrega, una sola vez, la base del catálogo, las extensiones de DuckDB (la única descarga, línea `DuckDB extensions`) y el aprovisionamiento del lakehouse; `pnpm dev` solo verifica — nunca instala, descarga ni crea nada (`01-motor-almacenamiento.md` §6.7). `pnpm preflight` verifica sin red las extensiones y que las carpetas del lakehouse se puedan escribir.
 

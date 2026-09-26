@@ -24,7 +24,15 @@ const DUCKDB_CLIENT = {
 // "vendor types stay inside their adapter" (§3.2).
 export default defineConfig(
   {
-    ignores: ['**/node_modules/**', '**/dist/**', '**/.turbo/**', '**/coverage/**', 'docs/**'],
+    ignores: [
+      '**/node_modules/**',
+      '**/.venv/**',
+      '**/.cache/**',
+      '**/dist/**',
+      '**/.turbo/**',
+      '**/coverage/**',
+      'docs/**',
+    ],
   },
   eslint.configs.recommended,
   {

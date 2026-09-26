@@ -9,6 +9,33 @@ import { classifyOperation } from './statement-keyword.ts';
 
 export type StatementPurpose = 'read' | 'write';
 
+// DuckLake functions a reader may call. Every other `ducklake_*` function is maintenance, and some
+// run inside a SELECT: `SELECT * FROM ducklake_flush_inlined_data('lake')` on a READ_ONLY attach is
+// rejected by the engine — but only after writing its Parquet file into the data folder (measured
+// in build step 2). An allowlist, so a maintenance function added by a future DuckLake is refused
+// until someone decides otherwise.
+const READ_ONLY_DUCKLAKE_FUNCTIONS = new Set([
+  'ducklake_snapshots',
+  'ducklake_current_snapshot',
+  'ducklake_last_committed_snapshot',
+  'ducklake_table_info',
+  'ducklake_list_files',
+  'ducklake_table_changes',
+  'ducklake_table_insertions',
+  'ducklake_table_deletions',
+]);
+const CATALOG_MAINTENANCE_CALL = /\.\s*(set_option|set_commit_message)\s*\(/i;
+
+function maintenanceFunctionIn(sql: string): string | undefined {
+  for (const match of sql.matchAll(/\b(ducklake_[a-z_]+)\s*\(/gi)) {
+    const name = (match[1] ?? '').toLowerCase();
+    if (!READ_ONLY_DUCKLAKE_FUNCTIONS.has(name)) {
+      return name;
+    }
+  }
+  return CATALOG_MAINTENANCE_CALL.exec(sql)?.[1]?.toLowerCase();
+}
+
 /**
  * Parses and prepares exactly one statement — nothing runs here. The engine already blocks writes
  * on a read-only lakehouse; this allowlist also blocks what a read-only attach still allows
@@ -33,6 +60,13 @@ export async function prepareSingleStatement(
     throw new LakehouseError(
       'read_only_violation',
       'The query port only runs SELECT statements; writes and administration go through the admin port.',
+    );
+  }
+  const maintenance = purpose === 'read' ? maintenanceFunctionIn(sql) : undefined;
+  if (maintenance !== undefined) {
+    throw new LakehouseError(
+      'read_only_violation',
+      `The query port cannot call ${maintenance}: lakehouse maintenance goes through the admin port.`,
     );
   }
   const extracted = await connection.extractStatements(sql);

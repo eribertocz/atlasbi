@@ -17,7 +17,7 @@ verifica todo esto y dice cómo resolver lo que falte.
 | --------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Node.js                     | 24.x ≥ 24.21.0 (LTS, ver `.node-version`)      | [nodejs.org](https://nodejs.org) o tu gestor de versiones                                                                                                                                                               |
 | pnpm                        | la fijada en `package.json` (`packageManager`) | `corepack enable` una vez por máquina — en Windows, desde una terminal de administrador                                                                                                                                 |
-| uv                          | ≥ 0.11                                         | [docs.astral.sh/uv](https://docs.astral.sh/uv/getting-started/installation/) — gestiona los entornos Python de las capas de datos                                                                                       |
+| uv                          | ≥ 0.11                                         | [docs.astral.sh/uv](https://docs.astral.sh/uv/getting-started/installation/) — gestiona los entornos Python de las capas de datos, y el Python 3.13 que usan (`uv python install 3.13` si no lo tenés)                  |
 | Podman (motor)              | ≥ 5                                            | `winget install -e --id RedHat.Podman` y después `podman machine init` — o desde el Dashboard de [Podman Desktop](https://podman-desktop.io)                                                                            |
 | docker-compose (standalone) | ≥ 2.20                                         | `winget install -e --id Docker.DockerCompose` — o Podman Desktop → Settings → Resources → Compose. Es el _provider_ de `podman compose`; no usa Docker Engine ni Docker Desktop ([por qué](docs/11-infraestructura.md)) |
 
@@ -38,6 +38,7 @@ pnpm install
 pnpm bootstrap      # crea .env, levanta la infraestructura, aplica migraciones, instala las
                     # extensiones de DuckDB (la única descarga) y aprovisiona el lakehouse
 pnpm seed           # opcional: dataset de desarrollo en el lakehouse (20.000 filas)
+pnpm transform plan # opcional: SQLMesh construye el mart sobre ese dataset
 ```
 
 **El lakehouse** (DuckDB + DuckLake, [`docs/01`](docs/01-motor-almacenamiento.md) §6.6–6.7) usa por
@@ -57,6 +58,7 @@ Turborepo envía telemetría anónima por defecto; para desactivarla en tu máqu
 | `pnpm dev`                                           | Verifica prerrequisitos y `.env`, levanta la infraestructura local (Postgres, OTel Collector), aplica migraciones pendientes y espera a que cada pieza —incluido el lakehouse— esté lista. Nunca descarga ni crea nada del lakehouse |
 | `pnpm preflight`                                     | Solo verifica la máquina: versiones, compose provider, puertos libres, extensiones de DuckDB y carpetas del lakehouse. No cambia nada                                                                                                |
 | `pnpm seed`                                          | Carga el dataset de desarrollo en el lakehouse (idempotente; nunca corre solo)                                                                                                                                                       |
+| `pnpm transform <comando>`                           | Corre SQLMesh (`plan`, `run`, `test`, `audit`, `lint`…) sobre el lakehouse. **Es la única forma soportada**: `uv run sqlmesh` directo se salta la verificación del lakehouse y los secretos ([por qué](docs/02-transformacion.md))   |
 | `pnpm stack:up` / `stack:down` / `stack:logs`        | Todo en contenedores / detener / ver logs                                                                                                                                                                                            |
 | `pnpm reset:local`                                   | **Destructivo**: borra la infraestructura local, sus datos y `.data/lakehouse` (pide confirmación). `.env` y las extensiones de DuckDB no se tocan                                                                                   |
 | `pnpm typecheck` / `pnpm lint` / `pnpm format:check` | Chequeos estáticos                                                                                                                                                                                                                   |
