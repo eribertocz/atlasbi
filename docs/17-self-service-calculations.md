@@ -125,9 +125,27 @@ Si se permiten fórmulas arbitrariamente complejas sin ningún límite, el riesg
 
 **Hallazgo concreto, no especulativo: hay un PR activo en el propio repositorio de Cube (`cube-js/cube#11165`) que dice explícitamente que el paquete `duckdb` que usaba el driver oficial de Cube tope en la versión 1.4.x de DuckDB — lo cual bloquea extensiones que necesitan DuckDB ≥1.5.2**, justo la generación de versiones donde DuckLake maduró más en capacidades. El PR migra el driver a `@duckdb/node-api` (los bindings "Neo", activamente mantenidos) precisamente para resolver esto.
 
-**Consecuencia práctica para este proyecto: no asumir en el papel que "Cube → DuckDB → DuckLake" funciona perfecto con toda la superficie de Semantic SQL — probarlo temprano, como parte del primer vertical slice (`16-mvp-definicion-terminado.md`), con una batería concreta:** una medida simple, un ratio, una función de ventana, un CTE, un join, un rolling window, un time-shift — y confirmar, contra la versión exacta de Cube y de DuckDB que se vaya a usar, cuánto de eso realmente hace pushdown y cuánto cae a post-procesamiento. Si la versión de Cube en uso todavía no incorporó la migración del PR de arriba, es una razón concreta para fijar una versión más nueva antes de construir el Editor de SQL avanzado sobre DuckLake.
+**Consecuencia práctica para este proyecto: no asumir en el papel que "Cube → DuckDB → DuckLake" funciona perfecto con toda la superficie de Semantic SQL — probarlo temprano, como parte del primer vertical slice (`16-mvp-definicion-terminado.md`), con una batería concreta:** una medida simple, un ratio, una función de ventana, un CTE, un join, un rolling window, un time-shift — y confirmar, contra la versión exacta de Cube y de DuckDB que se vaya a usar, cuánto de eso realmente hace pushdown y cuánto cae a post-procesamiento. Si la versión de Cube en uso todavía no incorporó la migración del PR de arriba, es una razón concreta para fijar una versión más nueva antes de construir el Editor de SQL avanzado sobre DuckLake (Cube 1.7.45, la fijada en el Paso 3, ya la incorpora: su driver usa `@duckdb/node-api` 1.5.5-r.5, el mismo que la plataforma).
 
 **Nota relacionada, sobre un cambio más grande en el horizonte: DuckDB 2.0 (modo servidor vía `Quack`, en alfa, release proyectado para la segunda mitad de octubre de 2026) podría eventualmente cambiar cómo Cube se conecta a DuckDB — de embebido a modo servidor.** No se adopta ahora (no está estable, y Cube no confirmó soporte), pero queda como condición explícita de reevaluación en `01-motor-almacenamiento.md`, sección 6.3 — vale la pena revisar esa sección junto con esta cuando llegue el momento de decidir entre DuckDB y ClickHouse para concurrencia media.
+
+**Resultado de la batería — Fase 0 del Paso 3 (2026-09-26), contra Cube Core 1.7.45 y DuckDB 1.5.5 sobre DuckLake en S3.** Método: `EXPLAIN` por el SQL API, en modo seguro. El plan físico incluye el SQL exacto que Cube le manda a DuckDB, así que cada caso se clasifica mirando qué se ejecuta dónde:
+
+| Patrón | Resultado |
+| --- | --- |
+| Medida simple | Una consulta de Cube (`CubeScan`) |
+| Ratio de medidas | SQL completo en DuckDB (`CubeScanWrappedSql`) |
+| Función de ventana (`RANK`) | ✘ Falla: `Type UInt64 is not supported in response transformation from Cube`. Con `CAST(RANK() OVER (…) AS INTEGER)`: SQL completo en DuckDB, ventana incluida |
+| CTE con filtro sobre una medida | ✘ Falla: `Invalid comparison operation: Decimal128(38, 2) > Decimal128(37, 2)`, con cualquier `CAST` del literal o de la columna. `HAVING` resuelve el mismo caso (una consulta de Cube); un CTE sin filtro, o varios CTE unidos con `JOIN`, funcionan (SQL completo en DuckDB) |
+| Join entre cubes | Una consulta de Cube |
+| Rolling window | Medida del modelo (`rolling_window`): una consulta de Cube. `SUM() OVER (… ROWS 2 PRECEDING)` en SQL: SQL completo en DuckDB |
+| Time-shift | Medida `multi_stage` con `time_shift`: una consulta de Cube. `LAG()` en SQL: SQL completo en DuckDB |
+
+Ninguna consulta exitosa cayó en post-procesamiento dentro de Cube. Tres consecuencias más para el Editor de Semantic SQL:
+
+- **Exactitud:** el SQL API devuelve las medidas decimales como punto flotante (`262.43600250000003`). La API REST las devuelve como string, pero sin la escala (`446207.5`, no `446207.50`). Ninguna de las dos es el formato sin pérdida del puerto de lectura (`01-motor-almacenamiento.md` §7); la representación la define el contrato de la Capa 6 (Paso 5).
+- **Límite por defecto:** el SQL API agrega `LIMIT 50000` a lo que empuja.
+- **Los dos huecos no tienen issue en `cube-js/cube`** (revisado el 2026-09-26). El PR #11684, ya incorporado, empujó las funciones de ventana y registra un problema de tipos parecido con `NTILE`. Los dos casos se revalidan con cada versión nueva de Cube antes de construir el Editor; mientras sigan abiertos, el Visual Builder genera la forma que funciona (`CAST` en las funciones de ranking, `HAVING` en lugar de un CTE filtrado).
 
 ### 3.2.3 Corrección bloqueante: la autenticación del SQL API no es la misma que la de REST/GraphQL
 
