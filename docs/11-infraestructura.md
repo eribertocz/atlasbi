@@ -71,6 +71,8 @@ El Agent es una pieza de software chica y propia (no una dependencia externa de 
 | Programación de refrescos | Coordina con Airflow (capa 7) — el Agent expone un endpoint que Airflow dispara según el cronograma, o el Agent mismo corre su propio scheduler liviano si la red del cliente no permite that conexión entrante |
 | Auditoría y salud | El Agent reporta heartbeat y logs de ejecución al catálogo de metadata (capa 12) |
 
+**El Agent implica un landing:** una fuente detrás del firewall del cliente nunca puede certificarse para lectura directa (`02-transformacion.md` §6.1.2), así que usa el import con ingesta. El Agent extrae con dlt dentro de la red del cliente y empuja un landing mínimo —solo las filas y columnas necesarias— hacia la plataforma. Es uno de los casos donde esa materialización se justifica siempre: los datos tienen que salir de una red a la que la plataforma no entra.
+
 **Lo que se pospone honestamente para una fase posterior, no se finge resuelto:** alta disponibilidad con clústeres de Agents y balanceo de carga — el diseño de un solo Agent por red de cliente cubre el caso inicial (una plataforma con pocos clientes/instalaciones), pero escalar a un Gateway con HA real (como el de Power BI, que sí soporta clusters) es trabajo de una fase posterior, cuando la cantidad de instalaciones lo justifique.
 
 ## 4.4 Modos de despliegue: local vs. nube, con flexibilidad real de proveedor

@@ -6,7 +6,7 @@
 
 ## 1. Responsabilidad única de esta capa
 
-Tomar datos crudos ya disponibles en el motor de almacenamiento (capa 1) y transformarlos en tablas limpias, testeadas y listas para el modelo semántico.
+Tomar datos de origen —una fuente registrada leída directo, un archivo durable o el landing que dejó la ingesta (§6.1.1 y §6.1.2)— y transformarlos en el resultado analítico (`mart_*`), limpio, testeado y listo para el modelo semántico, persistido en DuckLake (capa 1).
 
 **Esta capa NO debe saber:**
 - Nada de métricas de negocio, nombres de "medidas" ni agregaciones de negocio (eso es la capa semántica, documento 04).
@@ -96,7 +96,8 @@ Con la regla del proyecto ("open source primero, siempre", "sin SaaS propietario
 
 ```mermaid
 flowchart LR
-    A[Warehouse: DuckDB/DuckLake - capa 1] --> B[SQLMesh: modelos SQL/Python]
+    S[Fuente registrada o archivo durable - import directo, 6.1.2] --> B[SQLMesh: modelos SQL/Python sobre DuckDB]
+    A[Landing en DuckLake - import con ingesta, capa 3] --> B
     B --> C[Entorno virtual: dev]
     B --> D[Entorno virtual: staging]
     B --> E["prod (tablas fisicas mart_*)"]
@@ -107,40 +108,106 @@ flowchart LR
 
 ### 6.1 Convención de esquemas (igual que en el borrador, confirmada)
 
-- `stg_*` — modelos de *staging*: una tabla cruda por fuente, renombrada y tipada, sin joins de negocio. Privados al paquete `transform`.
-- `int_*` — modelos intermedios: joins y agregaciones parciales reutilizadas por más de un `mart_`. Privados al paquete.
-- `mart_*` — únicos modelos **públicos**: los únicos que la capa semántica puede consultar. Esquema estable, testeado, documentado.
+- `stg_*` — modelos de *staging*: una vista (o CTE, o modelo efímero) por fuente o landing, que renombra y tipa, sin joins de negocio. Lógicos por defecto (§6.1.1). Privados al paquete `transform`.
+- `int_*` — modelos intermedios: joins y agregaciones parciales reutilizadas por más de un `mart_`. Lógicos por defecto (§6.1.1). Privados al paquete.
+- `mart_*` — únicos modelos **públicos**: el resultado analítico, lo único que la capa semántica puede consultar. Siempre físicos en DuckLake. Esquema estable, testeado, documentado.
 
-### 6.1.1 Principio explícito: no materializar ni duplicar datos sin justificación — RAW condicional, GOLD siempre físico, todo lo del medio es lógico por defecto
+### 6.1.1 Política de materialización — sin RAW persistente por defecto (sección canónica)
 
-**Corrección de un "siempre" que no correspondía, señalada en una revisión posterior.** RAW no se materializa en todos los casos — solo cuando la fuente en sí **no** es ya un dato crudo durable, reproducible e inmutable. Hay dos situaciones distintas:
+> **Esta sección es la fuente canónica de la política de materialización de todo el proyecto** — ingesta, transformación, almacenamiento y Data Studio. Los demás documentos la referencian; no la repiten.
+>
+> **Corrección de septiembre de 2026 (aprobada después de auditar toda la documentación):** la versión anterior de esta sección definía un "RAW condicional" que en la práctica era obligatorio para casi todo: se materializaba `raw.*` para cualquier fuente "volátil o mutable", **incluida toda base operativa**, y solo los archivos durables se lo salteaban. Además, otras secciones afirmaban que la transformación solo podía leer tablas "ya aterrizadas" en el warehouse. Las dos cosas quedan reemplazadas por lo que sigue: **RAW deja de existir como capa física de la arquitectura.**
 
-- **Fuente volátil o mutable** (una API de Salesforce, una base operativa que cambia, un CDC): acá sí hace falta capturar y conservar una copia — la fuente de origen no te va a devolver mañana el mismo estado de hoy. `raw.*` se materializa.
-- **Fuente que ya es RAW durable** (un Parquet inmutable ya versionado en un bucket, un archivo histórico que nadie va a modificar): copiarlo dentro de DuckLake sería una tercera copia sin ningún propósito nuevo — SQLMesh puede leer ese Parquet original directo (vía un scanner/vista externa) y construir `mart_*` sin pasar por un `raw.*` intermedio.
+**Principios (normativos):**
 
-**El principio queda así, más preciso que "siempre":** persistir una copia solo cuando esa copia cumple una responsabilidad que la fuente actual no cumple por sí sola (capturar un estado que de otro modo se perdería). Si la fuente ya es ese estado capturado, no se duplica.
+> **AtlasBI does not require a persistent RAW layer by default.**
+>
+> **Logical pipeline stages do not imply physical copies.**
+>
+> Source data is materialized only when required for durability, reproducibility, performance, incremental processing, auditing, or analytical consumption. A staging layer is logical by default and physical only when justified. Import mode persists the analytical result in DuckLake; Live/DirectQuery mode does not require analytical duplication. **dlt is an ingestion capability, not a mandatory RAW-storage architecture.**
 
-**Corrección de una pregunta real del usuario: la arquitectura de esta capa no es "medallion clásico" con tres copias físicas (raw, staging, gold) — es una copia física de aterrizaje, transformaciones lógicas en el medio, y una copia física final.** Esto no es una interpretación relajada de la convención de arriba, es literal: `stg_*` y `int_*` son **vistas (`kind VIEW`)** por defecto — que además es el kind por defecto de SQLMesh para modelos SQL, no algo que haya que forzar. Solo `mart_*` se materializa siempre, porque es lo único que la Capa 4 (Cube) consulta en vivo, repetidamente, y ahí sí hay una razón de rendimiento real.
+**Vocabulario — dos cosas distintas que antes se llamaban "RAW":**
 
-**Qué se guarda físicamente, en los hechos, para una fila típica:**
+| Término | Qué es | Cuándo existe | Qué contiene |
+| --- | --- | --- | --- |
+| **landing** | Materialización **técnica**: existe porque el extractor la necesita (dlt siempre escribe su salida en un destino, `03-ingesta.md` §6.4) | Solo en el *import con ingesta* | Solo las filas y columnas necesarias, cuando el conector permite proyectar y filtrar en el origen; incremental cuando la fuente lo permite |
+| **snapshot** | Historia conservada **a propósito** | Solo con un motivo explícito: auditoría, reproducibilidad, fuente que no se puede volver a leer, CDC (el log de cambios), regulación, recuperación, historia requerida por el negocio | Lo que el motivo exige — siempre con política de retención propia |
+| **resultado analítico** (`mart_*`) | Lo que la capa semántica (Cube) consulta | Siempre, en modo Import | La forma final que necesita el modelo |
 
-| Capa | Física o lógica | Por qué |
-| --- | --- | --- |
-| `raw.*` (capa 3, dlt) | **Física, condicional** | Solo si la fuente es volátil/mutable (API, base operativa, CDC) y necesita capturarse — nunca si la fuente ya es un Parquet inmutable y durable, ver la corrección de arriba |
-| `stg_*` | **Lógica (`kind VIEW`)** por defecto | Solo renombra/tipa columnas — no hay costo de cómputo que justifique guardarlo aparte |
-| `int_*` | **Lógica (`kind VIEW`)** por defecto | Igual que `stg_*`, salvo que se cumpla uno de los cuatro criterios de abajo |
-| `mart_*` | **Física, siempre** (`FULL` o incremental) | La Capa 4 la consulta en vivo repetidamente — acá sí hay una razón de rendimiento concreta |
+> "Snapshot" acá es historia de una **fuente**, una decisión de negocio. No confundir con las versiones que DuckLake guarda de cada tabla en cada commit (las usa para *time travel* y se rigen por la retención de `01-motor-almacenamiento.md` §6.8).
 
-**Resultado concreto: una fila de facturación se guarda físicamente como máximo dos veces, nunca tres** — una en `raw.facturacion` (si la fuente lo justifica) y una en `mart_facturacion`. Si la fuente ya era un Parquet durable, se guarda **una sola vez** (directo en `mart_facturacion`, `raw.*` ni existe para ese caso). Todo lo que pasa por el medio se recalcula al vuelo cada vez que se consulta, sin persistir una copia adicional.
+**Import — dos caminos, ninguno obligatorio para todas las fuentes:**
 
-**El criterio para materializar un `stg_*`/`int_*` (pasarlo de `VIEW` a `FULL`/incremental), y nunca "por las dudas":**
+```
+IMPORT DIRECTO
+fuente registrada y certificada para lectura directa (§6.1.2)
+   → SQLMesh sobre DuckDB (lee la fuente, con proyección y filtros empujados cuando el scanner lo permite)
+   → DuckLake: resultado analítico
+   → Cube
 
-1. **Rendimiento**: el cómputo es costoso y `mart_*` lo re-ejecutaría muchas veces si quedara como vista.
-2. **Reutilización**: 2 o más `mart_*` distintos dependen del mismo intermedio pesado.
-3. **Incrementalidad real**: el modelo necesita mantener estado entre corridas (una deduplicación que depende de lo ya procesado, no solo del dato nuevo).
-4. **Auditoría**: hace falta congelar un estado histórico específico y consultable, no solo el resultado de la última recomputación.
+IMPORT CON INGESTA
+fuente
+   → dlt (proyecta, filtra, incremental)
+   → DuckLake: landing mínimo
+   → SQLMesh sobre DuckDB
+   → DuckLake: resultado analítico
+   → Cube
 
-Si ninguna de las cuatro aplica, el modelo se queda como `VIEW` — es el default, no una excepción a pedir.
+SNAPSHOT — opcional, sobre cualquiera de los dos, con motivo explícito y retención
+```
+
+**Direct transformation is preferred when the source is certified for analytical direct-read.** Una fuente que no cumple las condiciones de §6.1.2 usa el import con ingesta. La plataforma decide el camino: el autor en Data Studio nunca ve esta distinción (`20-product-ui-ux.md` §8). Cuando dlt no aporta valor —una fuente certificada, un archivo durable—, no se inserta en el pipeline.
+
+**Ejemplo concreto — una tabla operativa de 120M filas de las que el análisis usa 60M:**
+
+- Import directo: SQLMesh lee solo las columnas y filas necesarias y DuckLake guarda **una** copia: el resultado analítico.
+- Import con ingesta: el landing guarda las 60M filas útiles con sus columnas necesarias, y el resultado analítico es la segunda copia — nunca `120M raw → 120M staging → 90M clean → 60M mart`.
+
+**Fuentes ya durables** (Parquet o Iceberg inmutable, un CSV histórico cerrado, un archivo subido desde Data Studio): no se copian. Se registran como fuente y SQLMesh las lee directo; solo se materializa el resultado analítico.
+
+**Intermedios (`stg_*`, `int_*`) — lógicos por defecto.** Se expresan como `VIEW` (el default de SQLMesh para modelos SQL), como CTE dentro del modelo que los usa, o como modelo efímero (`kind EMBEDDED`, que SQLMesh inyecta como subconsulta). Una etapa lógica nunca se convierte automáticamente en una copia física. Materializar un intermedio (`FULL` o incremental) exige una razón demostrable, nunca "por las dudas":
+
+1. **Rendimiento / costo de recomputación**: el cómputo es costoso y los consumidores lo re-ejecutarían muchas veces.
+2. **Reutilización**: dos o más `mart_*` dependen del mismo intermedio pesado.
+3. **Incrementalidad real**: el modelo necesita estado entre corridas (una deduplicación que depende de lo ya procesado).
+4. **Estabilidad o aislamiento**: un contrato estable para otros consumidores, o aislar a los consumidores de una fuente lenta o inestable.
+
+Congelar un estado para auditoría no es un intermedio: es un **snapshot**, con su motivo y su retención.
+
+**Qué guarda DuckLake en modo Import:**
+
+| Contenido | ¿Obligatorio? |
+| --- | --- |
+| Resultado analítico (`mart_*`) | **Sí** — es lo que Cube consulta en vivo, repetidamente |
+| Metadata del catálogo y versiones de tabla (*time travel*) | Inherente al formato; se retienen según `01-motor-almacenamiento.md` §6.8 |
+| Landing | Solo en el import con ingesta |
+| Snapshot de una fuente | Solo con motivo explícito |
+| Intermedios materializados | Solo con una de las razones de arriba |
+| Tablas físicas internas de SQLMesh (versiones por *fingerprint*, entornos de desarrollo) | Inherentes a SQLMesh, y solo para los modelos que cambian (§6.2) |
+
+Un pipeline puede no guardar en DuckLake nada más que su `mart_*`.
+
+**Live/DirectQuery queda fuera de esta política: no materializa nada.** El recorrido es `Reporte → Cube → DuckDB → fuente registrada`, sin SQLMesh en el camino de la consulta, sin landing y sin DuckLake (`01-motor-almacenamiento.md` §6.2).
+
+### 6.1.2 Fuentes registradas y lectura directa (sección canónica)
+
+**Los modelos SQL de SQLMesh pueden consultar fuentes externas** —una base SQL, un archivo durable— a través de los mecanismos de DuckDB: los scanners `postgres`, `mysql` y `sqlite`, con proyección y filtros simples empujados a la fuente, más `read_parquet`, `read_csv` e Iceberg. **Esto reemplaza la prohibición absoluta anterior** ("la transformación solo lee tablas ya aterrizadas"), con reglas de seguridad que no se negocian:
+
+- **Solo fuentes registradas por la plataforma.** Un modelo referencia una fuente por su nombre registrado, que la plataforma adjunta en la conexión DuckDB de SQLMesh. **Ningún modelo define su propio `ATTACH`**, ni `INSTALL`, `SET`, secrets o `COPY … TO`.
+- **Conexión de solo lectura para las fuentes operacionales**: un usuario de la base con permisos de lectura, más `ATTACH … (READ_ONLY)`.
+- **Credenciales siempre vía `SecretProvider`** (`11-infraestructura.md` §4.7). Ningún secreto dentro de un modelo SQL ni en el repositorio.
+- **Los modelos Python siguen sin red ni APIs.** Traer datos de una API o de un SaaS es trabajo de `packages/ingestion` (dlt), en su propio entorno.
+
+**Certificación para lectura directa — una fuente SQL usa el import directo solo si cumple todo esto:**
+
+1. **Es accesible** para SQLMesh/DuckDB. Una fuente detrás del firewall del cliente no lo es: pasa por el Edge Connector Agent, que la extrae con dlt (`11-infraestructura.md` §4.3).
+2. **Tiene una conexión de solo lectura.**
+3. **La carga analítica es aceptable**, o existe una réplica adecuada. Cada `sqlmesh run`, cada *backfill* y cada `plan` en un entorno de desarrollo vuelve a leer la fuente.
+4. **Se puede volver a leer lo suficiente**: los datos que un reproceso necesita siguen estando en la fuente.
+5. **No hay que capturar historia ni borrados que la fuente ya no pueda reproducir.** Reprocesar un período lee el estado *actual* de la fuente, no el de entonces. Si esa historia importa, corresponde CDC o un snapshot.
+6. **Está aprobada y registrada por la plataforma.**
+
+Si falla cualquiera, la fuente usa el import con ingesta (dlt con landing mínimo). El formato concreto del registro de fuentes se diseña con la primera fuente real (Paso 7); estas reglas ya son norma. Cómo adjunta SQLMesh las fuentes en su conexión DuckDB se verifica contra la versión exacta de SQLMesh que fije el Paso 2.
 
 ### 6.2 Entornos virtuales, en concreto
 
@@ -148,7 +215,7 @@ Cada entorno (`dev`, `staging`, `prod`) es una vista lógica sobre las mismas ta
 
 ### 6.3 Estado de SQLMesh: mismo Postgres, esquema separado
 
-SQLMesh necesita un *state backend* propio para llevar el registro de qué se aplicó, cuándo, y con qué plan. En vez de levantar una base nueva solo para esto, se reutiliza el Postgres que ya existe como catálogo de DuckLake (capa 1) — pero en un esquema/base lógica separada (`sqlmesh_state`, distinto de `ducklake_catalog`). Esto no rompe la regla de responsabilidad única: son dos consumidores del mismo servidor Postgres, cada uno con su propio namespace, sin que uno lea las tablas del otro.
+SQLMesh necesita un *state backend* propio para llevar el registro de qué se aplicó, cuándo, y con qué plan. En vez de levantar una base nueva solo para esto, se reutiliza el Postgres que ya existe como catálogo de DuckLake (capa 1) — pero en una base separada (`sqlmesh_state`, distinta de `lakehouse`, la base del catálogo de DuckLake desde el Paso 1). Esto no rompe la regla de responsabilidad única: son dos consumidores del mismo servidor Postgres, cada uno con su propio namespace, sin que uno lea las tablas del otro.
 
 ### 6.4 Tests, audits y calidad de datos
 
@@ -160,8 +227,8 @@ SQLMesh necesita un *state backend* propio para llevar el registro de qué se ap
 
 ## 7. Contrato de esta capa (qué consume, qué expone)
 
-- **Consume**: tablas/vistas crudas expuestas por el motor de almacenamiento (capa 1) vía conexión SQL estándar. Nunca lee archivos de la capa de ingesta directamente — eso ya debe estar aterrizado en el warehouse antes de llegar acá.
-- **Expone**: únicamente las tablas/vistas `mart_*`, con esquema estable, documentado y cubierto por al menos un audit por llave primaria. Todo lo demás (`stg_*`, `int_*`) es un detalle interno del paquete `transform`, no forma parte del contrato.
+- **Consume**: fuentes registradas (import directo) y archivos durables registrados, leídos a través de DuckDB (§6.1.2), y los landings que dejó la ingesta en DuckLake (import con ingesta). Nunca una fuente no registrada, y nunca una API: eso es trabajo de la capa 3.
+- **Expone**: únicamente las tablas `mart_*` en DuckLake, con esquema estable, documentado y cubierto por al menos un audit por llave primaria. Todo lo demás (`stg_*`, `int_*`) es un detalle interno del paquete `transform`, no forma parte del contrato.
 - **No expone**: nada de HTTP, nada de lógica de métricas de negocio (eso es la capa semántica), ninguna noción de "quién puede ver qué fila" (eso es auth + RLS, documento 09).
 - **Intercambiabilidad**: si en el futuro se decide migrar SQLMesh → dbt OSS (o viceversa), el contrato no cambia — ambas herramientas producen el mismo tipo de artefacto (`mart_*` en el warehouse). La capa semántica nunca debería notar la diferencia.
 
@@ -170,9 +237,9 @@ SQLMesh necesita un *state backend* propio para llevar el registro de qué se ap
 ## 8. Por dónde empezar a construir (paso a paso concreto)
 
 1. `pip install "sqlmesh[web,duckdb]"` dentro de `packages/transform` (entorno Python propio, no mezclado con el resto del monorepo TS).
-2. `sqlmesh init` apuntando al `.duckdb`/DuckLake ya creado en la capa 1 como gateway.
+2. `sqlmesh init` con DuckDB como motor, adjuntando el lakehouse DuckLake de la capa 1 (catálogo PostgreSQL, base `lakehouse`) como destino de los `mart_*`.
 3. Configurar `state_connection` contra el mismo Postgres del catálogo DuckLake, en un esquema separado (`sqlmesh_state`).
-4. Escribir el primer modelo `stg_` sobre una tabla real ya cargada en el warehouse — no un CSV de prueba.
+4. Escribir el primer modelo `stg_` (una vista) sobre el dataset de desarrollo del Paso 1 (`lake.fixture.sales_orders`). La primera fuente externa real llega en el Paso 7, directa o con ingesta según §6.1.2.
 5. Agregar un audit `not_null` + `unique` sobre la llave primaria de ese modelo antes de considerarlo terminado.
 6. Correr `sqlmesh plan` para ver la clasificación breaking/non-breaking y aplicar contra un entorno `dev` antes de tocar `prod`.
 7. Recién cuando haya 2-3 modelos `mart_*` estables y testeados, pasar a la capa semántica (documento siguiente).
@@ -189,7 +256,7 @@ Power BI fue, durante años, una herramienta de solo lectura. **Corrección de p
 
 ### 9.1 Qué le corresponde específicamente a esta capa
 
-Esta funcionalidad es **transversal** (toca las capas 1, 2, 6, 8 y 9), y se retoma en detalle cuando se revisen esas capas. Lo que le corresponde a la Capa 2 es reconocer un **nuevo tipo de fuente**: hasta ahora, todo lo que llega a `stg_*` viene de un pipeline programado de la Capa 3 (dlt). Una tabla de entrada de usuario es distinta — alguien la escribe en vivo, sin pasar por ingesta programada. SQLMesh la trata igual que cualquier otra fuente cruda, sin lógica especial:
+Esta funcionalidad es **transversal** (toca las capas 1, 2, 6, 8 y 9), y se retoma en detalle cuando se revisen esas capas. Lo que le corresponde a la Capa 2 es reconocer un **nuevo tipo de fuente**: hasta ahora, todo lo que llega a `stg_*` viene de una fuente registrada o del landing de un pipeline de la Capa 3 (dlt). Una tabla de entrada de usuario es distinta — alguien la escribe en vivo, sin pasar por ingesta programada. SQLMesh la trata igual que cualquier otra fuente cruda, sin lógica especial:
 
 ```sql
 -- packages/transform/models/staging/stg_ajustes_forecast.sql

@@ -83,12 +83,13 @@ La versión previa eligió Kestra sobre Dagster razonando correctamente sobre co
 
 ```mermaid
 flowchart LR
-    A[Airflow: DAG en Python] -->|tarea 1| B[dlt - capa 3]
+    A[Airflow: DAG en Python] -->|tarea 1, solo en import con ingesta| B[dlt - capa 3]
     A -->|tarea 2| C["sqlmesh run - capa 2 (los modelos ya estan desplegados via CI/CD, ver 15-testing-cicd.md)"]
     A -->|tarea 3: HTTP| D[Refresco de pre-agregaciones - Cube Core, capa 4]
     B --> C --> D
     E[(Postgres: metadata de Airflow)] -.tracking de ejecuciones.-> A
     A -->|alertas por tarea| F[Notificación específica del paso que falló]
+    A -->|DAG propio: mantenimiento| M[Retención del lakehouse - capa 1, 01 §6.8]
 ```
 
 ### 6.1 Un DAG por pipeline, dependencias explícitas en código
@@ -101,7 +102,9 @@ with DAG("pipeline_diario", start_date=datetime(2026, 1, 1), schedule="@daily") 
 
     @task
     def ingesta():
-        # dispara el pipeline dlt de la capa 3
+        # dispara el pipeline dlt de la capa 3 — solo para fuentes con import con ingesta
+        # (02-transformacion.md §6.1.1). En el import directo no hay tarea de extracción:
+        # `sqlmesh run` lee la fuente registrada.
         ...
 
     @task
@@ -121,6 +124,8 @@ with DAG("pipeline_diario", start_date=datetime(2026, 1, 1), schedule="@daily") 
 
 Cada tarea (`@task`) es una unidad de reintento y alerta independiente.
 
+**El mantenimiento del lakehouse va en un DAG propio**, no dentro de los de datos: expira versiones, limpia archivos viejos y huérfanos y compacta según la política de retención (`01-motor-almacenamiento.md` §6.8), a través de la operación administrativa de la plataforma — nunca con SQL de mantenimiento suelto en un DAG.
+
 ### 6.2 Backfills, en concreto
 
 Airflow permite re-ejecutar un DAG para un rango de fechas pasado sin tocar el resto del pipeline — reutilizando la capacidad de *backfill* selectivo que SQLMesh ya expone en la capa 2, orquestada desde acá en vez de reinventada. **Corrección de sintaxis (Airflow 3):** el comando actual es `airflow backfill create --dag-id <id> --from-date <fecha> --to-date <fecha>` — el viejo `airflow dags backfill` quedó reemplazado por este subcomando dedicado, con más control (comportamiento de reprocesamiento, `--run-backwards`, límite de corridas concurrentes).
@@ -129,7 +134,7 @@ Airflow permite re-ejecutar un DAG para un rango de fechas pasado sin tocar el r
 
 ## 7. Contrato de esta capa (qué consume, qué expone)
 
-- **Consume**: comandos/CLI o llamadas HTTP de cada capa (`dlt run` en capa 3, `sqlmesh run` en capa 2 para la ejecución diaria — nunca `sqlmesh plan`, que es un comando de despliegue de CI/CD, no de operación diaria, ver `15-testing-cicd.md` — el endpoint de refresco de pre-agregaciones de Cube en capa 4).
+- **Consume**: comandos/CLI o llamadas HTTP de cada capa (`dlt run` en capa 3 cuando la fuente usa ingesta, la operación de mantenimiento del lakehouse en capa 1, `sqlmesh run` en capa 2 para la ejecución diaria — nunca `sqlmesh plan`, que es un comando de despliegue de CI/CD, no de operación diaria, ver `15-testing-cicd.md` — el endpoint de refresco de pre-agregaciones de Cube en capa 4).
 - **Expone**: una UI/API de monitoreo de ejecuciones, historial de corridas, y alertas por tarea.
 - **No expone**: ninguna transformación ni definición de métrica propia.
 
@@ -138,7 +143,7 @@ Airflow permite re-ejecutar un DAG para un rango de fechas pasado sin tocar el r
 ## 8. Por dónde empezar a construir (paso a paso concreto)
 
 1. Levantar Airflow localmente vía Docker Compose (imagen oficial, Postgres como backend de metadata).
-2. Escribir el primer DAG con dos tareas: disparar el pipeline de dlt (capa 3), y encadenar `sqlmesh run` (capa 2) con `>>` — el despliegue de cambios de modelo (`sqlmesh plan`) ya debería haber corrido en CI/CD antes de este punto, ver `15-testing-cicd.md`.
+2. Escribir el primer DAG con dos tareas: disparar el pipeline de dlt de la primera fuente con ingesta (capa 3), y encadenar `sqlmesh run` (capa 2) con `>>` — el despliegue de cambios de modelo (`sqlmesh plan`) ya debería haber corrido en CI/CD antes de este punto, ver `15-testing-cicd.md`.
 3. Correrlo manualmente desde la UI y verificar que el orden de dependencias se respeta.
 4. Agregar la tercera tarea (refresco de pre-agregaciones de Cube, capa 4) al final de la cadena.
 5. Programar el DAG con `schedule` y confirmar que una alerta se dispara específicamente en la tarea que se hace fallar a propósito.

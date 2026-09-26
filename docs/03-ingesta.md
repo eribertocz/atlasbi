@@ -1,12 +1,16 @@
 # Capa 3: Ingesta (la "cinta transportadora")
 
 > Reemplazo: **Conectores de Power Query → dlt** (Airbyte queda como alternativa aceptada solo cuando el requisito es catálogo grande + UI propia; ver sección 4)
+>
+> **dlt es una capacidad de ingesta, no una arquitectura de almacenamiento RAW obligatoria.** Solo participa cuando la fuente no puede leerse directo; cuándo corresponde lo define la política canónica de materialización (`02-transformacion.md` §6.1.1 y §6.1.2).
 
 ---
 
 ## 1. Responsabilidad única de esta capa
 
-Traer datos crudos de fuentes externas (APIs, bases operativas, SaaS, archivos) y dejarlos aterrizados en el warehouse (capa 1), en el formato correcto, **sin transformarlos todavía**.
+Extraer datos de las fuentes que **no** se leen directo —APIs y SaaS, CDC, fuentes detrás del firewall del cliente, y bases SQL que no cumplen la certificación de lectura directa (`02-transformacion.md` §6.1.2)— y dejar en DuckLake (capa 1) un **landing mínimo**: solo las filas y columnas que el análisis usa, cuando el conector permite empujar la proyección y el filtro al origen, e incremental cuando la fuente lo permite. Las fuentes certificadas para lectura directa y los archivos durables no pasan por esta capa.
+
+**Proyectar columnas y filtrar filas en la extracción sí le corresponde a esta capa** (no es lógica de negocio: es no traer lo que nadie usa). Todo lo demás —renombres semánticos, joins, reglas de negocio— es de la capa 2.
 
 **Esta capa NO debe saber:**
 - Nada de limpieza, joins ni modelado de negocio (eso es la capa de transformación, documento 02).
@@ -14,7 +18,7 @@ Traer datos crudos de fuentes externas (APIs, bases operativas, SaaS, archivos) 
 - Nada de quién puede ver qué dato (auth, documento 09).
 - Nada de cómo se sirve el resultado al frontend.
 
-Si esta capa empieza a hacer un `JOIN` de negocio o a renombrar columnas con semántica de negocio "para ahorrar un paso", el diseño está roto — eso es trabajo de `stg_*` en la capa de transformación, no de la ingesta.
+Si esta capa empieza a hacer un `JOIN` de negocio o a renombrar columnas con semántica de negocio "para ahorrar un paso", el diseño está roto — eso es trabajo de `stg_*` en la capa de transformación, no de la ingesta. Y si un pipeline de dlt copia tablas completas "por las dudas" cuando la fuente permitía traer solo lo necesario, también.
 
 ---
 
@@ -90,8 +94,7 @@ flowchart LR
     B[Fuente: Postgres/MySQL/SQL Server] --> D
     C[Fuente: filesystem/object storage] --> D
     D -->|ConnectorX por defecto; ADBC vía TableLoader propio si un driver puntual lo justifica| D
-    D --> E[Parquet en object storage]
-    E --> F[Warehouse: DuckDB/DuckLake - capa 1]
+    D -->|destino ducklake: landing mínimo, filas y columnas necesarias| F[DuckLake - capa 1]
     G[Secretos: variables de entorno / vault] -.credenciales.-> D
 ```
 
@@ -111,25 +114,39 @@ Cada corrida de un pipeline dlt compara el esquema inferido contra el esquema an
 
 Las credenciales de cada fuente (tokens de API, connection strings) se resuelven vía variables de entorno o un archivo `secrets.toml` **fuera del control de versiones** (excluido explícitamente en `.gitignore`) — nunca hardcodeadas en el código del pipeline. En producción, el mismo mecanismo se alimenta desde el gestor de secretos que defina la capa de infraestructura (documento 11), sin cambiar una línea del pipeline.
 
+### 6.4 Qué persiste dlt, siempre — sin ocultar la limitación
+
+**dlt no puede entregarle datos a SQLMesh sin escribirlos antes en un destino.** Esa es su función: extraer, normalizar y cargar. Cuando dlt participa, SQLMesh trabaja sobre una tabla que dlt escribió. Por eso dlt solo se usa donde esa materialización aporta algo: una fuente que no se puede volver a leer barato, estado incremental, reintentos, CDC, o la salida desde la red del cliente. Lo que dlt no obliga es a que esa copia sea un RAW completo.
+
+| Qué | Detalle | Consecuencia para la plataforma |
+| --- | --- | --- |
+| Destino obligatorio | La salida de cada corrida se carga en un destino; acá, DuckLake (`destination="ducklake"`) | Es el **landing**: lo que el pipeline selecciona, no la fuente entera |
+| Proyección y filtro | En `sql_database`: elegir columnas y adaptar la consulta al origen (p. ej. un `WHERE`) para no traer lo que no se usa; en Python, `add_map`/`add_filter` para lo que no se pueda empujar | Se usan siempre que el conector lo permita |
+| Columnas y tablas propias | `_dlt_load_id` y `_dlt_id` en cada fila; tablas `_dlt_loads`, `_dlt_version` y `_dlt_pipeline_state` (donde vive también el estado incremental) | Son metadata del landing, nunca parte del resultado analítico |
+| Cargas `merge` | Pasan por un dataset intermedio (`<dataset>_staging`) en el mismo destino | Una materialización técnica más: se trunca después de cargar cuando sea posible |
+| Archivos temporales locales | Antes de cargar escribe paquetes en su directorio de trabajo, por defecto `~/.dlt/pipelines` (una carpeta global del usuario) | Se configura dentro del repo (p. ej. `.data/dlt`), con el mismo criterio que las extensiones de DuckDB |
+
+Los detalles exactos —el destino `ducklake`, el dataset intermedio de `merge`, las opciones de proyección y filtro, el directorio de trabajo— se verifican contra la versión de dlt que fije el Paso 7.
+
 ---
 
 ## 7. Contrato de esta capa (qué consume, qué expone)
 
 - **Consume**: credenciales y endpoints de fuentes externas (APIs, bases operativas, archivos) — nunca la base de datos interna de otra capa de este proyecto.
-- **Expone**: la relación de origen para el modelado de la capa 2 — que puede ser una tabla `raw_*` en el warehouse (cuando la fuente es volátil/mutable y hace falta capturarla, ver `02-transformacion.md` sección 6.1.1) **o directamente un archivo externo ya durable** (un Parquet inmutable que dlt ni siquiera necesita tocar) cuando la fuente ya cumple esa función por sí sola. La capa 2 no asume que `raw_*` existe siempre — consume "la relación de origen que corresponda", sea cual sea.
+- **Expone**: un **landing mínimo** en DuckLake para las fuentes que usan el import con ingesta (`02-transformacion.md` §6.1.1). Las fuentes certificadas para lectura directa y los archivos durables no pasan por esta capa: la capa 2 las lee a través de DuckDB (`02-transformacion.md` §6.1.2).
 - **No expone**: ninguna transformación de negocio, ningún join entre fuentes — eso empieza recién en `stg_*` de la capa de transformación (documento 02).
-- **Intercambiabilidad**: si una fuente puntual requiere Airbyte por catálogo de conectores, el contrato no cambia — sigue depositando en el mismo esquema `raw_*` del warehouse, **cuando corresponde materializar** (sección 6.1.1 de `02-transformacion.md`). Ni la capa de transformación ni las de arriba deberían notar qué herramienta trajo el dato, ni si hubo o no un paso de materialización intermedio.
+- **Intercambiabilidad**: si una fuente puntual requiere Airbyte por catálogo de conectores, el contrato no cambia — deposita el mismo landing mínimo en DuckLake. Ni la capa de transformación ni las de arriba deberían notar qué herramienta trajo el dato.
 
 ---
 
 ## 8. Por dónde empezar a construir (paso a paso concreto)
 
-1. `pip install "dlt[ducklake]"` dentro de `packages/ingestion` (mismo entorno Python que ya se usa para `packages/transform`, o uno propio si se prefiere aislarlos) — **corrección: no `dlt[duckdb]`**, ese extra no incluye soporte de DuckLake, que es el destino nativo que ya elegimos (`13-recorrido-end-to-end.md`, paso 1).
+1. `pip install "dlt[ducklake]"` dentro de `packages/ingestion`, en su propio entorno (nunca compartido con `packages/transform`, `CLAUDE.md`) — **corrección: no `dlt[duckdb]`**, ese extra no incluye soporte de DuckLake, que es el destino nativo que ya elegimos (`13-recorrido-end-to-end.md`, paso 1).
 2. `dlt init sql_database ducklake` (o `rest_api ducklake` si la primera fuente real es una API) para generar el scaffold del primer pipeline — corrección: `ducklake` como destino, no `duckdb`.
-3. Apuntar el pipeline a una fuente real (no un CSV de prueba) y correrlo una vez. **Antes de asumir que hace falta un `raw_*` físico**, confirmar si la fuente es volátil/mutable (sí lo necesita) o si ya es un archivo durable e inmutable (en ese caso, SQLMesh puede leerlo directo — ver `02-transformacion.md` sección 6.1.1).
+3. **Antes de escribir un pipeline, decidir si la fuente lo necesita** (`02-transformacion.md` §6.1.2): una fuente certificada para lectura directa o un archivo durable no usan dlt. Si lo necesita, apuntarlo a una fuente real (no un CSV de prueba), trayendo solo las columnas y filas que el análisis usa, con `dataset_name="landing"` y el directorio de trabajo de dlt dentro del repo, y correrlo una vez.
 4. Forzar un cambio en la fuente (agregar una columna de prueba) y confirmar que dlt lo detecta y lo refleja en el esquema — validar la evolución de esquema en la práctica, no solo leerla en la documentación.
 5. Mover las credenciales de la fuente a `secrets.toml` (excluido de Git) antes de considerar el pipeline terminado.
-6. Recién con 1-2 fuentes reales aterrizando de forma confiable (con o sin `raw_*` físico, según corresponda), conectar la capa de transformación (documento 02) sobre esas tablas/relaciones.
+6. Recién con 1-2 fuentes reales llegando de forma confiable (con landing o por lectura directa, según corresponda), conectar la capa de transformación (documento 02).
 
 ---
 
@@ -145,6 +162,8 @@ Qlik ofrece **Replicate**, un producto de Change Data Capture (CDC): en vez de t
 | --- | --- | --- |
 | `sql_database` (ya documentado en la sección 6) | La mayoría de las fuentes — reportes que se refrescan periódicamente | Minutos a horas, según lo que programe la Capa 7 |
 | `pg_replication` (CDC) | Cuando el dashboard necesita reflejar cambios operativos casi al instante (ej. estado de un pedido, inventario en vivo) | Sub-segundo |
+
+**Con CDC, el landing es un snapshot por naturaleza:** el log de cambios no se puede volver a leer de la fuente una vez que el slot de replicación avanzó. Por eso siempre se persiste, y con política de retención (`02-transformacion.md` §6.1.1).
 
 ### 9.2 Requisito en la fuente, y su costo real
 
@@ -172,7 +191,7 @@ Señalado en la auditoría externa (ChatGPT): conectar una fuente vía dlt signi
 Paso 1: Elegir tipo de fuente (lista de las ~30 verified sources + "SQL genérico" + "API genérica")
 Paso 2: Completar credenciales (campos generados según el tipo elegido — API key, OAuth, connection string)
 Paso 3: Probar conexión (llamada real a la fuente, antes de guardar nada)
-Paso 4: Guardar → genera la configuración de un pipeline de dlt y la entrega al backend (capa 6, procedimiento de escritura)
+Paso 4: Guardar → registra la fuente; la plataforma decide el camino (lectura directa, o un pipeline de dlt con landing mínimo — `02-transformacion.md` §6.1.2) y lo entrega al backend (capa 6, procedimiento de escritura)
 ```
 
 Este formulario no reemplaza escribir un `@dlt.resource` a mano para una fuente rara que no está en las ~30 — sigue siendo el camino correcto para eso (queda documentado en la sección 6.1) — pero cubre el caso común (una fuente ya verificada) sin que el usuario vea una línea de Python.

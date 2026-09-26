@@ -66,26 +66,24 @@ Si esta capa empieza a contener lógica de negocio, el diseño está roto — se
 
 ```mermaid
 flowchart LR
-    A[Fuentes de datos] --> B[Object storage: Parquet]
-    B --> C[Catálogo DuckLake - Postgres]
-    C --> D[DuckDB local]
-    C --> E[MotherDuck - escalado cloud]
-    D --> F[Capa de transformación]
-    E --> F
-    G[(Postgres operativo)] -.DirectQuery futuro: DuckDB ATTACH TYPE POSTGRES, nunca via SQLMesh.-> F
+    S[Fuentes registradas] -->|Import: directo o con landing, ver 02 §6.1.1| T[Transformación: SQLMesh sobre DuckDB]
+    T --> L[DuckLake: Parquet + catálogo PostgreSQL o SQLite]
+    L --> D[DuckDB: consultas de la plataforma y de Cube]
+    L --> E[MotherDuck - escalado cloud, opcional]
+    S -.Live/DirectQuery futuro: DuckDB ATTACH de solo lectura, nunca via SQLMesh.-> D
 ```
 
 ### 6.1 Modo import: ¿`.duckdb` puro, Parquet suelto, o DuckLake?
 
 | Opción | Qué es | Cuándo usarla |
 | --- | --- | --- |
-| Archivo `.duckdb` nativo | Datos + catálogo en un solo binario | Prototipo, desarrollo local, un solo escritor |
+| Archivo `.duckdb` nativo | Datos + catálogo en un solo binario | Experimentos sueltos — la plataforma no lo usa: un solo proceso, sin catálogo compartido |
 | Parquet suelto (sin catálogo) | Archivos en una carpeta/bucket, sin metadata centralizada | Casos simples, pero sin ACID ni time-travel |
-| **DuckLake** (recomendado para producción) | Parquet como almacenamiento + **catálogo en una base SQL** (Postgres o un `.duckdb`), en vez de metadata dispersa en archivos como hacen Iceberg/Delta | Cuando hay más de un escritor, se necesita versionado/time-travel, o refrescos frecuentes con cambios pequeños |
+| **DuckLake** (el que usa la plataforma, en todos los niveles) | Parquet como almacenamiento + **catálogo en una base SQL** (PostgreSQL o SQLite — un catálogo en archivo `.duckdb` no se soporta, §6.7), en vez de metadata dispersa en archivos como hacen Iceberg/Delta | Siempre: versionado/*time travel*, varios escritores con catálogo PostgreSQL, refrescos frecuentes con cambios pequeños |
 
 DuckLake llegó a v1.0 producción-ready en abril 2026 — con apenas 5 meses de historial en producción al momento de este documento, vale la pena tenerlo presente como una madurez todavía joven, no la de un formato con años de uso masivo. Su ventaja central: Iceberg y Delta ya usan una base de datos para el catálogo, pero solo guardan un puntero al último snapshot — la metadata real vive en archivos por capas en object storage, y cada consulta debe leerlos secuencialmente antes de tocar el dato, agregando latencia. DuckLake mete *toda* la metadata en la base SQL, eliminando ese problema y resolviendo además el "problema de los cambios chicos" (cada insert pequeño generando un archivo nuevo) — justo el patrón de un dashboard con refrescos frecuentes.
 
-**Regla práctica:** arrancar con `.duckdb` puro para prototipo; migrar a DuckLake (catálogo en Postgres) en cuanto haya más de un proceso escribiendo. Es un cambio de configuración, no de motor. MotherDuck ofrece DuckLake gestionado (storage, catálogo y cómputo escalables por separado) como capa de conveniencia opcional — nunca como dependencia dura, para mantener la regla de "open source primero".
+**Regla práctica (corregida en el Paso 1):** la versión anterior recomendaba arrancar con un `.duckdb` puro y migrar a DuckLake al aparecer un segundo escritor. La plataforma usa DuckLake desde el primer día, en los tres niveles: catálogo SQLite en el portátil (un proceso escritor, §6.6) y PostgreSQL en equipo local y nube. Cambiar de catálogo es configuración, no código (§6.7). MotherDuck ofrece DuckLake gestionado (storage, catálogo y cómputo escalables por separado) como capa de conveniencia opcional — nunca como dependencia dura, para mantener la regla de "open source primero".
 
 ### 6.2 Import (Lakehouse) vs. Live/DirectQuery — dos caminos distintos, nunca el mismo *hot path*
 
@@ -97,10 +95,13 @@ DuckLake llegó a v1.0 producción-ready en abril 2026 — con apenas 5 meses de
 
 ```
 IMPORT / LAKEHOUSE (el camino normal, el único soportado oficialmente en el MVP)
-Fuente ──dlt──► RAW (condicional) ──SQLMesh──► DuckLake MART ──► DuckDB ──► Cube ──► Visual
+Directo:       fuente certificada ──SQLMesh/DuckDB──► DuckLake: resultado analítico ──► Cube ──► Visual
+Con ingesta:   fuente ──dlt──► landing mínimo ──SQLMesh/DuckDB──► DuckLake: resultado analítico ──► Cube ──► Visual
+(política de materialización: 02-transformacion.md §6.1.1 — sin RAW persistente por defecto)
 
 LIVE / DIRECTQUERY (capacidad futura/experimental — no del MVP)
-Visual ──► Cube ──► DuckDB ──► ATTACH (TYPE POSTGRES) ──► Postgres/MySQL en vivo
+Visual ──► Cube ──► DuckDB ──► ATTACH de solo lectura de una fuente registrada ──► Postgres/MySQL en vivo
+(sin SQLMesh, sin landing, sin DuckLake materializado)
 ```
 
 En el camino Live, SQLMesh nunca aparece — DuckDB consulta la fuente operativa directo, en el momento de la consulta, vía `ATTACH`. Es una arquitectura genuina pero distinta, con sus propios problemas por resolver (latencia de la fuente operativa, no incrementalidad, sin *pre-aggregations* de Cube Store aplicables de la misma forma) — **por eso el MVP declara Import/Lakehouse como el camino soportado oficialmente, y DirectQuery como capacidad futura, en vez de prometer algo cuya arquitectura todavía no está terminada.**
@@ -126,9 +127,9 @@ Ninguno de los dos es candidato a motor del corazón: SQL Server es propietario 
 
 ### 6.5 Tres escritores concurrentes (CDC, SQLMesh, Input Tables) — investigado, mayormente resuelto
 
-**Una revisión externa marcó como riesgo no examinado que este proyecto tiene, en la práctica, procesos que pueden escribir al mismo tiempo:** el CDC de dlt (capa 3, escribiendo a `raw_*`), el `plan`/`run` de SQLMesh (capa 2, escribiendo físicamente solo a `mart_*` — `stg_*`/`int_*` son vistas lógicas por defecto, sección 6.1.1 de `02-transformacion.md`, y una vista no escribe ningún archivo, así que no participa de este problema en absoluto), y las escrituras en vivo de Input Tables (capa 2, sección 9, escribiendo a `raw_input_*`). Vale la pena separar qué de esto ya está resuelto por diseño y qué queda como pendiente real.
+**Una revisión externa marcó como riesgo no examinado que este proyecto tiene, en la práctica, procesos que pueden escribir al mismo tiempo:** el CDC de dlt (capa 3, escribiendo su log de cambios en el landing), el `plan`/`run` de SQLMesh (capa 2, escribiendo físicamente solo a `mart_*` — `stg_*`/`int_*` son vistas lógicas por defecto, sección 6.1.1 de `02-transformacion.md`, y una vista no escribe ningún archivo, así que no participa de este problema en absoluto), y las escrituras en vivo de Input Tables (capa 2, sección 9, escribiendo a `raw_input_*`). Vale la pena separar qué de esto ya está resuelto por diseño y qué queda como pendiente real.
 
-**Lo que ya está resuelto, y por una razón concreta:** DuckLake usa **control de concurrencia optimista a nivel de catálogo**, no a nivel de archivo — cada escritor sube sus Parquet a object storage de forma independiente y recién al final hace una transacción corta contra el catálogo para registrarlos. Los **appends nunca generan conflicto, ni siquiera sobre la misma tabla**, y los commits que no chocan (por ejemplo, escrituras a tablas distintas) se resuelven automáticamente con reintentos — DuckLake sostiene del orden de 100 transacciones por segundo a nivel de catálogo. Como los escritores físicos reales de este proyecto (CDC → `raw_*`, SQLMesh → solo `mart_*`, Input Tables → `raw_input_*`) tocan **conjuntos de tablas disjuntos**, y las vistas intermedias no escriben nada, el escenario de "escritores pisándose" descrito en la crítica casi no ocurre en la práctica.
+**Lo que ya está resuelto, y por una razón concreta:** DuckLake usa **control de concurrencia optimista a nivel de catálogo**, no a nivel de archivo — cada escritor sube sus Parquet a object storage de forma independiente y recién al final hace una transacción corta contra el catálogo para registrarlos. Los **appends nunca generan conflicto, ni siquiera sobre la misma tabla**, y los commits que no chocan (por ejemplo, escrituras a tablas distintas) se resuelven automáticamente con reintentos — DuckLake sostiene del orden de 100 transacciones por segundo a nivel de catálogo. Como los escritores físicos reales de este proyecto (CDC → su landing, SQLMesh → `mart_*` y los intermedios que se justifiquen, Input Tables → `raw_input_*`) tocan **conjuntos de tablas disjuntos**, y las vistas intermedias no escriben nada, el escenario de "escritores pisándose" descrito en la crítica casi no ocurre en la práctica.
 
 **Lo que sí queda como riesgo genuino, y hay que diseñarlo:** un conflicto real de concurrencia optimista ocurre cuando dos escritores intentan **modificar (no agregar) la misma fila** al mismo tiempo — por ejemplo, dos usuarios editando el mismo valor de forecast en Input Tables en el mismo instante. Ese caso sí puede fallar con un error de conflicto, y la mitigación es responsabilidad de la Capa 6 (API Gateway), no de esta capa: el procedimiento de escritura de Input Tables (capa 6, sección 9.1) debe reintentar automáticamente con backoff ante un conflicto de commit, usando los parámetros que DuckLake ya expone para esto (`ducklake_max_retry_count`, `ducklake_retry_wait_ms`, `ducklake_retry_backoff`) — no hay que inventar un mecanismo de colas ni de locking propio.
 
@@ -167,6 +168,28 @@ El catálogo SQLite existe para el nivel **portátil** (un solo desarrollador, u
 **Errores.** Un único `LakehouseError` con `code` cerrado (`extension_missing`, `catalog_unreachable`, `catalog_format_mismatch`, `data_path_mismatch`, `query_failed`, `read_only_violation`, `write_conflict`, `catalog_busy`, `engine_closed`), `retryable` y un `remedy` cuando hay algo que hacer. El mapeo se construyó con los mensajes textuales del motor capturados en la Fase 0, que son los *fixtures* de sus tests. Un `timeoutMs` vencido cancela la consulta y responde `query_failed` con `retryable: true` — a diferencia de una sentencia inválida, que es `query_failed` no reintentable.
 
 **Telemetría.** Un span `CLIENT` y una medición de `db.client.operation.duration` por sentencia, solo con convenciones estables (`db.system.name="duckdb"`, `db.namespace="lake"`, `db.operation.name` por la palabra clave inicial, `error.type` con el `code`) más el atributo propio `lakehouse.catalog_type`. Nunca el texto SQL, literales, parámetros, mensajes del motor ni credenciales.
+
+### 6.8 Retención del lakehouse — explícita y configurable (sección canónica)
+
+**DuckLake no borra nada por sí mismo.** Cada commit crea una versión nueva de las tablas que toca (*time travel*), y los archivos Parquet que una tabla deja de usar —porque se reemplazó, se borraron filas o se compactó— **siguen en disco** mientras alguna versión retenida los referencie. Medido en el Paso 1: después de dos `pnpm seed` sobre el mismo lakehouse, `fixture/sales_orders` tiene 20.000 filas pero **dos** archivos Parquet. Sin una política de retención, "no duplicar datos" (`02-transformacion.md` §6.1.1) se cumple en el diseño lógico y no en el disco. Un modelo `FULL` de SQLMesh, que reescribe su tabla en cada `run`, lo haría notar enseguida.
+
+> **DuckLake retention is explicit and configurable.**
+
+La política cubre cuatro operaciones de mantenimiento de DuckLake (nombres según la documentación de DuckLake 1.0; se verifican con la versión fijada antes de programarlas):
+
+| Operación | Qué hace | Efecto |
+| --- | --- | --- |
+| Expirar versiones (`ducklake_expire_snapshots`) | Marca como expiradas las versiones más viejas que el umbral | Ya no se puede hacer *time travel* a ellas; sus archivos exclusivos quedan elegibles para borrarse |
+| Limpiar archivos viejos (`ducklake_cleanup_old_files`) | Borra los archivos que solo usaban versiones expiradas, pasado un umbral de seguridad | Libera el espacio de verdad |
+| Limpiar huérfanos (`ducklake_delete_orphaned_files`) | Borra archivos de la carpeta de datos que el catálogo no conoce (p. ej., escrituras interrumpidas) | Evita basura invisible |
+| Compactar (`ducklake_merge_adjacent_files`, y la reescritura de archivos con muchos borrados) | Junta archivos chicos y reescribe los muy fragmentados | Rendimiento de lectura; genera versiones nuevas, que la misma política expira después |
+
+**Política:**
+
+- **Desarrollo** usa un *default* razonable: 7 días de *time travel*.
+- **Producción** es configurable por política, no una constante del producto: se fija por instalación y, si hace falta, por tabla. **La política concreta de producción se cierra antes de depender de ella operacionalmente.**
+- El mantenimiento **es una operación administrativa explícita**, igual que el vaciado de *Inlining v1* (§6.7): nunca un efecto de leer ni de escribir. Se ejecuta a través del puerto administrativo —hoy `LakehouseAdminPort` no la ofrece: agregarla es un cambio de contrato versionado— y la programa Airflow en el Paso 8 (`07-orquestacion.md`).
+- La retención de versiones **no reemplaza a un snapshot**. Si una fuente necesita historia más allá de la ventana de *time travel* —auditoría, regulación, reproducibilidad—, eso es un snapshot con motivo y retención propios (`02-transformacion.md` §6.1.1), no un umbral de expiración más largo.
 
 ---
 

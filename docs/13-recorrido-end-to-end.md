@@ -29,7 +29,9 @@ packages/auth/src/workspace-membership.ts                 ← Capa 9
 
 ---
 
-## Paso 1 — Ingesta (Capa 3): el dato sale de Salesforce, directo a DuckLake
+## Paso 1 — Ingesta (Capa 3): el dato sale de Salesforce, a un landing mínimo en DuckLake
+
+**Por qué este caso usa el import con ingesta (`02-transformacion.md` §6.1.1):** Salesforce es una API de SaaS paginada, con cuota de llamadas, que no se puede volver a leer barato ni consultar con SQL. Por eso pasa por dlt y deja un landing. Una base SQL certificada para lectura directa (`02-transformacion.md` §6.1.2) no tendría este paso: SQLMesh la leería directo en el paso 2.
 
 **Corrección 1: `destination="ducklake"`, no `"duckdb"`.** dlt tiene un destino nativo de DuckLake desde su versión 1.30 — con catálogo SQLite/Postgres y datos en Parquet, configurable de forma automática en modo local. Usar `destination="duckdb"` en el ejemplo original ignoraba por completo la elección de la Capa 1; con `"ducklake"`, dlt encastra directo sin ningún puente propio.
 
@@ -49,21 +51,22 @@ from salesforce import salesforce_source  # código local, generado por `dlt ini
 pipeline = dlt.pipeline(
     pipeline_name="salesforce_ventas",
     destination="ducklake",       # el destino nativo de DuckLake, coherente con la capa 1
-    dataset_name="raw",
+    dataset_name="landing",
 )
 
 source = salesforce_source()  # credenciales resueltas por dlt vía secrets.toml, ver 03-ingesta.md
 
+# Solo el recurso que el análisis usa — nunca todo el catálogo de objetos de Salesforce.
 pipeline.run(source.with_resources("opportunity"))
 ```
 
-**Resultado concreto:** una tabla `raw.opportunity` en el catálogo DuckLake (capa 1), con las columnas crudas tal como las expone la API de Salesforce. dlt ya resolvió la paginación, el estado incremental y la evolución de esquema — y ahora, además, escribe directo al formato de la Capa 1 sin destino intermedio.
+**Resultado concreto:** una tabla `landing.opportunity` en DuckLake (capa 1) con los campos que expone la API, más las columnas de control de dlt (`03-ingesta.md` §6.4). Es un landing, no una capa RAW: existe porque esta fuente no se puede volver a leer barato. dlt ya resolvió la paginación, el estado incremental y la evolución de esquema — y ahora, además, escribe directo al formato de la Capa 1 sin destino intermedio.
 
 **Quién lo dispara:** no se corre a mano — lo dispara un DAG de Airflow (paso 6).
 
 ---
 
-## Paso 2 — Transformación (Capa 2): de `raw` a `mart_*`, con la sintaxis incremental correcta
+## Paso 2 — Transformación (Capa 2): de `landing` a `mart_*`, con la sintaxis incremental correcta
 
 ```sql
 -- packages/transform/models/staging/stg_ventas_sf.sql
@@ -77,7 +80,7 @@ SELECT
     amount              AS monto,
     close_date          AS fecha_cierre,
     stage_name          AS etapa
-FROM raw.opportunity
+FROM landing.opportunity
 WHERE stage_name = 'Closed Won'
 ```
 
@@ -289,7 +292,8 @@ with DAG("pipeline_ventas", schedule="@daily") as dag:
 
     @task
     def ingesta():
-        # dispara salesforce_ventas.py (paso 1)
+        # dispara salesforce_ventas.py (paso 1). Solo existe porque esta fuente usa el import
+        # con ingesta: un pipeline de import directo no tiene tarea de extracción.
         ...
 
     @task
@@ -344,7 +348,7 @@ Sin cambios respecto a la versión anterior — un job de OpenMetadata, orquesta
 ## Lo que NUNCA pasa en este recorrido (y si pasa, es un bug de diseño)
 
 - El frontend (paso 7) nunca llama directo a Cube (paso 3) — siempre pasa por la Capa 6.
-- SQLMesh (paso 2) nunca llama a la API de Salesforce.
+- SQLMesh (paso 2) nunca llama a la API de Salesforce, y ningún modelo adjunta una fuente por su cuenta: solo lee fuentes registradas por la plataforma (`02-transformacion.md` §6.1.2).
 - El rol de workspace y los `entitlements` **nunca viajan en el JWT de sesión de better-auth** (ese solo lleva `user_id` + `organization_id`) — se resuelven en cada request y viajan en un JWT corto **distinto**, firmado por la Gateway específicamente para hablarle a Cube (paso 5). Son dos JWT diferentes, con contenido y propósito distintos — no confundirlos.
 - Ningún paso escribe directo a `mart_ventas` fuera de SQLMesh.
 - **Nuevo: la API Gateway (paso 4) nunca le pasa un objeto con `metric` directo a `cubeClient.load()`** — siempre pasa por `toCubeQuery()`. Un passthrough sin adaptador es un query malformado que Cube va a rechazar.

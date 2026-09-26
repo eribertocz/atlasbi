@@ -49,7 +49,7 @@ Las tres opciones open source dominantes en esta categoría son **OpenMetadata**
 
 ## 4. Qué agregamos que Power BI no tiene (o tiene solo en Fabric, de forma cerrada)
 
-- **Lineage de extremo a extremo**, cruzando las 11 capas ya construidas: fuente → dlt → SQLMesh → Cube → dashboard, algo que hoy vive fragmentado entre herramientas.
+- **Lineage de extremo a extremo**, cruzando las 11 capas ya construidas: fuente → (dlt → landing, cuando la fuente usa ingesta) → SQLMesh → Cube → dashboard, algo que hoy vive fragmentado entre herramientas. En el import directo (`02-transformacion.md` §6.1.2), SQLMesh declara la fuente registrada como modelo externo y el lineage arranca en ella.
 - **Certificación conectada a un catálogo navegable** — la certificación de la capa 9 deja de ser una insignia aislada y pasa a ser un atributo consultable en el catálogo.
 - **Glosario de negocio compartido**, para que "cliente activo" signifique lo mismo en toda la organización, no una definición distinta por cada analista.
 - **Gobernanza sobre impacto de cambios**: antes de borrar una columna, poder preguntar "¿qué se rompe?".

@@ -110,7 +110,7 @@ Modelos semánticos   Datasets   Métricas   Dimensiones   Jerarquías   Conexio
 | --- | --- |
 | Modelo semántico | Cube (capa 4) |
 | Actualizaciones | SQLMesh + Airflow (capas 2 y 7) |
-| Conexiones | dlt (capa 3) |
+| Conexiones | El registro de fuentes de la plataforma; por debajo, lectura directa vía DuckDB o dlt con landing, según la fuente (`02-transformacion.md` §6.1.1) |
 | (nunca aparece en la UI) | DuckDB/DuckLake (capa 1) — el usuario de negocio no tiene ninguna razón para saber que existen |
 
 Al abrir una métrica, se muestra su certificación y su *owner* (capa 9) y un enlace a *lineage* — consumiendo la API de OpenMetadata (sección 1), no reconstruyendo su UI:
@@ -206,16 +206,25 @@ Pasos aplicados
                                     [Aplicar]
 ```
 
-Cada paso es una operación de una lista cerrada (filtrar, unir, renombrar, tipar, pivotar/despivotar, columna calculada, deduplicar, agrupar) — nunca SQL libre. Por debajo, cada paso se traduce a una expresión de **Ibis** (el candidato investigado, `18-first-class-citizens.md`), que Ibis compila a SQL real para DuckDB.
+Cada paso es una operación de una lista cerrada (filtrar, unir, renombrar, tipar, pivotar/despivotar, columna calculada, deduplicar, agrupar) — nunca SQL libre. La secuencia que el autor recorre es, conceptualmente:
+
+```
+Conectar → Seleccionar → Filtrar → Renombrar → Tipar → Unir → Derivar → Agrupar → Publicar
+```
+
+Los pasos se guardan como un **Transformation AST** —el contrato versionado de `21-engineering-standards.md` §2—; por debajo, para la vista previa, cada paso se traduce a una expresión de **Ibis** (el candidato investigado, `18-first-class-citizens.md`), que Ibis compila a SQL real para DuckDB.
+
+**El autor nunca ve el camino de ejecución.** No sabe si su fuente se lee directo o pasa por dlt con un landing, ni que existen SQLMesh, DuckDB o DuckLake: la plataforma decide el camino según la política canónica de materialización (`02-transformacion.md` §6.1.1 y §6.1.2).
 
 **Corrección de un riesgo de diseño real, señalado en una revisión posterior: si "Ibis → SQL → DuckDB" fuera el único camino, se crearía una segunda vía de transformación paralela a SQLMesh — un ingeniero prepara datos con SQLMesh (con lineage, versionado, incrementalidad, entornos), un autor no técnico prepararía datos con Ibis directo a DuckDB (sin nada de eso). Dos motores de transformación distintos para el mismo problema es exactamente el tipo de duplicación que este proyecto evita en otras capas.** La corrección: separar **Preview** de **Publish**, con destinos distintos a propósito:
 
 ```
 PREVIEW (mientras el autor arma los pasos, iterativo, instantáneo)
-Visual AST ──► Ibis ──► DuckDB ──► resultado de vista previa, descartable
+Transformation AST ──► Ibis ──► DuckDB ──► resultado de vista previa sobre una muestra, descartable
 
 PUBLISH (cuando el autor confirma que el resultado sirve)
-Visual AST ──► compilador ──► modelo SQLMesh gestionado ──► sqlmesh plan ──► DuckLake MART
+Transformation AST ──► compilador ──► modelo SQLMesh gestionado ──► sqlmesh plan ──► DuckLake: resultado analítico
+                         (lee la fuente registrada, o el landing si la fuente usa ingesta)
 ```
 
 **Ibis nunca es el destino final de una transformación publicada** — es el motor rápido para que el autor vea el resultado mientras arma los pasos, sin esperar un ciclo de `sqlmesh plan`. Al publicar, el mismo AST se compila a un modelo SQLMesh real (`stg_*`/`mart_*`, `02-transformacion.md`), que pasa por el mismo `plan`/`run` que cualquier modelo escrito por un ingeniero — heredando lineage, versionado, incrementalidad y *environments* de fábrica, sin que el autor no técnico tenga que saber que eso está pasando.

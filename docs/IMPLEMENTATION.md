@@ -10,7 +10,7 @@
 |---|---|---|---|---|
 | 1 | Almacenamiento | `packages/warehouse` | DuckDB + DuckLake (catálogo SQLite/Postgres según nivel) | SQL |
 | 2 | Transformación | `packages/transform` | SQLMesh | SQL + Python |
-| 3 | Ingesta | `packages/ingestion` | dlt (+ ADBC) | Python |
+| 3 | Ingesta | `packages/ingestion` | dlt (+ ADBC) — solo para fuentes que no se leen directo | Python |
 | 4 | Semántico | `packages/semantic` | Cube Core | YAML |
 | 5 | IA/copiloto | `packages/ai-copilot` | `LLMProvider` (Claude por defecto) + MCP propio | TypeScript |
 | 6 | API Gateway | `packages/api-gateway` | tRPC (BFF) + OpenAPI 3.x (público) | TypeScript |
@@ -32,7 +32,7 @@ Frontend (8)
 API Gateway (6) ──valida identidad──► Auth (9) ──consulta──► workspace_membership
    │ security context {user_id, organization_id, workspace_id, workspace_role, entitlements}
    ▼
-Semántico (4) ◄──lee mart_*── Transformación (2) ◄──lee raw_* (condicional, solo si la fuente lo justifica — ver 02-transformacion.md §6.1.1) / Parquet externo durable── Ingesta (3)
+Semántico (4) ◄──lee mart_*── Transformación (2) ◄──lee fuente registrada (directo) / archivo durable / landing mínimo (con ingesta) — 02-transformacion.md §6.1.1── Ingesta (3)
    │
    ▼
 Almacenamiento (1)
@@ -70,9 +70,9 @@ Realtime (10) ──sync/broadcast── visual, filter_definition (Postgres)
 6. Madurez verificada en producción, no experimental.
 7. Gobernanza evaluada con criterio (licencia, bus factor, forkabilidad, criticidad, radio de impacto) — nunca mecánica. Detalle completo en `CLAUDE.md`.
 8. Rescatar lo mejor de otros BI, traducido a herramientas ya elegidas, nunca copiado literal.
-9. **No materializar ni duplicar datos sin justificación explícita.** `stg_*`/`int_*` son `VIEW` (lógicas) por defecto — el propio default de SQLMesh. Solo `mart_*` se materializa siempre (rendimiento real, consultado en vivo por Cube). Materializar algo intermedio exige una de cuatro razones: rendimiento, reutilización por 2+ marts, incrementalidad real con estado, o auditoría — nunca "por las dudas". Detalle completo en `02-transformacion.md` sección 6.1.1.
+9. **No materializar ni duplicar datos sin justificación explícita — sin RAW persistente por defecto.** Import guarda en DuckLake el resultado analítico (`mart_*`); landing mínimo solo con dlt; snapshot solo con motivo y retención; `stg_*`/`int_*` lógicos por defecto; Live no materializa. Política canónica en `02-transformacion.md` §6.1.1–6.1.2; retención en `01-motor-almacenamiento.md` §6.8.
 
-**Nunca**: FastAPI ni otro framework Python sirviendo al frontend (Python es solo para capas de datos). SQL Lab tocando `mart_*` directo. Un modelo Python de SQLMesh llamando a una API externa (eso es trabajo de dlt, capa 3). Un rol de workspace baked-in en el JWT. Un objeto `{ metric, dimensions }` pasado directo a `cubeClient.load()` sin el adaptador de `13-recorrido-end-to-end.md` §4 — Cube espera `{ measures: [...], dimensions: [...] }`, nunca un campo `metric` suelto. `sqlmesh apply` como comando (no existe) — es `sqlmesh plan --auto-apply` para desplegar cambios, `sqlmesh run` para la ejecución programada de modelos ya desplegados; nunca `plan --auto-apply` dentro del DAG diario de Airflow.
+**Nunca**: FastAPI ni otro framework Python sirviendo al frontend (Python es solo para capas de datos). SQL Lab tocando `mart_*` directo. Un modelo Python de SQLMesh llamando a una API externa (eso es trabajo de dlt, capa 3). Un modelo SQL adjuntando una fuente por su cuenta, o una fuente no registrada (`02-transformacion.md` §6.1.2). Un pipeline de dlt copiando tablas completas cuando la fuente permitía traer solo lo necesario. Un rol de workspace baked-in en el JWT. Un objeto `{ metric, dimensions }` pasado directo a `cubeClient.load()` sin el adaptador de `13-recorrido-end-to-end.md` §4 — Cube espera `{ measures: [...], dimensions: [...] }`, nunca un campo `metric` suelto. `sqlmesh apply` como comando (no existe) — es `sqlmesh plan --auto-apply` para desplegar cambios, `sqlmesh run` para la ejecución programada de modelos ya desplegados; nunca `plan --auto-apply` dentro del DAG diario de Airflow.
 
 ---
 
@@ -98,6 +98,7 @@ Realtime (10) ──sync/broadcast── visual, filter_definition (Postgres)
 - Fuera de alcance todavía (huecos de producto, no de arquitectura): authoring visual completo, catálogo/lineage en UI, embedding, alertas por umbral, exportación programada, mobile, accesibilidad. Ver `00-documentacion-general.md` sección 4 y `AUDITORIA-EXTERNA.md`.
 - Dirección estratégica de visualización (diferenciador principal: Visualization Engine propio, Visual Intelligence, Design System, Motion, Custom Component Studio en HTML/CSS/Vanilla JS aislado, Custom Visual SDK) — **fijada en `22-visualization-engine.md`**; es visión, no entra en el MVP. `VisualSpec` nunca persiste configuración de un renderer.
 - **Bloqueante antes del SQL Lab (medido en el Paso 1):** el puerto de solo lectura del lakehouse es suficiente para la plataforma, no para SQL libre de usuarios humanos — la lista única de pendientes está en `08-frontend.md` §10.3.
+- **Retención del lakehouse en producción:** explícita y configurable; el *default* de desarrollo es 7 días, y la política de producción se cierra antes de depender de ella operacionalmente (`01-motor-almacenamiento.md` §6.8).
 - **Decisión pendiente antes del Paso 3:** el repositorio `minio/minio` está archivado; la pieza S3-compatible local se reevalúa con la regla 7 (`11-infraestructura.md` §4.4).
 - **Nunca confundir una capacidad arquitectónica con la herramienta que la implementa hoy** (Semantic Model ≠ Cube, Matrix Engine ≠ TanStack Table, Visualization Engine ≠ ECharts) — **resuelto en `18-first-class-citizens.md`**, lectura obligatoria antes de tocar código de la Capa 8.
 

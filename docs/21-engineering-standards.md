@@ -35,7 +35,7 @@ Version 1.8.2
 ├── Filter AST           v3
 ├── Calculation AST      v2
 ├── Plugin SDK           1.3.0
-├── Data Studio AST      v1
+├── Transformation AST   v1   (lo que produce Data Studio)
 ├── Config Schema        v2
 └── DB Migration         000072
 ```
