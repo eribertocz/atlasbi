@@ -91,6 +91,28 @@ Este proyecto tiene que soportar dos modos de despliegue distintos, y la forma d
 
 **Qué servidor, con la regla 7:** MinIO queda descartado: la edición comunitaria dejó de publicar imágenes y binarios en octubre de 2025, entró en modo mantenimiento en diciembre de 2025 y el repositorio `minio/minio` está archivado, sin parches de seguridad. Los candidatos son **versitygw** (Versity, Apache-2.0: un *gateway* sin estado que guarda cada objeto como un archivo común, así que los Parquet siguen siendo una carpeta legible sin la herramienta) y **Garage** (Deuxfleurs, AGPL-3.0, pensado para autohosting chico). DuckDB no prueba oficialmente ninguno de los dos contra `httpfs`, así que la Fase 0 del Paso 3 los mide con la misma batería y la elección se cierra con sus resultados. SeaweedFS queda como respaldo documentado (un mantenedor con el 75 % de los commits, modelo *open core*). El fork `pgsty/minio` y RustFS se descartan por ahora: el primero es un proyecto chico para una pieza de datos central; el segundo publicó su 1.0 en septiembre de 2026, después de un CVE crítico en su ciclo alpha. Apache Ozone y Ceph RGW tienen la mejor gobernanza, pero son desproporcionados para este nivel (varios servicios, JVM o clúster: el mismo argumento que Keycloak en `09-auth-gobernanza.md`); quedan anotados para instalaciones grandes.
 
+**Elegido: Garage (resultado de la Fase 0 del Paso 3, 2026-09-26).** Los dos candidatos pasaron la batería completa con DuckLake 1.0 vía `httpfs`:
+
+- Aprovisionamiento, una carga de 20 000 filas y el vaciado del *inlining*.
+- Un archivo de 191 MiB en *multipart*, lecturas `READ_ONLY` y 8 escritores en paralelo.
+- El mantenimiento de DuckLake, y `plan`/`run`/`audit` de SQLMesh.
+- Ningún secreto en salidas ni en logs.
+
+La diferencia estuvo en las **credenciales de solo lectura** que exige todo lector (`01-motor-almacenamiento.md` §6.7):
+
+- **Garage** las da con su API de administración v2: una clave con permiso de solo lectura sobre el bucket, pedida con un *token* de portador. Son 31 líneas propias, sin firmar nada.
+- **versitygw** pide firmar su API de administración con SigV4 y usar *bucket policies*: unas 118 líneas propias, 70 de ellas de un firmador SigV4. La otra vía, sus ACL, tiene una semántica distinta de la de AWS.
+
+**Licencia:** AGPL-3.0 es aceptable porque Garage corre sin modificar, como un servicio aparte, y nunca se distribuye con la plataforma (`21-engineering-standards.md` §11).
+
+**Riesgo residual (regla 7):** es un equipo chico (la asociación Deuxfleurs, con financiamiento de NLnet). Queda acotado porque la plataforma solo habla S3, así que reemplazarlo por otro servidor compatible es configuración.
+
+**Cómo corre:**
+
+- Garage v2.4.1, fijado por digest, en modo `server --single-node`.
+- Publica en `127.0.0.1` el puerto `53900` (S3) y el `53903` (administración).
+- `pnpm bootstrap` crea el bucket y las dos claves a través de la API de administración, con los valores del `.env`: la del escritor con lectura y escritura, sin ser dueña del bucket, y la de los lectores de solo lectura.
+
 **Modo nube:** el usuario elige, pieza por pieza, dónde vive cada componente — porque cada uno habla un protocolo estándar, se pueden combinar proveedores distintos sin fricción (por ejemplo: catálogo en Neon, datos en Cloudflare R2, frontend en DigitalOcean). OpenTofu resuelve esto con **un módulo por proveedor** (uno para "bucket S3 en DigitalOcean", otro para "bucket S3 en AWS", etc.); el usuario solo cambia una variable de configuración para elegir cuál usar, y el resto de la plataforma sigue hablándole a "un endpoint S3 genérico" sin enterarse de cuál es.
 
 **Regla de diseño que se desprende de esto:** ninguna capa de este proyecto puede importar el SDK propietario de un proveedor específico (por ejemplo, el SDK de AWS) directo en su código de aplicación — siempre a través del protocolo estándar (cliente S3 genérico, driver de Postgres estándar). El único lugar donde el nombre de un proveedor concreto aparece es en la configuración de OpenTofu de ese despliegue puntual, nunca en el código de las capas 1 a 10.

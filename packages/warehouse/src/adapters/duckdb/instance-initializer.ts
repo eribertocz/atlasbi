@@ -14,6 +14,7 @@ import {
 import { createCatalogSecretStatement, parsePostgresCatalogUrl } from './catalog-secret.ts';
 import { PROVISION_REMEDY, toLakehouseError } from './error-mapper.ts';
 import { listLiteral } from './sql-literals.ts';
+import { createStorageSecretStatement } from './storage-secret.ts';
 
 /** DuckDB extension each catalog needs besides ducklake (LOAD accepts these aliases). */
 const CATALOG_EXTENSIONS: Record<LakehouseCatalogType, string> = {
@@ -43,8 +44,9 @@ const DUCKLAKE_RETRY_SETTINGS = [
 
 /**
  * Once per instance (Phase 0, S2: LOAD, secrets, ATTACH and unqualified settings are
- * instance-wide): load → settings → catalog secret → attach → read-only hardening. Extension
- * settings only exist after their LOAD, and the hardening order is the one S4 validated.
+ * instance-wide): load → settings → catalog and storage secrets → attach → read-only hardening.
+ * Extension settings only exist after their LOAD, and the hardening order is the one S4 validated
+ * (and P3-4 again with the data path on S3).
  */
 export async function openLakehouseInstance(
   settings: LakehouseSettings,
@@ -77,6 +79,9 @@ export async function openLakehouseInstance(
     connection = await instance.connect();
     await connection.run('LOAD ducklake');
     await connection.run(`LOAD ${CATALOG_EXTENSIONS[settings.catalog.type]}`);
+    if (settings.storage.kind === 's3') {
+      await connection.run('LOAD httpfs');
+    }
     await connection.run("SET GLOBAL TimeZone = 'UTC'");
     for (const [name, value] of DUCKLAKE_RETRY_SETTINGS) {
       await connection.run(`SET GLOBAL ${name} = ${value}`);
@@ -90,12 +95,16 @@ export async function openLakehouseInstance(
     } else {
       catalog = { type: 'sqlite', path: location.sqliteCatalogPath ?? '' };
     }
+    if (settings.storage.kind === 's3') {
+      await connection.run(createStorageSecretStatement(settings.storage, location.dataPath));
+    }
     await connection.run(
       buildAttachStatement({
         catalog,
         dataPath: location.dataPath,
         access,
-        overrideDataPath: settings.overrideDataPath ?? false,
+        overrideDataPath:
+          settings.storage.kind === 'folder' && (settings.storage.overrideDataPath ?? false),
       }),
     );
     if (access === 'read') {

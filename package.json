@@ -20,7 +20,7 @@
     "reset:local": "node tools/platform-cli/src/main.ts reset:local",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "test:integration": "turbo run test:integration",
+    "test:integration": "turbo run test:integration --continue",
     "lint": "eslint . --cache",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

@@ -44,6 +44,18 @@ describe('describeFailure', () => {
     );
     expect(describeFailure('Error: host=h password=s3cret')).toBe('Error: host=h password=***');
   });
+
+  it('never repeats the object storage secret SQLMesh put into its CREATE SECRET', () => {
+    const traceback = [
+      'Traceback (most recent call last):',
+      `duckdb.duckdb.InvalidInputException: Invalid Input Error: while running CREATE OR REPLACE SECRET (TYPE s3, KEY_ID 'GKabc', SECRET 'topsecret', SCOPE 's3://lakehouse/data/')`,
+    ].join('\n');
+
+    expect(describeFailure(traceback)).not.toContain('topsecret');
+    expect(describeFailure("ConfigError: bad secret {'type': 's3', 'secret': 'topsecret'}")).toBe(
+      "ConfigError: bad secret {'type': 's3', 'secret': '***'}",
+    );
+  });
 });
 
 describe('stateSchemaFor', () => {

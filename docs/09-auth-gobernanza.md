@@ -120,6 +120,8 @@ CREATE TABLE data_entitlements (
 5. **Cube Core (capa 4)** usa `entitlements.region` (no `workspace_role`) dentro de su YAML para el filtro de fila real — el rol nunca entra en esa ecuación. `workspace_role` sí puede usarse en Cube para decidir qué medidas/dimensiones están permitidas (control de qué puede *hacer*), pero es una regla separada de la de filas.
 6. Si además hay tablas operativas consultadas directo (fuera del camino de Cube), **RLS nativo de Postgres** aplica la misma lógica de `entitlements`, no de `workspace_role`, como capa adicional de defensa.
 
+**Capacidad disponible, sin implementar todavía: enmascaramiento de datos en Cube Core.** Además de ocultar filas (`row_level`) y miembros (`member_level`), las `access_policy` de Cube Core admiten `member_masking` desde la versión 1.6.23 (la fijada en el Paso 3, 1.7.45, lo incluye): un miembro que el usuario no puede ver en claro devuelve un valor enmascarado (`***`, `-1`, `NULL`, según el `mask` declarado en la dimensión o medida) en vez de negar la consulta entera. Sirve, por ejemplo, para que un reporte compartido siga funcionando para quien no puede ver el nombre del cliente. Queda registrado para cuando haga falta; no forma parte del MVP.
+
 **Por qué el rol (ni los entitlements) pueden vivir en el JWT de sesión de better-auth (paso 1):** un usuario puede tener rol y entitlements distintos en cada workspace — el JWT de sesión es una verdad estática de identidad, válida mientras dura la sesión; el rol y los entitlements son datos de negocio que dependen de *qué* workspace se está consultando ahora mismo, y se resuelven en cada request (paso 2), nunca de antemano.
 
 ### 6.2 `organization` ≠ `workspace` — corrección de un error real de modelado, en dos rondas

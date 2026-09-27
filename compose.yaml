@@ -3,7 +3,8 @@
 # exact tag — never `:latest` — and the versions are justified in docs/versions.md.
 #
 # Services without a `profiles` key form the CORE profile (docs/19 §4). Later build steps add
-# object storage and Cube to CORE, and Airflow/Electric/OpenMetadata behind their own profiles.
+# Airflow/Electric/OpenMetadata behind their own profiles. The portable tier (sqlite catalog) starts
+# neither the object storage nor Cube: the platform CLI names the services it starts.
 name: atlasbi
 
 services:
@@ -18,6 +19,7 @@ services:
       - 127.0.0.1:${ATLASBI_POSTGRES_PORT:-55432}:5432
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    networks: [default, semantic]
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
       interval: 5s
@@ -38,5 +40,97 @@ services:
       - 127.0.0.1:${ATLASBI_OTEL_HEALTH_PORT:-13133}:13133
     restart: unless-stopped
 
+  object-storage:
+    # Garage — the S3-compatible object storage of the "equipo local" tier (docs/11 §4.4). AGPL-3.0,
+    # run unmodified as a separate service, never distributed with the platform (docs/21 §11).
+    # Pinned by digest. The bucket and the lakehouse keys are set up by `pnpm bootstrap` through the
+    # admin API, from .env — this file only starts the server.
+    image: docker.io/dxflrs/garage:v2.4.1@sha256:9c96caa2612d3411acc5b0e6701fb238dbfba33e533a6d7d3d811a4b12d0d020
+    command: ['/garage', 'server', '--single-node']
+    environment:
+      GARAGE_RPC_SECRET: ${ATLASBI_OBJECT_STORAGE_RPC_SECRET:?set ATLASBI_OBJECT_STORAGE_RPC_SECRET in .env}
+      GARAGE_ADMIN_TOKEN: ${ATLASBI_OBJECT_STORAGE_ADMIN_TOKEN:?set ATLASBI_OBJECT_STORAGE_ADMIN_TOKEN in .env}
+    volumes:
+      - ./infra/local/garage.toml:/etc/garage.toml:ro
+      - object-storage-data:/var/lib/garage
+    networks: [default, semantic]
+    ports:
+      # Loopback only, like Postgres: the S3 API and the admin API.
+      - 127.0.0.1:${ATLASBI_OBJECT_STORAGE_PORT:-53900}:3900
+      - 127.0.0.1:${ATLASBI_OBJECT_STORAGE_ADMIN_PORT:-53903}:3903
+    healthcheck:
+      # The image has no shell; its own CLI reports the node's health.
+      test: ['CMD', '/garage', 'status']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  cube-store:
+    # Cube Store — the semantic layer's pre-aggregation cache (docs/04 §6.3, docs/17 §8): a single
+    # node in the local tier. Pinned by digest, like Cube itself (packages/semantic/src/cube-images.ts).
+    image: docker.io/cubejs/cubestore:v1.7.45@sha256:888a9eb901b1f313836b4d5f1d19ffe035cf0e6595dafa6b6fc03a9daa28523b
+    environment:
+      CUBESTORE_DATA_DIR: /cube/data/local
+      CUBESTORE_REMOTE_DIR: /cube/data/remote
+      CUBESTORE_TELEMETRY: 'false'
+    volumes:
+      - cube-store-data:/cube/data
+    networks: [semantic]
+    restart: unless-stopped
+
+  cube:
+    # Cube Core — the semantic layer (docs/04). Secure mode from the first day (docs/17 §8), no
+    # telemetry, and the lakehouse read as its reader only: the SELECT-only catalog role and the
+    # read-only storage key (docs/01 §6.7). packages/semantic/cube/cube.js opens it the platform's way.
+    image: docker.io/cubejs/cube:v1.7.45@sha256:c4dae518806fdedc78b623192ffd187df46d32d212985306a8adf7b1482804a1
+    depends_on:
+      - postgres
+      - object-storage
+      - cube-store
+    environment:
+      NODE_ENV: production
+      CUBEJS_DEV_MODE: 'false'
+      CUBEJS_TELEMETRY: 'false'
+      CUBEJS_DB_TYPE: duckdb
+      CUBEJS_API_SECRET: ${ATLASBI_SEMANTIC_API_SECRET:-}
+      CUBEJS_PG_SQL_PORT: '15432'
+      CUBEJS_SQL_USER: semantic
+      CUBEJS_SQL_PASSWORD: ${ATLASBI_SEMANTIC_SQL_PASSWORD:-}
+      CUBEJS_CUBESTORE_HOST: cube-store
+      # One instance serves queries and refreshes pre-aggregations in the local tier.
+      CUBEJS_REFRESH_WORKER: 'true'
+      # The lakehouse, as its reader. `:-` rather than `:?` so the portable tier's compose file still
+      # parses; the platform CLI checks these secrets before it starts Cube.
+      ATLASBI_LAKEHOUSE_CATALOG_READER_URL: ${ATLASBI_LAKEHOUSE_CATALOG_READER_URL:-}
+      ATLASBI_LAKEHOUSE_CATALOG_HOST: postgres
+      ATLASBI_LAKEHOUSE_CATALOG_PORT: '5432'
+      ATLASBI_LAKEHOUSE_S3_URL: ${ATLASBI_LAKEHOUSE_S3_URL:-s3://lakehouse/data/}
+      ATLASBI_LAKEHOUSE_S3_ENDPOINT: object-storage:3900
+      ATLASBI_LAKEHOUSE_S3_REGION: ${ATLASBI_LAKEHOUSE_S3_REGION:-garage}
+      ATLASBI_LAKEHOUSE_S3_USE_SSL: ${ATLASBI_LAKEHOUSE_S3_USE_SSL:-false}
+      ATLASBI_LAKEHOUSE_S3_READER_ACCESS_KEY_ID: ${ATLASBI_LAKEHOUSE_S3_READER_ACCESS_KEY_ID:-}
+      ATLASBI_LAKEHOUSE_S3_READER_SECRET_ACCESS_KEY: ${ATLASBI_LAKEHOUSE_S3_READER_SECRET_ACCESS_KEY:-}
+    volumes:
+      - ./packages/semantic/cube:/cube/conf:ro
+      # The DuckDB extensions for the container's platform (linux_*), installed by `pnpm bootstrap`
+      # next to the host's own: Cube never downloads one.
+      - ${ATLASBI_DUCKDB_EXTENSION_DIRECTORY:-./.data/duckdb/extensions}:/duckdb/extensions:ro
+    # No way out of the stack: Cube needs nothing from the Internet, so it gets no route to it.
+    networks: [semantic]
+    ports:
+      - 127.0.0.1:${ATLASBI_CUBE_PORT:-4000}:4000
+      - 127.0.0.1:${ATLASBI_CUBE_SQL_PORT:-15432}:15432
+    restart: unless-stopped
+
+networks:
+  default:
+  # Internal: its containers reach each other and publish ports on 127.0.0.1, but have no route to
+  # the Internet. Cube and Cube Store live only here; Postgres and the object storage join it.
+  semantic:
+    internal: true
+
 volumes:
   postgres-data:
+  object-storage-data:
+  cube-store-data:

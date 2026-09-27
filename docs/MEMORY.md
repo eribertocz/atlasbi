@@ -43,13 +43,13 @@ Construir con Claude Code una plataforma de BI moderna, 100% open source, que re
 | 8 | Frontend | SvelteKit + Svelte 5 + **Apache ECharts** (LayerChart descartado: un solo mantenedor) — wrapper propio en `$effect` para conectar ECharts con runes | Bajo (ASF) |
 | 9 | Auth y gobernanza | **better-auth** (adquirida por Vercel, ya no startup en etapa semilla) — **Keycloak** (CNCF) si hay que federar identidad corporativa existente | Bajo tras adquisición |
 | 10 | Colaboración en tiempo real | **ElectricSQL** (adquirida por Databricks) distribuye el estado ya confirmado — Postgres resuelve la escritura, no Electric; granularidad por widget/filtro, no un blob por dashboard. **Yjs no se usa para este caso de uso** (razón arquitectónica + gobernanza débil), pero no queda vetado para siempre — evaluable con la regla 7 para una función acotada futura (texto colaborativo) | Bajo tras adquisición (ElectricSQL) |
-| 11 | Infraestructura | **Podman** (no Docker Inc.) + **OpenTofu** (no Terraform, relicenciado BSL + IBM) + **Edge Connector Agent propio** (WireGuard/mTLS como transporte — corrección: WireGuard solo no equivale a un Gateway completo) | Bajo (Red Hat / Linux Foundation-CNCF / kernel Linux) |
+| 11 | Infraestructura | **Podman** (no Docker Inc.) + **OpenTofu** (no Terraform, relicenciado BSL + IBM) + **Garage** (object storage S3 del nivel equipo local, desde el Paso 3; MinIO descartado, archivado) + **Edge Connector Agent propio** (WireGuard/mTLS como transporte — corrección: WireGuard solo no equivale a un Gateway completo) | Bajo (Red Hat / Linux Foundation-CNCF / kernel Linux) |
 | 12 | Metadata, catálogo y lineage | **OpenMetadata** (capa nueva, agregada por análisis de producto externo) | Medio, documentado (Collate Inc.; sin fundación real en esta categoría — corrección: no es un proyecto de la Linux Foundation, esa empresa solo se unió como miembro corporativo) |
 
 ## Niveles de despliegue (flexibilidad real, sin reescribir código)
 
 1. **Portátil**: catálogo DuckLake en SQLite (un archivo), datos en carpeta local — corre en una tablet, sin servidor.
-2. **Equipo local**: catálogo en Postgres vía Podman, datos locales o MinIO self-hosteado.
+2. **Equipo local**: catálogo en Postgres vía Podman, datos en S3 — Garage vía Podman (corregido en el Paso 3: nunca una carpeta local, por la frontera de contenedor; MinIO descartado).
 3. **Nube**: catálogo en Postgres gestionado y datos en bucket S3-compatible, **misma región** (garantizado por una sola variable en OpenTofu) — el usuario elige proveedor por pieza (ej. catálogo en Neon, datos en R2, frontend en DigitalOcean), porque cada pieza habla un protocolo estándar, no la API de un proveedor.
 
 Migrar de un nivel a otro es *copiar datos* (volcado SQLite→Postgres, sync de archivos), nunca reescribir código de aplicación — detalle en `11-infraestructura.md`.

@@ -7,6 +7,7 @@ import { checkLakehouseExtensions } from '@atlasbi/warehouse';
 
 import { describeFailure } from '../lakehouse-environment.ts';
 import { describeExtensions } from '../health/lakehouse-probes.ts';
+import { findCubeExtensionPlatforms } from '../health/semantic-probes.ts';
 import { WORKSPACE_ROOT } from '../workspace-paths.ts';
 import type { CheckResult } from './check-result.ts';
 
@@ -30,11 +31,31 @@ export async function checkLakehouse(): Promise<CheckResult[]> {
   }
   return [
     await checkDuckDBExtensions(lakehouse.extensionDirectory),
-    await checkWritableFolder('Lakehouse data', lakehouse.dataPath),
+    // S3 storage is checked with the object storage itself (bootstrap/dev readiness).
+    ...(lakehouse.storage.kind === 'folder'
+      ? [await checkWritableFolder('Lakehouse data', lakehouse.storage.dataPath)]
+      : []),
     ...(lakehouse.catalogType === 'sqlite'
       ? [await checkWritableFolder('SQLite catalog', path.dirname(lakehouse.sqliteCatalogPath))]
       : []),
+    // Only the postgres tier runs Cube.
+    ...(lakehouse.catalogType === 'postgres'
+      ? [await checkCubeExtensions(lakehouse.extensionDirectory)]
+      : []),
   ];
+}
+
+/** The extensions for Cube's container (linux_*), next to the host's own. */
+export async function checkCubeExtensions(extensionDirectory: string): Promise<CheckResult> {
+  const platforms = await findCubeExtensionPlatforms(extensionDirectory);
+  return platforms.length > 0
+    ? { name: 'Cube extensions', status: 'pass', detail: platforms.join(', ') }
+    : {
+        name: 'Cube extensions',
+        status: 'warn',
+        detail:
+          'not installed yet — `pnpm bootstrap` installs them inside the Cube image (needs Internet once)',
+      };
 }
 
 export async function checkDuckDBExtensions(extensionDirectory: string): Promise<CheckResult> {

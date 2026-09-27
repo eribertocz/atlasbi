@@ -80,6 +80,21 @@ def lakehouse_connection() -> DuckDBConnectionConfig:
         path = f"sqlite:{required('ATLASBI_LAKEHOUSE_SQLITE_PATH')}"
     else:
         raise ConfigError(f"Unsupported lakehouse catalog type {catalog_type!r} (postgres | sqlite).")
+    if data_path.startswith("s3://"):
+        # The writer key, scoped to the lakehouse's data path only; path-style URLs because a
+        # self-hosted object storage has no wildcard DNS for virtual-hosted buckets (docs/01 §6.7).
+        secrets.append(
+            {
+                "type": "s3",
+                "key_id": required("ATLASBI_LAKEHOUSE_S3_ACCESS_KEY_ID"),
+                "secret": required("ATLASBI_LAKEHOUSE_S3_SECRET_ACCESS_KEY"),
+                "endpoint": required("ATLASBI_LAKEHOUSE_S3_ENDPOINT"),
+                "region": required("ATLASBI_LAKEHOUSE_S3_REGION"),
+                "use_ssl": required("ATLASBI_LAKEHOUSE_S3_USE_SSL"),
+                "url_style": "path",
+                "scope": data_path,
+            }
+        )
     return DuckDBConnectionConfig(
         catalogs={LAKE_ALIAS: DuckDBAttachOptions(type="ducklake", path=path, data_path=data_path)},
         connector_config=offline_duckdb_settings(),

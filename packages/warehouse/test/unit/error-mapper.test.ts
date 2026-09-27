@@ -24,6 +24,16 @@ const EXPECTED: Record<keyof typeof ENGINE_MESSAGES, [LakehouseErrorCode, boolea
   readOnlyInsert: ['read_only_violation', false],
   lockedConfiguration: ['read_only_violation', false],
   outsideAllowedDirectories: ['read_only_violation', false],
+  dataPathTierChange: ['data_path_mismatch', false],
+  s3ReadWrongSecret: ['storage_unreachable', false],
+  s3WriteWrongSecret: ['storage_unreachable', false],
+  s3UnknownKey: ['storage_unreachable', false],
+  s3ReaderKeyWrites: ['storage_unreachable', false],
+  s3EndpointDown: ['storage_unreachable', true],
+  s3UnknownHost: ['storage_unreachable', false],
+  s3MissingBucketOnWrite: ['storage_unreachable', false],
+  s3MissingBucketOnList: ['storage_unreachable', false],
+  s3DataFileDeleted: ['storage_unreachable', false],
 };
 
 describe('toLakehouseError', () => {
@@ -91,5 +101,63 @@ describe('redactCredentials', () => {
     expect(redactCredentials("USER 'u', PASSWORD 'it''s s3cret')")).toBe(
       "USER 'u', PASSWORD '***')",
     );
+  });
+});
+
+describe('object storage failures', () => {
+  it('says why the storage refused, never echoing a key id or a secret', () => {
+    const wrongSecret = toLakehouseError(new Error(ENGINE_MESSAGES.s3ReadWrongSecret));
+    const unknownKey = toLakehouseError(new Error(ENGINE_MESSAGES.s3UnknownKey));
+    const readerWrites = toLakehouseError(new Error(ENGINE_MESSAGES.s3ReaderKeyWrites));
+
+    expect(wrongSecret.message).toContain('the secret key does not match the access key');
+    expect(unknownKey.message).toContain('the access key is unknown to the server');
+    expect(unknownKey.message).not.toContain('GK000000000000000000000000');
+    expect(readerWrites.message).toContain('a read-only key cannot write');
+    expect(wrongSecret.remedy).toContain('lakehouse.s3-');
+  });
+
+  it('names the endpoint it could not reach, and tells a missing bucket from a missing file', () => {
+    expect(toLakehouseError(new Error(ENGINE_MESSAGES.s3EndpointDown)).message).toBe(
+      'Cannot reach the lakehouse object storage at 127.0.0.1:53999.',
+    );
+    expect(toLakehouseError(new Error(ENGINE_MESSAGES.s3MissingBucketOnList)).remedy).toContain(
+      'ATLASBI_LAKEHOUSE_S3_URL',
+    );
+    expect(toLakehouseError(new Error(ENGINE_MESSAGES.s3DataFileDeleted)).message).toContain(
+      'missing on the object storage',
+    );
+  });
+
+  it('is never mistaken for the catalog being down', () => {
+    // The catalog rule matches "could not connect to server" without regard to case.
+    expect(toLakehouseError(new Error(ENGINE_MESSAGES.s3EndpointDown)).code).toBe(
+      'storage_unreachable',
+    );
+    expect(toLakehouseError(new Error(ENGINE_MESSAGES.serverUnreachableWithSecret)).code).toBe(
+      'catalog_unreachable',
+    );
+  });
+
+  it('redacts an S3 secret or a signed-URL parameter wherever it appears', () => {
+    expect(
+      redactCredentials(
+        "CREATE SECRET s (TYPE s3, KEY_ID 'GKabc', SECRET 'topsecret''x', REGION 'g')",
+      ),
+    ).toBe("CREATE SECRET s (TYPE s3, KEY_ID 'GKabc', SECRET '***', REGION 'g')");
+    expect(
+      redactCredentials('GET /b/k?X-Amz-Credential=GKabc%2F2026&X-Amz-Signature=deadbeef done'),
+    ).toBe('GET /b/k?X-Amz-Credential=***&X-Amz-Signature=*** done');
+  });
+});
+
+describe('a data path from another tier', () => {
+  it('asks for a new lakehouse instead of pointing back at the old folder', () => {
+    const tierChange = toLakehouseError(new Error(ENGINE_MESSAGES.dataPathTierChange));
+    const movedFolder = toLakehouseError(new Error(ENGINE_MESSAGES.dataPathMismatch));
+
+    expect(tierChange.message).toContain('created for another tier');
+    expect(tierChange.remedy).toContain('pnpm reset:local');
+    expect(movedFolder.remedy).toContain('overrideDataPath');
   });
 });

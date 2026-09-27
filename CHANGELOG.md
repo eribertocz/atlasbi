@@ -4,6 +4,114 @@ Versionado del producto según [`docs/21-engineering-standards.md`](docs/21-engi
 §2: SemVer `0.MINOR.PATCH` hasta 1.0; los contratos (API, Report Schema, Config Schema, DB
 Migration…) versionan por separado y se listan en cada release.
 
+## Unreleased
+
+Paso 3 del orden de construcción: Cube Core sobre el lakehouse. Para que un lector en un contenedor
+vea los mismos datos que la plataforma, el nivel "equipo local" pasa a guardar los datos del
+lakehouse en S3 (Garage), con el mismo protocolo que en la nube.
+
+### Agregado — Paso 3: capa semántica (Cube Core)
+
+- **`packages/semantic`**: Cube Core 1.7.45 y Cube Store 1.7.45, fijados por digest, en el perfil
+  CORE del compose.
+  - Modo seguro desde el primer arranque: `NODE_ENV=production`, sin modo desarrollo y sin
+    telemetría, con el secreto de API y una contraseña para el SQL API.
+  - Cube Store en un nodo, con sus datos en el volumen `cube-store-data`.
+- **Driver propio**, subclase del de DuckDB de Cube (`docs/04` §6.6):
+  - Abre la instancia sin red y prepara el lakehouse en el mismo orden que el puerto de lectura de
+    la plataforma, con `READ_ONLY` y la configuración congelada.
+  - No se traga los errores: el driver original ocultaba un lakehouse caído detrás de
+    `/readyz` 200 y de las pre-agregaciones.
+  - El cliente recibe un error genérico, y el detalle va al log con las credenciales redactadas.
+- **Cube lee como lector, nunca como escritor**: el rol del catálogo de solo `SELECT` y la clave S3
+  de solo lectura.
+- **Cube no tiene salida a Internet.** Vive con Cube Store en la red interna `semantic` del
+  compose. Las extensiones de DuckDB que carga (`linux_*`) las instala `pnpm bootstrap` desde
+  dentro de su imagen.
+- **Salud real.** El paso `Cube` pide `/readyz` y además una consulta que lee una columna del
+  lakehouse. `pnpm dev` muestra `Cube extensions` y `Cube healthy — answers from the lakehouse as its
+reader`, y falla en el acto con el remedio si faltan las extensiones.
+- **Modelo inicial**:
+  - `sales_orders` sobre `marts.mart_sales_orders`: `count`, `sum`, `count_distinct`, un ratio,
+    ventana móvil de 3 meses, y mes anterior y variación mes a mes (`multi_stage`).
+  - La pre-agregación `amount_by_region_month`.
+  - `regions`, derivado del mismo mart, para tener un join real.
+- **Tests de integración herméticos**: cada suite levanta su propio Cube y Cube Store en la red
+  interna, sobre un lakehouse descartable, y verifica:
+  - Los números de Cube contra los del puerto de lectura de la plataforma.
+  - La inteligencia de tiempo, el join, y la pre-agregación sin escribir en el lago.
+  - La autenticación del SQL API, la batería de _pushdown_ y los tests de alerta.
+  - Los modos de falla y la ausencia de ruta a Internet.
+
+### Agregado — almacenamiento S3 en el nivel "equipo local"
+
+- **Garage 2.4.1** (object storage S3-compatible, fijado por digest) en el compose. Se eligió con
+  la regla 7 frente a versitygw; MinIO quedó descartado (`docs/11` §4.4). `pnpm bootstrap` crea el
+  bucket y dos claves con su API de administración, a partir del `.env`: la del escritor, con
+  lectura y escritura, y la de los lectores, de solo lectura.
+- **`@atlasbi/warehouse` sobre S3** (`docs/01` §6.7):
+  - Extensión `httpfs` y un secreto S3 acotado a la ruta de datos.
+  - Errores de S3 mapeados al código nuevo `storage_unreachable`, con el remedio, y redacción de
+    `SECRET` y de los parámetros `X-Amz-*`.
+  - Telemetría con `lakehouse.storage_type`.
+- **Credenciales de solo lectura para todo lector.** El rol `lakehouse_reader` (`ensureReadOnlyRole`
+  en `@atlasbi/database`) más la clave S3 de solo lectura. Con `READ_ONLY` el motor todavía
+  permite `CREATE SECRET` y `COPY … TO`: la protección real está en las credenciales. La
+  verificación del lakehouse en `pnpm dev` lee un valor como lector, no un `count(*)`, que DuckLake
+  responde desde las estadísticas.
+- **SQLMesh sobre S3**: `pnpm transform` le pasa al proceso de SQLMesh las credenciales del
+  escritor.
+- **`@atlasbi/warehouse/testing`**: lakehouses descartables por nivel, con las identidades de
+  escritor y de lector. Los de S3 usan `s3://lakehouse/tests/<uuid>/`, que nunca se superpone con
+  los datos del desarrollador.
+- **CLI por nivel**: el nivel portátil levanta solo Postgres y el OTel Collector. `pnpm preflight`
+  revisa los puertos del nivel configurado y las extensiones de Cube.
+
+### Cambiado — incompatible para los entornos de desarrollo
+
+- **Cada nivel fija su almacenamiento**: PostgreSQL + S3 (equipo local y nube) o SQLite + carpeta
+  (portátil). PostgreSQL + carpeta, el _default_ de desarrollo de `0.2.0`, ya no se soporta: un
+  lakehouse de desarrollo anterior se recrea con `pnpm reset:local` + `pnpm bootstrap`.
+- Un `.env` existente se completa a mano desde `.env.example`: las variables del object storage,
+  las claves S3, el lector del catálogo, los puertos y los secretos de Cube.
+
+### Contratos
+
+- **Config Schema v3 → v4**:
+  - Variables `ATLASBI_LAKEHOUSE_S3_URL`, `…_S3_ENDPOINT`, `…_S3_REGION` y `…_S3_USE_SSL`.
+  - Validación del par nivel/almacenamiento.
+  - Secretos nuevos: `lakehouse.catalog-reader-url`, `lakehouse.s3-writer-access-key-id`,
+    `lakehouse.s3-writer-secret-access-key`, `lakehouse.s3-reader-access-key-id`,
+    `lakehouse.s3-reader-secret-access-key`, `object-storage.admin-token` (solo bootstrap),
+    `semantic.api-secret` y `semantic.sql-password`.
+- **`AnalyticalQueryPort` y `LakehouseAdminPort` v1 → v1.1**: código de error nuevo
+  `storage_unreachable` (aditivo). Las versiones de contrato pasan a expresarse como
+  `"MAJOR.MINOR"`.
+- DB Migration: sin cambios. El rol de lectura lo crea `pnpm bootstrap`, no una migración.
+- El modelo semántico todavía no es un contrato público: el puerto `SemanticQueryPort`, que aísla
+  los tipos de Cube, se diseña en el Paso 5.
+
+### Proyecto
+
+- **Licencia Apache-2.0** (`LICENSE`, campo `license` en cada paquete, `docs/21` §11). La auditoría
+  de licencias de las dependencias embebidas queda pendiente antes del lanzamiento público
+  (`docs/IMPLEMENTATION.md`).
+
+### Corrección
+
+- **`docs/17` §3.2.2**, la batería de _pushdown_, revalidada con el modelo real y su
+  pre-agregación:
+  - El remedio "usar `HAVING`" era incorrecto. Un filtro sobre una medida decimal, con orden,
+    falla cuando lo responde una pre-agregación de Cube Store, en cualquier forma. Es un hueco
+    conocido de 1.7.45, documentado con su test de alerta, y se retoma si aparece antes del
+    Paso 11.
+  - Cube sí hace post-procesamiento liviano sobre el resultado agregado, acotado por el
+    `LIMIT 50000` que agrega el SQL API.
+- **`pnpm test:integration` corre con `--continue`.** Sin eso, una suite que fallaba hacía que
+  Turborepo cortara las demás antes de su limpieza, y dejaban contenedores, bases y objetos de
+  prueba. Los tests de integración de `@atlasbi/database` usan ahora los mismos tiempos máximos que
+  el resto.
+
 ## 0.2.0 — vertical slice de datos (2026-09-26)
 
 Pasos 1 y 2 del orden de construcción: el lakehouse (DuckDB + DuckLake) y la transformación

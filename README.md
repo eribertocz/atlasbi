@@ -35,39 +35,46 @@ proyectos Podman de la máquina no se ven afectados). Si el standalone no está 
 ```bash
 corepack enable     # una vez por máquina
 pnpm install
-pnpm bootstrap      # crea .env, levanta la infraestructura, aplica migraciones, instala las
-                    # extensiones de DuckDB (la única descarga) y aprovisiona el lakehouse
+pnpm bootstrap      # crea .env, levanta la infraestructura, aplica migraciones, crea el bucket
+                    # y las claves del object storage, instala las extensiones de DuckDB (las del
+                    # host y las de Cube: la única descarga) y aprovisiona el lakehouse
 pnpm seed           # opcional: dataset de desarrollo en el lakehouse (20.000 filas)
 pnpm transform plan # opcional: SQLMesh construye el mart sobre ese dataset
 ```
 
 **El lakehouse** (DuckDB + DuckLake, [`docs/01`](docs/01-motor-almacenamiento.md) §6.6–6.7) usa por
-defecto un catálogo PostgreSQL en el Postgres local (base `lakehouse`) y guarda los datos en
-`.data/lakehouse/`. Para un catálogo SQLite portátil (un solo proceso que escribe), poné
-`ATLASBI_LAKEHOUSE_CATALOG_TYPE=sqlite` en `.env` y corré `pnpm bootstrap` otra vez. Si ya tenías un
-`.env` de antes del Paso 1, agregale `ATLASBI_LAKEHOUSE_CATALOG_URL` desde `.env.example`:
-`bootstrap` nunca reescribe un `.env` existente.
+defecto el nivel "equipo local": un catálogo PostgreSQL en el Postgres local (base `lakehouse`) y los
+datos en el object storage S3 local (Garage, bucket `lakehouse`). **Cube** (la capa semántica,
+[`docs/04`](docs/04-semantico.md) §6.6) lo lee como su lector de solo lectura. Para el nivel portátil
+(catálogo SQLite, datos en `.data/lakehouse/`, un solo proceso que escribe, sin object storage ni
+Cube), poné `ATLASBI_LAKEHOUSE_CATALOG_TYPE=sqlite` en `.env` y corré `pnpm bootstrap` otra vez.
+
+`bootstrap` nunca reescribe un `.env` existente: si el tuyo es de una versión anterior, agregale las
+variables nuevas desde `.env.example` (al pasar a `0.3.0`: el object storage, el lector del lakehouse
+y Cube). Un lakehouse de desarrollo de `0.2.0` (PostgreSQL con los datos en una carpeta) ya no es un
+nivel soportado: recrealo con `pnpm reset:local` y `pnpm bootstrap`.
 
 Turborepo envía telemetría anónima por defecto; para desactivarla en tu máquina:
 `pnpm exec turbo telemetry disable`.
 
 ## Día a día
 
-| Comando                                              | Qué hace                                                                                                                                                                                                                             |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `pnpm dev`                                           | Verifica prerrequisitos y `.env`, levanta la infraestructura local (Postgres, OTel Collector), aplica migraciones pendientes y espera a que cada pieza —incluido el lakehouse— esté lista. Nunca descarga ni crea nada del lakehouse |
-| `pnpm preflight`                                     | Solo verifica la máquina: versiones, compose provider, puertos libres, extensiones de DuckDB y carpetas del lakehouse. No cambia nada                                                                                                |
-| `pnpm seed`                                          | Carga el dataset de desarrollo en el lakehouse (idempotente; nunca corre solo)                                                                                                                                                       |
-| `pnpm transform <comando>`                           | Corre SQLMesh (`plan`, `run`, `test`, `audit`, `lint`…) sobre el lakehouse. **Es la única forma soportada**: `uv run sqlmesh` directo se salta la verificación del lakehouse y los secretos ([por qué](docs/02-transformacion.md))   |
-| `pnpm stack:up` / `stack:down` / `stack:logs`        | Todo en contenedores / detener / ver logs                                                                                                                                                                                            |
-| `pnpm reset:local`                                   | **Destructivo**: borra la infraestructura local, sus datos y `.data/lakehouse` (pide confirmación). `.env` y las extensiones de DuckDB no se tocan                                                                                   |
-| `pnpm typecheck` / `pnpm lint` / `pnpm format:check` | Chequeos estáticos                                                                                                                                                                                                                   |
-| `pnpm test`                                          | Unit tests (sin infraestructura)                                                                                                                                                                                                     |
-| `pnpm test:integration`                              | Tests contra Postgres y DuckDB/DuckLake reales — requiere `pnpm bootstrap` hecho y `pnpm dev` corriendo                                                                                                                              |
+| Comando                                              | Qué hace                                                                                                                                                                                                                                                                                                                             |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm dev`                                           | Verifica prerrequisitos y `.env`, levanta la infraestructura local (Postgres, OTel Collector, object storage, Cube y Cube Store; en el nivel portátil, solo los dos primeros), aplica migraciones pendientes y espera a que cada pieza —incluidos el lakehouse y Cube respondiendo desde él— esté lista. Nunca descarga ni crea nada |
+| `pnpm preflight`                                     | Solo verifica la máquina: versiones, compose provider, puertos libres (los del nivel configurado), extensiones de DuckDB (las del host y las de Cube) y carpetas del lakehouse. No cambia nada                                                                                                                                       |
+| `pnpm seed`                                          | Carga el dataset de desarrollo en el lakehouse (idempotente; nunca corre solo)                                                                                                                                                                                                                                                       |
+| `pnpm transform <comando>`                           | Corre SQLMesh (`plan`, `run`, `test`, `audit`, `lint`…) sobre el lakehouse. **Es la única forma soportada**: `uv run sqlmesh` directo se salta la verificación del lakehouse y los secretos ([por qué](docs/02-transformacion.md))                                                                                                   |
+| `pnpm stack:up` / `stack:down` / `stack:logs`        | Todo en contenedores / detener / ver logs                                                                                                                                                                                                                                                                                            |
+| `pnpm reset:local`                                   | **Destructivo**: borra la infraestructura local, sus datos y `.data/lakehouse` (pide confirmación). `.env` y las extensiones de DuckDB no se tocan                                                                                                                                                                                   |
+| `pnpm typecheck` / `pnpm lint` / `pnpm format:check` | Chequeos estáticos                                                                                                                                                                                                                                                                                                                   |
+| `pnpm test`                                          | Unit tests (sin infraestructura)                                                                                                                                                                                                                                                                                                     |
+| `pnpm test:integration`                              | Tests contra Postgres, el object storage, DuckDB/DuckLake y Cube reales — requiere `pnpm bootstrap` hecho y `pnpm dev` corriendo                                                                                                                                                                                                     |
 
 La infraestructura local publica sus puertos solo en `127.0.0.1`: Postgres en **55432** (no 5432,
-para no chocar con un Postgres ya instalado), OTLP en 4317/4318 y el health check del Collector
-en 13133. Se cambian en `.env`.
+para no chocar con un Postgres ya instalado), OTLP en 4317/4318, el health check del Collector en
+13133, el object storage en 53900 (S3) y 53903 (administración), y Cube en 4000 (REST) y 15432 (SQL
+API). Se cambian en `.env`. Cube y Cube Store no tienen salida a Internet: viven en una red interna.
 
 ## Estructura
 

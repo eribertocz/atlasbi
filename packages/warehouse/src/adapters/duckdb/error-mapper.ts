@@ -5,14 +5,19 @@ export const SINGLE_WRITER_REMEDY =
 export const PROVISION_REMEDY = 'Provision the lakehouse first: run `pnpm bootstrap`.';
 const EXTENSION_REMEDY =
   'Run `pnpm bootstrap` once (needs Internet): it installs the DuckDB extensions. The runtime never downloads them.';
+const STORAGE_KEY_REMEDY =
+  "Check the lakehouse.s3-*-access-key-id and -secret-access-key secrets, and the key's permission on the bucket (`pnpm bootstrap` creates the reader key).";
 
 const CREDENTIAL_PATTERNS: readonly (readonly [RegExp, string])[] = [
   // scheme://user:password@host
   [/(\/\/[^:/@\s]+:)[^@\s]*@/g, '$1***@'],
   // libpq keyword form: password=secret
   [/(password\s*=\s*)('[^']*'|"[^"]*"|[^\s"';]+)/gi, '$1***'],
-  // DuckDB secret syntax: PASSWORD 'secret'
+  // DuckDB secret syntax: PASSWORD 'secret', SECRET 'secret'
   [/(PASSWORD\s+)'(?:[^']|'')*'/gi, "$1'***'"],
+  [/(\bSECRET\s+)'(?:[^']|'')*'/gi, "$1'***'"],
+  // Signed-URL query parameters, should an engine message ever echo one
+  [/(X-Amz-(?:Signature|Credential|Security-Token)=)[^&\s'"]+/gi, '$1***'],
 ];
 
 /** Defense in depth: no message leaving the adapter carries a credential, whatever produced it. */
@@ -43,6 +48,43 @@ const RULES: readonly Rule[] = [
     },
     remedy: EXTENSION_REMEDY,
   },
+  // Object storage (captured in build step 3 against Garage). Before the catalog rules: the
+  // catalog's "could not connect to server" would otherwise also claim the S3 connection errors.
+  {
+    matches: /\(HTTP 403 Forbidden\)|Forbidden \(HTTP code 403\)/,
+    code: 'storage_unreachable',
+    describe: (message) =>
+      `The lakehouse object storage refused the request: ${forbiddenReason(message)}.`,
+    remedy: STORAGE_KEY_REMEDY,
+  },
+  {
+    matches: /NoSuchBucket/,
+    code: 'storage_unreachable',
+    describe: () => "The lakehouse's bucket does not exist on the object storage.",
+    remedy: 'Check ATLASBI_LAKEHOUSE_S3_URL, or run `pnpm bootstrap`: it creates the bucket.',
+  },
+  {
+    matches: /\(HTTP 404 Not Found\)|Not Found \(HTTP code 404\)/,
+    code: 'storage_unreachable',
+    describe: () =>
+      'A data file the lakehouse catalog references is missing on the object storage.',
+    remedy:
+      'Someone removed files behind the catalog: restore them from a backup, or re-provision the lakehouse.',
+  },
+  {
+    matches: /Could not connect to server error for HTTP/,
+    code: 'storage_unreachable',
+    retryable: true,
+    describe: (message) => `Cannot reach the lakehouse object storage${endpointOf(message)}.`,
+    remedy: 'Start the local stack with `pnpm dev`, or check ATLASBI_LAKEHOUSE_S3_ENDPOINT.',
+  },
+  {
+    matches: /Could not resolve hostname error for HTTP/,
+    code: 'storage_unreachable',
+    describe: (message) =>
+      `Cannot resolve the host of the lakehouse object storage${endpointOf(message)}.`,
+    remedy: 'Check ATLASBI_LAKEHOUSE_S3_ENDPOINT.',
+  },
   {
     matches: /password authentication failed/,
     code: 'catalog_unreachable',
@@ -67,6 +109,19 @@ const RULES: readonly Rule[] = [
     retryable: true,
     describe: () => 'Cannot connect to the lakehouse catalog: the server refused the connection.',
     remedy: 'Start the local stack with `pnpm dev`, or check the host and port of the catalog.',
+  },
+  {
+    // One side S3, the other a folder: not a moved folder but another tier (docs/11 §4.4) — the
+    // tier fixes where the data lives, so changing it means a new lakehouse.
+    matches:
+      /DATA_PATH parameter "s3:\/\/[^"]*" does not match existing data path in the catalog "(?!s3:\/\/)|DATA_PATH parameter "(?!s3:\/\/)[^"]*" does not match existing data path in the catalog "s3:\/\//,
+    code: 'data_path_mismatch',
+    describe: (message) => {
+      const recorded = /existing data path in the catalog "([^"]*)"/.exec(message)?.[1] ?? '';
+      return `This lakehouse was created for another tier: it keeps its data in ${recorded.startsWith('s3://') ? 'S3' : 'a local folder'} (${recorded}).`;
+    },
+    remedy:
+      'Changing tier means a new lakehouse: run `pnpm reset:local`, then `pnpm bootstrap` (docs/11 §4.4).',
   },
   {
     matches: /DATA_PATH parameter .* does not match existing data path/s,
@@ -132,6 +187,25 @@ export function toLakehouseError(error: unknown): LakehouseError {
     retryable: rule.retryable ?? false,
     ...(rule.remedy === undefined ? {} : { remedy: rule.remedy }),
   });
+}
+
+// The server's own reason, without echoing a key id back (it names the key, not the problem).
+function forbiddenReason(message: string): string {
+  if (/Invalid signature/.test(message)) {
+    return 'the secret key does not match the access key';
+  }
+  if (/No such key/.test(message)) {
+    return 'the access key is unknown to the server';
+  }
+  if (/not allowed for this key/.test(message)) {
+    return 'this key may not do that (a read-only key cannot write)';
+  }
+  return 'access denied';
+}
+
+function endpointOf(message: string): string {
+  const endpoint = /for HTTP \w+ to 'https?:\/\/([^/']+)/.exec(message)?.[1];
+  return endpoint === undefined ? '' : ` at ${endpoint}`;
 }
 
 function fatalDetail(message: string): string {

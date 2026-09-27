@@ -51,6 +51,10 @@ describe('readLocalInfraPorts', () => {
       otelGrpc: 4317,
       otelHttp: 4318,
       otelHealth: 13133,
+      objectStorage: 53900,
+      objectStorageAdmin: 53903,
+      cube: 4000,
+      cubeSql: 15432,
     });
   });
 

@@ -2,7 +2,12 @@ import net from 'node:net';
 
 import { ComposeProviderNotFoundError } from '../container-runtime/compose-provider.ts';
 import { runningServices } from '../container-runtime/podman.ts';
-import { hasEnvFile, portsByService, type LocalInfraPorts } from '../local-environment.ts';
+import {
+  hasEnvFile,
+  portsByService,
+  stackServices,
+  type LocalInfraPorts,
+} from '../local-environment.ts';
 import { CommandNotFoundError } from '../system/run-command.ts';
 import type { CheckResult } from './check-result.ts';
 
@@ -12,13 +17,19 @@ export function checkEnvFile(): CheckResult {
     : { name: '.env', status: 'warn', detail: 'not created yet — `pnpm bootstrap` creates it' };
 }
 
-/** Ports already held by this project's own running containers are not conflicts. */
-export async function checkPorts(ports: LocalInfraPorts): Promise<CheckResult> {
+/**
+ * Only the ports of the services this tier starts; ports already held by this project's own
+ * running containers are not conflicts.
+ */
+export async function checkPorts(
+  ports: LocalInfraPorts,
+  services: readonly string[] = stackServices(),
+): Promise<CheckResult> {
   const running = await runningServicesOrNone();
   const conflicts: string[] = [];
   const available: number[] = [];
   const heldByStack: number[] = [];
-  for (const [service, servicePorts] of Object.entries(portsByService(ports))) {
+  for (const [service, servicePorts] of Object.entries(portsByService(ports, services))) {
     if (running.has(service)) {
       heldByStack.push(...servicePorts);
       continue;

@@ -162,6 +162,51 @@ Cube Store cachea resultados de consultas agregadas (pre-agregaciones), no el da
 
 **Por qué esto no reabre la decisión de la sección 4:** ninguna alternativa reúne hoy, en una sola pieza madura, lo que Cube Core ya tiene — headless, Apache 2.0, modelo semántico completo, joins, seguridad de fila, Semantic SQL, REST, GraphQL, DuckDB y ClickHouse nativos, sin atarse a dbt. Sidemantic es la que más vale la pena vigilar por si madura; ninguna justifica hoy un cambio de arquitectura.
 
+### 6.6 Cómo corre Cube en la plataforma (Paso 3, `0.3.0`)
+
+Cube Core 1.7.45 y Cube Store 1.7.45, fijados por digest (`versions.md`), corren en el perfil CORE del compose. La configuración vive en `packages/semantic/cube/`, montada de solo lectura en `/cube/conf`.
+
+**Solo en el nivel "equipo local" (y en la nube): Cube exige el catálogo PostgreSQL, nunca SQLite.** Cube corre en un contenedor Linux, y el lakehouse que lee tiene que estar en un almacenamiento que ese contenedor alcance por el mismo protocolo que en producción: S3 (`11-infraestructura.md` §4.4). El nivel portátil (SQLite + carpeta) no levanta Cube.
+
+**Un driver propio, subclase del de DuckDB de Cube (`cube/lakehouse-driver.cjs`).** El driver de DuckDB que trae Cube tiene cuatro problemas medidos en la Fase 0 del Paso 3:
+
+- Crea la instancia con los valores por defecto de DuckDB, que descargan extensiones de Internet en silencio.
+- Se traga los errores de `initSql`: con el catálogo inalcanzable, `/readyz` responde 200 y las consultas que cubre una pre-agregación siguen contestando desde Cube Store, así que la caída queda invisible.
+- Devuelve a los clientes los errores internos del motor, con host, IP y usuario.
+- No reutiliza `initSql` en las conexiones nuevas de `stream()`.
+
+La subclase abre la instancia sin red (`autoinstall`/`autoload` apagados, `extension_directory` explícito) y prepara la conexión en el mismo orden que el puerto de lectura de la plataforma (`01-motor-almacenamiento.md` §3.2):
+
+1. `LOAD` de ducklake, postgres y httpfs.
+2. `TimeZone` en UTC.
+3. El secreto del catálogo, con el host y el puerto de adentro de la red del stack.
+4. El secreto de almacenamiento, acotado (`SCOPE`) a la ruta de datos.
+5. `ATTACH` con `READ_ONLY` y `CREATE_IF_NOT_EXISTS false`.
+6. `allowed_directories`, `enable_external_access=false` y `lock_configuration`.
+
+Si algo falla, no lo oculta. El cliente recibe siempre el mismo mensaje genérico ("The lakehouse is unavailable to the semantic layer…") y el detalle va al log de Cube, con las credenciales redactadas.
+
+**Lee como lector, nunca como escritor.** Cube usa el rol del catálogo que solo tiene `SELECT` y la clave S3 de solo lectura (`01-motor-almacenamiento.md` §6.7): aunque su configuración se viera comprometida, no puede escribir en el lakehouse.
+
+**Sin Internet, por diseño.**
+
+- Las extensiones de DuckDB que carga Cube (`linux_amd64`, o `linux_arm64` en Apple silicon) las instala `pnpm bootstrap` desde dentro de la propia imagen de Cube, en `.data/duckdb/extensions`, al lado de las del host. Es la única descarga.
+- El contenedor monta esa carpeta de solo lectura.
+- Cube y Cube Store viven en una red interna del compose (`semantic`), que no tiene ruta hacia afuera.
+
+**Salud real, no "el proceso corre".** El paso `Cube` de `pnpm dev` pide `/readyz` y además una consulta REST que lee una columna del lakehouse (`regions.zone`, que ninguna pre-agregación cubre), porque:
+
+- `/readyz` no detecta una clave S3 incorrecta: el catálogo contesta, pero los datos no.
+- Un `count(*)` tampoco la detecta: DuckLake lo responde desde las estadísticas del catálogo, sin leer datos.
+
+**Modelo inicial.**
+
+- `sales_orders` sobre `lake.marts.mart_sales_orders`, siempre con el nombre calificado.
+  - Medidas: `count`, `sum`, `count_distinct`, un ratio, `rolling_window` de 3 meses, y `time_shift` y variación mes a mes como medidas `multi_stage`.
+  - Una pre-agregación: `amount_by_region_month`.
+- `regions`: un cube derivado del mismo mart (`SELECT DISTINCT region`), sin datos nuevos, que da un join real para la batería de *pushdown* (`17-self-service-calculations.md` §3.2.2).
+- El RLS llega con Auth (Pasos 4 y 5), y el puerto `SemanticQueryPort` que aísla los tipos de Cube, con la API Gateway (Paso 5).
+
 ---
 
 ## 7. Contrato de esta capa (qué consume, qué expone)
@@ -174,6 +219,8 @@ Cube Store cachea resultados de consultas agregadas (pre-agregaciones), no el da
 ---
 
 ## 8. Por dónde empezar a construir (paso a paso concreto)
+
+**Estado (Paso 3, `0.3.0`): los pasos 1 a 4 están hechos, tal como describe la sección 6.6.** El 5 llega con Auth (Pasos 4 y 5 del orden de construcción) y el 6 con la API Gateway (Paso 5).
 
 1. Instalar Cube Core (`npx cubejs-cli create` o Podman) apuntando al DuckDB/DuckLake de la capa 1 como fuente.
 2. Definir el primer "cube" sobre una tabla `mart_*` real ya construida en la capa 2 — medidas y dimensiones básicas primero, sin RLS todavía.

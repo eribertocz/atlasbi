@@ -19,8 +19,13 @@ export type { SeedResult } from './development-dataset.ts';
 export { resolveLakehouseLocation } from './lakehouse-location.ts';
 export type { LakehouseLocation } from './lakehouse-location.ts';
 export { INLINING_POLICY, SUPPORTED_CATALOG_FORMAT } from './lakehouse-policies.ts';
-export { describeCatalogType } from './lakehouse-settings.ts';
-export type { LakehouseCatalog, LakehouseSettings } from './lakehouse-settings.ts';
+export { describeCatalogType, describeStorageKind } from './lakehouse-settings.ts';
+export type {
+  LakehouseCatalog,
+  LakehouseSettings,
+  LakehouseStorage,
+  LakehouseStorageKind,
+} from './lakehouse-settings.ts';
 
 /** Read-only port over a hardened, READ_ONLY attach (docs/01 §6.7). */
 export async function createAnalyticalQueryEngine(

@@ -11,7 +11,9 @@ import { instanceOptions } from '../../src/adapters/duckdb/instance-initializer.
 import {
   createAnalyticalQueryEngine,
   createLakehouseAdmin,
+  resolveLakehouseLocation,
   type LakehouseSettings,
+  type LakehouseStorage,
 } from '../../src/index.ts';
 import { createFakeTelemetry } from '../support/fake-telemetry.ts';
 import {
@@ -116,7 +118,7 @@ describe('failures the runtime must report clearly — never by creating, downlo
           'catalog_unreachable',
         );
         expect(error.remedy).toContain('pnpm bootstrap');
-        expect(existsSync(lakehouse.settings.dataPath)).toBe(false);
+        expect(await lakehouse.listDataFiles()).toEqual([]);
         if (lakehouse.settings.catalog.type === 'sqlite') {
           expect(existsSync(lakehouse.settings.catalog.path)).toBe(false);
         }
@@ -210,15 +212,17 @@ describe('failures the runtime must report clearly — never by creating, downlo
     it(`refuses a data path other than the recorded one (${catalogType} catalog)`, async () => {
       const lakehouse = await createTestLakehouse(catalogType);
       try {
+        const { storage } = lakehouse.readerSettings;
+        const elsewhere: LakehouseStorage =
+          storage.kind === 'folder'
+            ? { kind: 'folder', path: path.join(lakehouse.root, 'elsewhere') }
+            : { ...storage, url: storage.url.replace(/\/$/, '-elsewhere/') };
         const error = await expectLakehouseError(
-          createAnalyticalQueryEngine({
-            ...lakehouse.settings,
-            dataPath: path.join(lakehouse.root, 'elsewhere'),
-          }),
+          createAnalyticalQueryEngine({ ...lakehouse.readerSettings, storage: elsewhere }),
           'data_path_mismatch',
         );
 
-        expect(error.message).toContain(`${lakehouse.settings.dataPath.replaceAll('\\', '/')}/`);
+        expect(error.message).toContain(resolveLakehouseLocation(lakehouse.settings).dataPath);
       } finally {
         await lakehouse.dispose();
       }

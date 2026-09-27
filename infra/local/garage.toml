@@ -1,0 +1,17 @@
+# Garage — S3-compatible object storage of the "equipo local" tier (docs/11 §4.4).
+# Secrets never live here: the RPC secret, the admin token and the default (writer) key come from
+# the environment that compose.yaml passes from .env.
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+db_engine = "sqlite"
+# One node: the local tier runs a single server, and durability comes from its disk.
+replication_factor = 1
+rpc_bind_addr = "[::]:3901"
+rpc_public_addr = "127.0.0.1:3901"
+
+[s3_api]
+s3_region = "garage"
+api_bind_addr = "[::]:3900"
+
+[admin]
+api_bind_addr = "[::]:3903"

@@ -96,8 +96,34 @@ export function parseComposeProviderPath(output: string): string | undefined {
   return /external compose provider "([^"]+)"/.exec(output)?.[1]?.replaceAll('\\\\', '\\');
 }
 
-export async function composeUp(): Promise<void> {
-  expectSuccess(await compose(['up', '--detach'], 'inherit'), 'podman compose up');
+/** Starts the stack, or only the named services (the portable tier starts no Cube, no storage). */
+export async function composeUp(services: readonly string[] = []): Promise<void> {
+  expectSuccess(await compose(['up', '--detach', ...services], 'inherit'), 'podman compose up');
+}
+
+export interface OneOffContainer {
+  image: string;
+  entrypoint: string;
+  args: readonly string[];
+  /** Host folder → container path, mounted read-write. */
+  mounts: readonly { source: string; target: string }[];
+}
+
+/** Runs a container to completion and removes it — for bootstrap chores inside an image. */
+export async function runOneOffContainer(container: OneOffContainer): Promise<CommandResult> {
+  const mounts = container.mounts.flatMap(({ source, target }) => [
+    '--mount',
+    `type=bind,src=${source},dst=${target}`,
+  ]);
+  return runCommand('podman', [
+    'run',
+    '--rm',
+    ...mounts,
+    '--entrypoint',
+    container.entrypoint,
+    container.image,
+    ...container.args,
+  ]);
 }
 
 export async function composeDown(options: { removeVolumes: boolean }): Promise<void> {

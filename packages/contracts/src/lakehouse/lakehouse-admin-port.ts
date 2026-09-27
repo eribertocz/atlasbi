@@ -1,7 +1,10 @@
 import type { QueryParameter } from './query-result.ts';
 
-/** Contract version of {@link LakehouseAdminPort} (docs/21 §2). */
-export const LAKEHOUSE_ADMIN_PORT_VERSION = 1;
+/**
+ * Contract version of {@link LakehouseAdminPort} (docs/21 §2), `MAJOR.MINOR` like
+ * `ANALYTICAL_QUERY_PORT_VERSION`. 1.1 added the `storage_unreachable` error code.
+ */
+export const LAKEHOUSE_ADMIN_PORT_VERSION = '1.1';
 
 /** Catalog databases the platform supports (docs/01 §6.6); a DuckDB-file catalog is not one. */
 export const LAKEHOUSE_CATALOG_TYPES = ['postgres', 'sqlite'] as const;

@@ -3,7 +3,9 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  bootstrapSecretKeys,
   ConfigurationError,
+  lakehouseReaderSecretKeys,
   loadConfig,
   loadLakehouseConfig,
   requiredSecretKeys,
@@ -34,7 +36,13 @@ describe('loadConfig', () => {
       telemetry: { otlpEndpoint: 'http://127.0.0.1:4318' },
       lakehouse: {
         catalogType: 'postgres',
-        dataPath: path.join(BASE, '.data/lakehouse/postgres/files'),
+        storage: {
+          kind: 's3',
+          url: 's3://lakehouse/data/',
+          endpoint: '127.0.0.1:53900',
+          region: 'garage',
+          useSsl: false,
+        },
         sqliteCatalogPath: path.join(BASE, '.data/lakehouse/sqlite/catalog.sqlite'),
         extensionDirectory: path.join(BASE, '.data/duckdb/extensions'),
       },
@@ -65,20 +73,83 @@ describe('loadConfig', () => {
   });
 });
 
-describe('lakehouse configuration (Config Schema v2)', () => {
-  it('keeps one data folder per catalog type unless a data path is set', () => {
+describe('lakehouse configuration (Config Schema v4)', () => {
+  it('keeps the portable tier (sqlite) in a data folder, by default or where it is set', () => {
     const sqlite = loadLakehouseConfig(
       { ATLASBI_LAKEHOUSE_CATALOG_TYPE: 'sqlite' },
       { baseDirectory: BASE },
     );
     const explicit = loadLakehouseConfig(
-      { ATLASBI_LAKEHOUSE_DATA_PATH: 'lake/files', ATLASBI_DUCKDB_EXTENSION_DIRECTORY: '/ext' },
+      {
+        ATLASBI_LAKEHOUSE_CATALOG_TYPE: 'sqlite',
+        ATLASBI_LAKEHOUSE_DATA_PATH: 'lake/files',
+        ATLASBI_DUCKDB_EXTENSION_DIRECTORY: '/ext',
+      },
       { baseDirectory: BASE },
     );
 
-    expect(sqlite.dataPath).toBe(path.join(BASE, '.data/lakehouse/sqlite/files'));
-    expect(explicit.dataPath).toBe(path.join(BASE, 'lake/files'));
+    expect(sqlite.storage).toEqual({
+      kind: 'folder',
+      dataPath: path.join(BASE, '.data/lakehouse/sqlite/files'),
+    });
+    expect(explicit.storage).toEqual({ kind: 'folder', dataPath: path.join(BASE, 'lake/files') });
     expect(explicit.extensionDirectory).toBe(path.resolve('/ext'));
+  });
+
+  it('keeps the postgres tier in S3, with every S3 setting overridable', () => {
+    const custom = loadLakehouseConfig({
+      ATLASBI_LAKEHOUSE_S3_URL: 's3://analytics-prod/lake/v1/',
+      ATLASBI_LAKEHOUSE_S3_ENDPOINT: 'objects.internal:443',
+      ATLASBI_LAKEHOUSE_S3_REGION: 'eu-west-1',
+      ATLASBI_LAKEHOUSE_S3_USE_SSL: 'true',
+    });
+
+    expect(custom.storage).toEqual({
+      kind: 's3',
+      url: 's3://analytics-prod/lake/v1/',
+      endpoint: 'objects.internal:443',
+      region: 'eu-west-1',
+      useSsl: true,
+    });
+  });
+
+  it('refuses the storage of the other tier instead of ignoring it (decision D1)', () => {
+    const postgresWithFolder = captureError(() =>
+      loadLakehouseConfig({ ATLASBI_LAKEHOUSE_DATA_PATH: 'lake/files' }),
+    );
+    const sqliteWithS3 = captureError(() =>
+      loadLakehouseConfig({
+        ATLASBI_LAKEHOUSE_CATALOG_TYPE: 'sqlite',
+        ATLASBI_LAKEHOUSE_S3_URL: 's3://lakehouse/data/',
+        ATLASBI_LAKEHOUSE_S3_ENDPOINT: '127.0.0.1:53900',
+      }),
+    );
+
+    expect((postgresWithFolder as ConfigurationError).issues).toEqual([
+      expect.stringMatching(/^ATLASBI_LAKEHOUSE_DATA_PATH: .*portable tier .*S3/),
+    ]);
+    expect((sqliteWithS3 as ConfigurationError).issues).toEqual([
+      expect.stringMatching(/^ATLASBI_LAKEHOUSE_S3_URL: .*portable tier/),
+      expect.stringMatching(/^ATLASBI_LAKEHOUSE_S3_ENDPOINT: .*portable tier/),
+    ]);
+  });
+
+  it('rejects an S3 URL or endpoint DuckLake could not use, naming the variable', () => {
+    const cases = [
+      { ATLASBI_LAKEHOUSE_S3_URL: 's3://lakehouse/data' },
+      { ATLASBI_LAKEHOUSE_S3_URL: 'https://lakehouse/data/' },
+      { ATLASBI_LAKEHOUSE_S3_URL: 's3://Upper_Case/' },
+      { ATLASBI_LAKEHOUSE_S3_ENDPOINT: 'http://127.0.0.1:53900' },
+      { ATLASBI_LAKEHOUSE_S3_ENDPOINT: '127.0.0.1:53900/path' },
+      { ATLASBI_LAKEHOUSE_S3_USE_SSL: 'yes' },
+    ];
+
+    for (const environment of cases) {
+      const [name] = Object.keys(environment);
+      const error = captureError(() => loadLakehouseConfig(environment));
+      expect(error, name).toBeInstanceOf(ConfigurationError);
+      expect((error as ConfigurationError).issues[0], name).toMatch(new RegExp(`^${name}: `));
+    }
   });
 
   it('rejects a DuckDB-file catalog and explains why', () => {
@@ -103,22 +174,53 @@ describe('lakehouse configuration (Config Schema v2)', () => {
     expect(issue).toContain('postgres');
   });
 
-  it('requires the catalog URL secret only for a PostgreSQL catalog', () => {
+  it('requires the writer secrets (catalog owner + S3 writer key) only for the postgres tier', () => {
     const postgres = loadLakehouseConfig({});
     const sqlite = loadLakehouseConfig({ ATLASBI_LAKEHOUSE_CATALOG_TYPE: 'sqlite' });
 
-    expect(requiredSecretKeys(postgres)).toEqual(['database.url', 'lakehouse.catalog-url']);
+    expect(requiredSecretKeys(postgres)).toEqual([
+      'database.url',
+      'lakehouse.catalog-url',
+      'lakehouse.s3-writer-access-key-id',
+      'lakehouse.s3-writer-secret-access-key',
+    ]);
     expect(requiredSecretKeys(sqlite)).toEqual(['database.url']);
   });
 
-  it('adds the SQLMesh state database for transformations only', () => {
-    expect(transformSecretKeys(loadLakehouseConfig({}))).toEqual([
-      'database.url',
-      'lakehouse.catalog-url',
-      'transform.state-url',
+  it('keeps the reader secrets apart: SELECT-only catalog role and read-only S3 key', () => {
+    expect(lakehouseReaderSecretKeys(loadLakehouseConfig({}))).toEqual([
+      'lakehouse.catalog-reader-url',
+      'lakehouse.s3-reader-access-key-id',
+      'lakehouse.s3-reader-secret-access-key',
     ]);
     expect(
+      lakehouseReaderSecretKeys(loadLakehouseConfig({ ATLASBI_LAKEHOUSE_CATALOG_TYPE: 'sqlite' })),
+    ).toEqual([]);
+  });
+
+  it('adds the SQLMesh state database for transformations only', () => {
+    expect(
       transformSecretKeys(loadLakehouseConfig({ ATLASBI_LAKEHOUSE_CATALOG_TYPE: 'sqlite' })),
+    ).toEqual(['database.url', 'transform.state-url']);
+    expect(transformSecretKeys(loadLakehouseConfig({}))).toContain('transform.state-url');
+  });
+
+  it('gives bootstrap everything it sets up, including the storage administration', () => {
+    const keys = bootstrapSecretKeys(loadLakehouseConfig({}));
+
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        'transform.state-url',
+        'lakehouse.catalog-reader-url',
+        'lakehouse.s3-reader-secret-access-key',
+        'object-storage.admin-token',
+        'semantic.api-secret',
+        'semantic.sql-password',
+      ]),
+    );
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(
+      bootstrapSecretKeys(loadLakehouseConfig({ ATLASBI_LAKEHOUSE_CATALOG_TYPE: 'sqlite' })),
     ).toEqual(['database.url', 'transform.state-url']);
   });
 });

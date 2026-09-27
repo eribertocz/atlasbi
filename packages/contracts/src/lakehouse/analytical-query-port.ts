@@ -1,7 +1,11 @@
 import type { QueryParameter, QueryResult } from './query-result.ts';
 
-/** Contract version of {@link AnalyticalQueryPort} (docs/21 §2). */
-export const ANALYTICAL_QUERY_PORT_VERSION = 1;
+/**
+ * Contract version of {@link AnalyticalQueryPort} (docs/21 §2), `MAJOR.MINOR`: a minor version only
+ * adds (an error code, an optional field); anything a consumer could trip over is a major one.
+ * 1.1 added the `storage_unreachable` error code.
+ */
+export const ANALYTICAL_QUERY_PORT_VERSION = '1.1';
 
 /** Rows returned when a caller does not set `maxRows`. */
 export const DEFAULT_QUERY_MAX_ROWS = 10_000;

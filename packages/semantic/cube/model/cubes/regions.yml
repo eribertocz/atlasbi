@@ -1,0 +1,14 @@
+# Regions, derived from the mart itself (build step 3, decision 4): no new data, no table of its own.
+# It gives the pushdown battery (docs/17 §3.2.2) a real join between two cubes.
+cubes:
+  - name: regions
+    sql: SELECT DISTINCT region FROM lake.marts.mart_sales_orders
+    dimensions:
+      - name: region
+        sql: region
+        type: string
+        primary_key: true
+        public: true
+      - name: zone
+        sql: "CASE WHEN {CUBE}.region IN ('North', 'South') THEN 'Axis' ELSE 'Other' END"
+        type: string

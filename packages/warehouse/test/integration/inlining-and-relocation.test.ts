@@ -65,47 +65,56 @@ for (const catalogType of CATALOG_TYPES) {
           await admin.close();
         }
 
-        expect(await summarize(lakehouse.settings)).toEqual([['102', '6951', '0', '1001']]);
-      } finally {
-        await lakehouse.dispose();
-      }
-    });
-  });
-
-  describe(`relocation (${catalogType} catalog)`, () => {
-    it('reads a copied lakehouse only when overriding the data path explicitly', async () => {
-      const lakehouse = await createTestLakehouse(catalogType);
-      try {
-        const admin = await createLakehouseAdmin(lakehouse.settings);
-        try {
-          await admin.execute('CREATE TABLE lake.main.events (id BIGINT)');
-          await admin.execute('INSERT INTO lake.main.events SELECT range FROM range(100)');
-          await admin.execute('INSERT INTO lake.main.events VALUES (1000), (1001)');
-        } finally {
-          await admin.close();
-        }
-        const original = await summarize(lakehouse.settings);
-
-        const copyRoot = path.join(lakehouse.root, 'copy');
-        await mkdir(copyRoot, { recursive: true });
-        await cp(lakehouse.settings.dataPath, path.join(copyRoot, 'files'), { recursive: true });
-        let copied: LakehouseSettings = {
-          ...lakehouse.settings,
-          dataPath: path.join(copyRoot, 'files'),
-        };
-        if (lakehouse.settings.catalog.type === 'sqlite') {
-          const catalogCopy = path.join(copyRoot, 'catalog.sqlite');
-          await cp(lakehouse.settings.catalog.path, catalogCopy);
-          copied = { ...copied, catalog: { type: 'sqlite', path: catalogCopy } };
-        }
-        // The copy must be what is read: the original data files are gone.
-        await removeFolder(lakehouse.settings.dataPath);
-
-        await expectLakehouseError(createAnalyticalQueryEngine(copied), 'data_path_mismatch');
-        expect(await summarize({ ...copied, overrideDataPath: true })).toEqual(original);
+        // Through the reader identity: its role reads the inlined-data tables created after the grant.
+        expect(await summarize(lakehouse.readerSettings)).toEqual([['102', '6951', '0', '1001']]);
       } finally {
         await lakehouse.dispose();
       }
     });
   });
 }
+
+// Relocating a folder is the portable tier's case; on S3 the data path is a URL every process shares.
+describe('relocation (sqlite catalog, data folder)', () => {
+  it('reads a copied lakehouse only when overriding the data path explicitly', async () => {
+    const lakehouse = await createTestLakehouse('sqlite');
+    try {
+      const admin = await createLakehouseAdmin(lakehouse.settings);
+      try {
+        await admin.execute('CREATE TABLE lake.main.events (id BIGINT)');
+        await admin.execute('INSERT INTO lake.main.events SELECT range FROM range(100)');
+        await admin.execute('INSERT INTO lake.main.events VALUES (1000), (1001)');
+      } finally {
+        await admin.close();
+      }
+      const original = await summarize(lakehouse.settings);
+
+      const { catalog, storage } = lakehouse.settings;
+      if (catalog.type !== 'sqlite' || storage.kind !== 'folder') {
+        throw new Error('the portable tier has a SQLite catalog and a data folder');
+      }
+      const copyRoot = path.join(lakehouse.root, 'copy');
+      await mkdir(copyRoot, { recursive: true });
+      await cp(storage.path, path.join(copyRoot, 'files'), { recursive: true });
+      const catalogCopy = path.join(copyRoot, 'catalog.sqlite');
+      await cp(catalog.path, catalogCopy);
+      const copied: LakehouseSettings = {
+        ...lakehouse.settings,
+        catalog: { type: 'sqlite', path: catalogCopy },
+        storage: { kind: 'folder', path: path.join(copyRoot, 'files') },
+      };
+      // The copy must be what is read: the original data files are gone.
+      await removeFolder(storage.path);
+
+      await expectLakehouseError(createAnalyticalQueryEngine(copied), 'data_path_mismatch');
+      expect(
+        await summarize({
+          ...copied,
+          storage: { kind: 'folder', path: path.join(copyRoot, 'files'), overrideDataPath: true },
+        }),
+      ).toEqual(original);
+    } finally {
+      await lakehouse.dispose();
+    }
+  });
+});

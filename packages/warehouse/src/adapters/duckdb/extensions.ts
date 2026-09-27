@@ -8,13 +8,15 @@ import { instanceOptions } from './instance-initializer.ts';
 import { quoteLiteral } from './sql-literals.ts';
 
 /**
- * Installed together whatever the configured catalog, so switching catalog type never needs the
- * Internet. DuckDB registers postgres and sqlite as postgres_scanner and sqlite_scanner (S1).
+ * Installed together whatever the configured tier, so switching catalog type never needs the
+ * Internet: httpfs reads and writes the S3 data files of the postgres tier. DuckDB registers
+ * postgres and sqlite as postgres_scanner and sqlite_scanner (S1).
  */
 const LAKEHOUSE_EXTENSIONS = [
   { name: 'ducklake', registeredAs: 'ducklake' },
   { name: 'postgres', registeredAs: 'postgres_scanner' },
   { name: 'sqlite', registeredAs: 'sqlite_scanner' },
+  { name: 'httpfs', registeredAs: 'httpfs' },
 ] as const;
 
 export type ExtensionState = 'ready' | 'missing' | 'unloadable';

@@ -100,5 +100,19 @@ export default defineConfig(
     files: ['**/*.js'],
     extends: [tseslint.configs.disableTypeChecked],
   },
+  {
+    // Cube's configuration runs inside the Cube container, as CommonJS (docs/04 §6).
+    files: ['packages/semantic/cube/**/*.js', 'packages/semantic/cube/**/*.cjs'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: {
+        require: 'readonly',
+        module: 'writable',
+        process: 'readonly',
+        console: 'readonly',
+        URL: 'readonly',
+      },
+    },
+  },
   prettierConfig,
 );

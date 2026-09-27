@@ -19,11 +19,14 @@ import {
   METRIC_DB_CLIENT_OPERATION_DURATION,
 } from '@opentelemetry/semantic-conventions';
 
+import type { LakehouseStorageKind } from '../../lakehouse-settings.ts';
 import { LAKE_ALIAS } from './attach-statement.ts';
 import { classifyOperation } from './statement-keyword.ts';
 
 /** Platform attribute: which catalog database served the operation. */
 export const ATTR_LAKEHOUSE_CATALOG_TYPE = 'lakehouse.catalog_type';
+/** Platform attribute: where the data files live (`folder` or `s3`). */
+export const ATTR_LAKEHOUSE_STORAGE_TYPE = 'lakehouse.storage_type';
 
 // DuckDB is not among the spec's well-known values; the conventions allow a custom one.
 const DB_SYSTEM_NAME = 'duckdb';
@@ -46,7 +49,11 @@ export class LakehouseTelemetry {
   readonly #duration: Histogram;
   readonly #baseAttributes: Attributes;
 
-  constructor(catalogType: LakehouseCatalogType, providers: TelemetryProviders = {}) {
+  constructor(
+    catalogType: LakehouseCatalogType,
+    storageKind: LakehouseStorageKind,
+    providers: TelemetryProviders = {},
+  ) {
     this.#tracer = (providers.tracerProvider ?? trace.getTracerProvider()).getTracer(
       INSTRUMENTATION_SCOPE,
     );
@@ -61,6 +68,7 @@ export class LakehouseTelemetry {
       [ATTR_DB_SYSTEM_NAME]: DB_SYSTEM_NAME,
       [ATTR_DB_NAMESPACE]: LAKE_ALIAS,
       [ATTR_LAKEHOUSE_CATALOG_TYPE]: catalogType,
+      [ATTR_LAKEHOUSE_STORAGE_TYPE]: storageKind,
     };
   }
 

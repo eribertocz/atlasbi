@@ -38,7 +38,7 @@ export class LakehouseEngine {
     return new LakehouseEngine(
       instance,
       settings.catalog.type,
-      new LakehouseTelemetry(settings.catalog.type, telemetry),
+      new LakehouseTelemetry(settings.catalog.type, settings.storage.kind, telemetry),
     );
   }
 

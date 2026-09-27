@@ -38,6 +38,29 @@ export const ENGINE_MESSAGES = {
     'Invalid Input Error: Cannot execute statement of type "INSERT" on database "lake" which is attached in read-only mode!',
   lockedConfiguration:
     'Invalid Input Error: Cannot change configuration option "enable_external_access" - the configuration has been locked',
+  // Build step 3, `pnpm bootstrap` on a 0.2.0 lakehouse (postgres + folder) under Config Schema v4.
+  dataPathTierChange:
+    'Invalid Configuration Error: DATA_PATH parameter "s3://lakehouse/data/" does not match existing data path in the catalog "E:/bi-platform/.data/lakehouse/postgres/files/".\nYou can override the DATA_PATH by setting OVERRIDE_DATA_PATH to True.',
+  // Object storage, captured in build step 3 against Garage v2.4.1 (httpfs 827222f); object keys
+  // shortened.
+  s3ReadWrongSecret:
+    "HTTP Error: HTTP GET error reading 'http://127.0.0.1:53900/lakehouse/tests/capture/main/t/ducklake-01a0defe.parquet' in region 'garage' (HTTP 403 Forbidden)\n\nAccessDenied: Forbidden: Invalid signature\n\nAuthentication Failure - this is usually caused by invalid or missing credentials.\n* Credentials are provided, but they did not work.\n* See https://duckdb.org/docs/stable/extensions/httpfs/s3api.html",
+  s3WriteWrongSecret:
+    'HTTP Error: Unable to connect to URL s3://lakehouse/tests/capture/main/t/ducklake-01a0defe.parquet: Forbidden (HTTP code 403)\n\nAccessDenied: Forbidden: Invalid signature',
+  s3UnknownKey:
+    "HTTP Error: HTTP GET error reading 'http://127.0.0.1:53900/lakehouse/tests/capture/main/t/ducklake-01a0defe.parquet' in region 'garage' (HTTP 403 Forbidden)\n\nAccessDenied: Forbidden: No such key: GK000000000000000000000000\n\nAuthentication Failure - this is usually caused by invalid or missing credentials.\n* Credentials are provided, but they did not work.\n* See https://duckdb.org/docs/stable/extensions/httpfs/s3api.html",
+  s3ReaderKeyWrites:
+    'HTTP Error: Unable to connect to URL s3://lakehouse/tests/capture/main/t/ducklake-01a0defe.parquet: Forbidden (HTTP code 403)\n\nAccessDenied: Forbidden: Operation is not allowed for this key.',
+  s3EndpointDown:
+    "IO Error: Could not connect to server error for HTTP GET to 'http://127.0.0.1:53999/lakehouse/tests/capture/main/t/ducklake-01a0defe.parquet'",
+  s3UnknownHost:
+    "IO Error: Could not resolve hostname error for HTTP GET to 'http://no-such-host.invalid:3900/lakehouse/tests/capture/main/t/ducklake-01a0defe.parquet'",
+  s3MissingBucketOnWrite:
+    'HTTP Error: Unable to connect to URL s3://no-such-bucket-atlasbi/capture/main/u/ducklake-01a0deff.parquet: Not Found (HTTP code 404)\n\nNoSuchBucket: Bucket not found: no-such-bucket-atlasbi',
+  s3MissingBucketOnList:
+    "HTTP Error: HTTP GET error reading 's3://no-such-bucket-atlasbi/capture' in region 'garage' (HTTP 404 Not Found)\n\nNoSuchBucket: Bucket not found: no-such-bucket-atlasbi\n\nLINE 1: SELECT count(*) FROM glob('s3://no-such-bucket-atlasbi/capture...\n                             ^",
+  s3DataFileDeleted:
+    "HTTP Error: HTTP GET error reading 'http://127.0.0.1:53900/lakehouse/tests/capture/main/t/ducklake-01a0df99.parquet' in region 'garage' (HTTP 404 Not Found)\n\nNoSuchKey: Key not found",
   outsideAllowedDirectories:
     'Permission Error: Cannot access file "C:/work/outside-secret.csv" - file system operations are disabled by configuration\n\nLINE 1: SELECT * FROM read_csv(\'C:/work/outside-secret.csv\')\n                      ^',
 } as const;

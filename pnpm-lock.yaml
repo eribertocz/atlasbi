@@ -122,6 +122,36 @@ importers:
         specifier: 'catalog:'
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6))
 
+  packages/semantic:
+    devDependencies:
+      '@atlasbi/config':
+        specifier: workspace:*
+        version: link:../config
+      '@atlasbi/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@atlasbi/database':
+        specifier: workspace:*
+        version: link:../database
+      '@atlasbi/warehouse':
+        specifier: workspace:*
+        version: link:../warehouse
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.6
+      '@types/pg':
+        specifier: 'catalog:'
+        version: 8.23.1
+      pg:
+        specifier: 'catalog:'
+        version: 8.23.0
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6))
+
   packages/transform:
     dependencies:
       '@atlasbi/warehouse':
@@ -195,6 +225,9 @@ importers:
       '@atlasbi/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@atlasbi/semantic':
+        specifier: workspace:*
+        version: link:../../packages/semantic
       '@atlasbi/transform':
         specifier: workspace:*
         version: link:../../packages/transform

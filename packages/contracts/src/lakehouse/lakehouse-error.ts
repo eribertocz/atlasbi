@@ -1,6 +1,8 @@
 export const LAKEHOUSE_ERROR_CODES = [
   'extension_missing',
   'catalog_unreachable',
+  /** The object storage refused the credentials, has no such bucket, or does not answer. Since 1.1. */
+  'storage_unreachable',
   'catalog_format_mismatch',
   'data_path_mismatch',
   'query_failed',

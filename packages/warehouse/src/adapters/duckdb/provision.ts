@@ -34,7 +34,11 @@ export async function provisionLakehouse(
   telemetry: TelemetryProviders = {},
 ): Promise<ProvisionResult> {
   const location = resolveLakehouseLocation(settings);
-  await createFolder(location.dataPath);
+  // S3 needs no folder: the first data file written (the identity, below) proves the bucket is
+  // there and the key may write to it.
+  if (location.storageKind === 'folder') {
+    await createFolder(location.dataPath);
+  }
   if (location.sqliteCatalogPath !== undefined) {
     await createFolder(path.dirname(location.sqliteCatalogPath));
   }

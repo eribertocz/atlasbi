@@ -8,10 +8,12 @@ import { checkWritableFolder } from '../../src/checks/lakehouse-checks.ts';
 import { describeExtensions, lakehouseReadinessDetail } from '../../src/health/lakehouse-probes.ts';
 
 describe('lakehouse readiness line', () => {
-  it('names the catalog, and always carries the single-writer note for SQLite', () => {
-    expect(lakehouseReadinessDetail('postgres')).toBe('healthy — Catalog: PostgreSQL');
-    expect(lakehouseReadinessDetail('sqlite')).toBe(
-      'healthy — Catalog: SQLite (single-writer mode — recommended for individual development)',
+  it('names catalog and storage, and always carries the single-writer note for SQLite', () => {
+    expect(lakehouseReadinessDetail('postgres', 's3')).toBe(
+      'healthy — Catalog: PostgreSQL · Storage: S3',
+    );
+    expect(lakehouseReadinessDetail('sqlite', 'folder')).toBe(
+      'healthy — Catalog: SQLite (single-writer mode — recommended for individual development) · Storage: local folder',
     );
   });
 

@@ -4,6 +4,17 @@ import { describe, expect, it } from 'vitest';
 
 import { buildAttachStatement } from '../../src/adapters/duckdb/attach-statement.ts';
 import { resolveLakehouseLocation } from '../../src/lakehouse-location.ts';
+import type { LakehouseStorage } from '../../src/lakehouse-settings.ts';
+
+const S3_STORAGE: LakehouseStorage = {
+  kind: 's3',
+  url: 's3://lakehouse/data/',
+  endpoint: '127.0.0.1:53900',
+  region: 'garage',
+  useSsl: false,
+  accessKeyId: 'GKa71a5b1dde70000000000001',
+  secretAccessKey: 'not-a-real-secret',
+};
 
 describe('buildAttachStatement', () => {
   it('never lets the runtime create a lakehouse or silently move its data path', () => {
@@ -52,7 +63,7 @@ describe('resolveLakehouseLocation', () => {
   it('produces one canonical spelling: absolute, forward slashes, data path ending in /', () => {
     const location = resolveLakehouseLocation({
       catalog: { type: 'sqlite', path: 'lake\\catalog.sqlite' },
-      dataPath: 'lake\\files',
+      storage: { kind: 'folder', path: 'lake\\files' },
       extensionDirectory: 'ext',
     });
 
@@ -63,14 +74,29 @@ describe('resolveLakehouseLocation', () => {
     expect(location.dataPath).not.toContain('\\');
   });
 
-  it('has no catalog file for a PostgreSQL catalog', () => {
+  it('keeps an S3 URL exactly as the catalog records it, with no catalog file', () => {
     const location = resolveLakehouseLocation({
       catalog: { type: 'postgres', connectionString: 'postgres://u:p@h/lakehouse' },
-      dataPath: '/lake/files/',
+      storage: S3_STORAGE,
       extensionDirectory: '/ext',
     });
 
-    expect(location.sqliteCatalogPath).toBeUndefined();
-    expect(location.dataPath.endsWith('/files/')).toBe(true);
+    expect(location).toMatchObject({
+      storageKind: 's3',
+      dataPath: 's3://lakehouse/data/',
+      sqliteCatalogPath: undefined,
+    });
+  });
+
+  it('refuses an S3 URL DuckLake could not record consistently', () => {
+    for (const url of ['s3://lakehouse/data', 'https://lakehouse/data/', 's3://UPPER/data/']) {
+      expect(() =>
+        resolveLakehouseLocation({
+          catalog: { type: 'postgres', connectionString: 'postgres://u:p@h/lakehouse' },
+          storage: { ...S3_STORAGE, url },
+          extensionDirectory: '/ext',
+        }),
+      ).toThrow(expect.objectContaining({ code: 'storage_unreachable' }));
+    }
   });
 });

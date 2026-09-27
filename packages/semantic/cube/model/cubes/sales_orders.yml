@@ -1,0 +1,65 @@
+# Sales orders — the first analytical result of the platform (marts.mart_sales_orders, docs/02).
+# Build step 3: basic measures, time intelligence and one pre-aggregation; row-level security comes
+# with auth (build steps 4–5). Cube only reads marts (docs/04 §7), always fully qualified.
+cubes:
+  - name: sales_orders
+    sql_table: lake.marts.mart_sales_orders
+    joins:
+      - name: regions
+        sql: '{CUBE}.region = {regions}.region'
+        relationship: many_to_one
+    measures:
+      - name: order_count
+        type: count
+      - name: total_amount
+        sql: amount
+        type: sum
+      - name: average_order_value
+        sql: '{total_amount} / NULLIF({order_count}, 0)'
+        type: number
+      - name: distinct_customers
+        sql: customer_id
+        type: count_distinct
+      - name: total_quantity
+        sql: quantity
+        type: sum
+      - name: rolling_amount_3m
+        sql: amount
+        type: sum
+        rolling_window:
+          trailing: 3 month
+      - name: total_amount_prior_month
+        multi_stage: true
+        sql: '{total_amount}'
+        type: number
+        time_shift:
+          - time_dimension: order_date
+            interval: 1 month
+            type: prior
+      - name: amount_growth_mom
+        multi_stage: true
+        sql: '({total_amount} - {total_amount_prior_month}) / NULLIF({total_amount_prior_month}, 0)'
+        type: number
+    dimensions:
+      - name: order_id
+        sql: order_id
+        type: number
+        primary_key: true
+      - name: order_date
+        sql: order_date
+        type: time
+      - name: region
+        sql: region
+        type: string
+      - name: product_category
+        sql: product_category
+        type: string
+    pre_aggregations:
+      - name: amount_by_region_month
+        measures:
+          - total_amount
+          - order_count
+        dimensions:
+          - region
+        time_dimension: order_date
+        granularity: month

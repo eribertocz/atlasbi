@@ -26,7 +26,7 @@ describe('classifyOperation', () => {
 describe('LakehouseTelemetry', () => {
   it('records a CLIENT span and a duration with stable attributes only', async () => {
     const fake = createFakeTelemetry();
-    const telemetry = new LakehouseTelemetry('postgres', fake.providers);
+    const telemetry = new LakehouseTelemetry('postgres', 's3', fake.providers);
 
     await telemetry.instrument("SELECT * FROM t WHERE token = 'hunter2'", () => Promise.resolve(1));
 
@@ -41,6 +41,7 @@ describe('LakehouseTelemetry', () => {
           'db.namespace': 'lake',
           'db.operation.name': 'SELECT',
           'lakehouse.catalog_type': 'postgres',
+          'lakehouse.storage_type': 's3',
         },
       }),
     ]);
@@ -54,7 +55,7 @@ describe('LakehouseTelemetry', () => {
 
   it('marks failures with error.type = the normalized code, never the message', async () => {
     const fake = createFakeTelemetry();
-    const telemetry = new LakehouseTelemetry('sqlite', fake.providers);
+    const telemetry = new LakehouseTelemetry('sqlite', 'folder', fake.providers);
 
     await expect(
       telemetry.instrument('SELEC 1', () =>

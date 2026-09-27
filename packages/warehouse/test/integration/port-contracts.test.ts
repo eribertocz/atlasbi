@@ -26,7 +26,9 @@ for (const catalogType of CATALOG_TYPES) {
         await admin.close();
       }
     },
-    openPort: async () => createAnalyticalQueryEngine((await queryFixtureLakehouse()).settings),
+    // As the reader: SELECT-only catalog role and read-only S3 key on the postgres tier.
+    openPort: async () =>
+      createAnalyticalQueryEngine((await queryFixtureLakehouse()).readerSettings),
     dispose: async () => (await queryFixtureLakehouse()).dispose(),
   });
 
@@ -36,7 +38,7 @@ for (const catalogType of CATALOG_TYPES) {
   describeLakehouseAdminPortContract(`DuckDB + DuckLake (${catalogType} catalog)`, {
     openAdmin: async () => createLakehouseAdmin((await adminFixtureLakehouse()).settings),
     openQueryPort: async () =>
-      createAnalyticalQueryEngine((await adminFixtureLakehouse()).settings),
+      createAnalyticalQueryEngine((await adminFixtureLakehouse()).readerSettings),
     dispose: async () => (await adminFixtureLakehouse()).dispose(),
   });
 }

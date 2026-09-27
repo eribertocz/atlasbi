@@ -49,6 +49,10 @@ const localInfraSchema = z.object({
   ATLASBI_OTEL_GRPC_PORT: portSchema.default(4317),
   ATLASBI_OTEL_HTTP_PORT: portSchema.default(4318),
   ATLASBI_OTEL_HEALTH_PORT: portSchema.default(13133),
+  ATLASBI_OBJECT_STORAGE_PORT: portSchema.default(53900),
+  ATLASBI_OBJECT_STORAGE_ADMIN_PORT: portSchema.default(53903),
+  ATLASBI_CUBE_PORT: portSchema.default(4000),
+  ATLASBI_CUBE_SQL_PORT: portSchema.default(15432),
 });
 
 export interface LocalInfraPorts {
@@ -56,6 +60,10 @@ export interface LocalInfraPorts {
   otelGrpc: number;
   otelHttp: number;
   otelHealth: number;
+  objectStorage: number;
+  objectStorageAdmin: number;
+  cube: number;
+  cubeSql: number;
 }
 
 /** Host ports published by compose.yaml, keyed the same way the compose services use them. */
@@ -68,12 +76,47 @@ export function readLocalInfraPorts(env: EnvironmentVariables = process.env): Lo
     otelGrpc: values.ATLASBI_OTEL_GRPC_PORT,
     otelHttp: values.ATLASBI_OTEL_HTTP_PORT,
     otelHealth: values.ATLASBI_OTEL_HEALTH_PORT,
+    objectStorage: values.ATLASBI_OBJECT_STORAGE_PORT,
+    objectStorageAdmin: values.ATLASBI_OBJECT_STORAGE_ADMIN_PORT,
+    cube: values.ATLASBI_CUBE_PORT,
+    cubeSql: values.ATLASBI_CUBE_SQL_PORT,
   };
 }
 
-export function portsByService(ports: LocalInfraPorts): Record<string, number[]> {
-  return {
+/** Every service of compose.yaml: the local tier (postgres catalog, S3 storage, Cube). */
+export const LOCAL_TIER_SERVICES = [
+  'postgres',
+  'otel-collector',
+  'object-storage',
+  'cube-store',
+  'cube',
+] as const;
+
+/** The portable tier (sqlite catalog, folder storage) has neither object storage nor Cube. */
+export const PORTABLE_TIER_SERVICES = ['postgres', 'otel-collector'] as const;
+
+/**
+ * The services the stack starts for the catalog type in `env` — read without validating the rest
+ * of the configuration, so preflight checks the right ports even when .env has other errors.
+ */
+export function stackServices(env: EnvironmentVariables = process.env): readonly string[] {
+  return env.ATLASBI_LAKEHOUSE_CATALOG_TYPE === 'sqlite'
+    ? PORTABLE_TIER_SERVICES
+    : LOCAL_TIER_SERVICES;
+}
+
+/** Host ports of the given services (all of them by default), as compose.yaml publishes them. */
+export function portsByService(
+  ports: LocalInfraPorts,
+  services: readonly string[] = LOCAL_TIER_SERVICES,
+): Record<string, number[]> {
+  const all: Record<string, number[]> = {
     postgres: [ports.postgres],
     'otel-collector': [ports.otelGrpc, ports.otelHttp, ports.otelHealth],
+    'object-storage': [ports.objectStorage, ports.objectStorageAdmin],
+    // Cube Store publishes nothing: only Cube talks to it, inside the stack network.
+    'cube-store': [],
+    cube: [ports.cube, ports.cubeSql],
   };
+  return Object.fromEntries(Object.entries(all).filter(([service]) => services.includes(service)));
 }

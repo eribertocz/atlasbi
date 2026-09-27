@@ -129,23 +129,25 @@ Si se permiten fórmulas arbitrariamente complejas sin ningún límite, el riesg
 
 **Nota relacionada, sobre un cambio más grande en el horizonte: DuckDB 2.0 (modo servidor vía `Quack`, en alfa, release proyectado para la segunda mitad de octubre de 2026) podría eventualmente cambiar cómo Cube se conecta a DuckDB — de embebido a modo servidor.** No se adopta ahora (no está estable, y Cube no confirmó soporte), pero queda como condición explícita de reevaluación en `01-motor-almacenamiento.md`, sección 6.3 — vale la pena revisar esa sección junto con esta cuando llegue el momento de decidir entre DuckDB y ClickHouse para concurrencia media.
 
-**Resultado de la batería — Fase 0 del Paso 3 (2026-09-26), contra Cube Core 1.7.45 y DuckDB 1.5.5 sobre DuckLake en S3.** Método: `EXPLAIN` por el SQL API, en modo seguro. El plan físico incluye el SQL exacto que Cube le manda a DuckDB, así que cada caso se clasifica mirando qué se ejecuta dónde:
+**Resultado de la batería — Paso 3 (2026-09-26), contra Cube Core 1.7.45 y DuckDB 1.5.5 sobre DuckLake en S3.** Medida en la Fase 0 y revalidada en la fase C con el modelo real (`packages/semantic/cube/model/`) y su pre-agregación construida en Cube Store; la revalidación corrigió dos puntos de la primera versión de esta tabla (el ratio y el filtro sobre una medida). Método: `EXPLAIN` por el SQL API, en modo seguro, y además **ejecutar** cada consulta — `EXPLAIN` planifica sin error los casos que después fallan. El plan físico incluye el request o el SQL exacto que Cube le manda a DuckDB, y los operadores que Cube ejecuta por encima, así que cada caso se clasifica mirando qué se ejecuta dónde. La batería vive como test de integración en `packages/semantic/test/integration/semantic-layer.test.ts`:
 
 | Patrón | Resultado |
 | --- | --- |
 | Medida simple | Una consulta de Cube (`CubeScan`) |
-| Ratio de medidas | SQL completo en DuckDB (`CubeScanWrappedSql`) |
+| Ratio de medidas | Sin `ORDER BY`: una consulta de Cube que agrega en DuckDB, y la división la hace Cube fila por fila sobre el resultado agregado (`ProjectionExec`). Con `ORDER BY`: SQL completo en DuckDB (`CubeScanWrappedSql`) |
 | Función de ventana (`RANK`) | ✘ Falla: `Type UInt64 is not supported in response transformation from Cube`. Con `CAST(RANK() OVER (…) AS INTEGER)`: SQL completo en DuckDB, ventana incluida |
-| CTE con filtro sobre una medida | ✘ Falla: `Invalid comparison operation: Decimal128(38, 2) > Decimal128(37, 2)`, con cualquier `CAST` del literal o de la columna. `HAVING` resuelve el mismo caso (una consulta de Cube); un CTE sin filtro, o varios CTE unidos con `JOIN`, funcionan (SQL completo en DuckDB) |
+| Filtro sobre una medida (`HAVING`, CTE o subconsulta) | Una consulta de Cube: el filtro viaja como filtro de Cube. ✘ Falla con una medida decimal cuando la consulta tiene orden y la responde una pre-agregación — ver *Hueco de Cube Store* más abajo |
+| CTE | Un CTE sin filtro: una consulta de Cube. Varios CTE unidos con `JOIN` y filtrados: SQL completo en DuckDB, y el filtro lo aplica Cube sobre el resultado (`FilterExec`) |
 | Join entre cubes | Una consulta de Cube |
 | Rolling window | Medida del modelo (`rolling_window`): una consulta de Cube. `SUM() OVER (… ROWS 2 PRECEDING)` en SQL: SQL completo en DuckDB |
 | Time-shift | Medida `multi_stage` con `time_shift`: una consulta de Cube. `LAG()` en SQL: SQL completo en DuckDB |
 
-Ninguna consulta exitosa cayó en post-procesamiento dentro de Cube. Tres consecuencias más para el Editor de Semantic SQL:
+Cuatro consecuencias para el Editor de Semantic SQL:
 
+- **Qué corre dentro de Cube, y con qué límite.** La agregación corre siempre en DuckDB. Cube hace, a lo sumo, operaciones por fila sobre el resultado ya agregado: una proyección (el ratio sin `ORDER BY`) o un filtro (CTE unidos y filtrados). Es trabajo liviano, pero tiene un límite real: el SQL API agrega **`LIMIT 50000`** a lo que empuja, así que un filtro que aplica Cube ve, como mucho, 50 000 filas agregadas. Si la consulta empujada produjera más, ese filtro trabajaría sobre un resultado truncado — se deduce del límite, no se midió con más de 50 000 grupos. Por eso el Visual Builder solo genera formas cuyo filtro viaja a Cube (`HAVING`, o `WHERE` sobre un CTE sin `JOIN`), nunca una donde el filtro quede del lado de Cube.
+- **Hueco de Cube Store con medidas decimales.** Un filtro sobre una medida decimal, en una consulta con orden (REST aplica un orden por defecto aunque no se pida), falla cuando la responde una pre-agregación: `Invalid comparison operation: Decimal128(38, 2) > Decimal128(37, 2)`. Falla igual por REST que por el SQL API, y con cualquier forma del filtro — `HAVING`, CTE o subconsulta. **La primera versión de esta sección recomendaba `HAVING` como remedio, y era incorrecto:** solo funcionaba porque esa prueba no tenía `ORDER BY`. La misma consulta respondida por DuckDB (una dimensión que la pre-agregación no cubre) funciona, y con una medida entera (`count`) también. **Decisión del Paso 3:** la pre-agregación se queda, y el hueco queda documentado con su test de alerta, sin buscarle un arreglo ahora. Se retoma si aparece antes del Paso 11: el Visual Builder es quien realmente puede generar ese patrón (un "top N con umbral" sobre una medida decimal).
 - **Exactitud:** el SQL API devuelve las medidas decimales como punto flotante (`262.43600250000003`). La API REST las devuelve como string, pero sin la escala (`446207.5`, no `446207.50`). Ninguna de las dos es el formato sin pérdida del puerto de lectura (`01-motor-almacenamiento.md` §7); la representación la define el contrato de la Capa 6 (Paso 5).
-- **Límite por defecto:** el SQL API agrega `LIMIT 50000` a lo que empuja.
-- **Los dos huecos no tienen issue en `cube-js/cube`** (revisado el 2026-09-26). El PR #11684, ya incorporado, empujó las funciones de ventana y registra un problema de tipos parecido con `NTILE`. Los dos casos se revalidan con cada versión nueva de Cube antes de construir el Editor; mientras sigan abiertos, el Visual Builder genera la forma que funciona (`CAST` en las funciones de ranking, `HAVING` en lugar de un CTE filtrado).
+- **Los dos huecos (`RANK` y el filtro decimal) no tienen issue en `cube-js/cube`** (revisado el 2026-09-26; no se publicó ninguno). El PR #11684, ya incorporado, empujó las funciones de ventana y registra un problema de tipos parecido con `NTILE`. Los dos se revalidan con cada versión nueva de Cube — sus tests de alerta fallan el día que Cube los resuelva. Mientras sigan abiertos, el Visual Builder usa `CAST` en las funciones de ranking; para el filtro decimal no hay forma de SQL que lo evite mientras una pre-agregación responda la consulta (ver la decisión de arriba).
 
 ### 3.2.3 Corrección bloqueante: la autenticación del SQL API no es la misma que la de REST/GraphQL
 
@@ -297,6 +299,13 @@ CUBEJS_API_SECRET=<secreto real, el mismo que usa la Capa 6 para firmar el JWT>
 - **MVP production-like**: Cube Store incluido en el `podman compose` desde el principio — más fiel, un poco más de infraestructura desde el día uno.
 
 Este proyecto elige **MVP production-like** (Cube Store incluido desde el principio) — es coherente con la filosofía general de probar contra algo real cuanto antes, en vez de descubrir después que el comportamiento cambia con Cube Store en el medio.
+
+**Implementado en el Paso 3 (`0.3.0`).** Cube Core 1.7.45 y Cube Store 1.7.45, fijados por digest, corren en el perfil CORE del compose del nivel "equipo local" (`19-operabilidad-runtime.md` §1):
+
+- **Modo seguro desde el primer arranque:** `NODE_ENV=production`, `CUBEJS_DEV_MODE=false` y `CUBEJS_TELEMETRY=false`. `CUBEJS_API_SECRET` es el secreto `semantic.api-secret`, y el SQL API escucha en `15432` con usuario `semantic` y el secreto `semantic.sql-password`. Los tests de integración verifican que una contraseña incorrecta se rechaza.
+- **Cube Store en un nodo**, con su *metastore* y su *remote dir* en el volumen `cube-store-data`, que `pnpm reset:local` borra.
+- **Sin salida a Internet.** Cube y Cube Store viven solo en la red interna `semantic` del compose, a la que se unen Postgres y el object storage. Publican sus puertos en `127.0.0.1`, pero no tienen ruta hacia afuera, y un test lo verifica. Las extensiones de DuckDB que carga Cube las instala `pnpm bootstrap` desde dentro de su imagen (`04-semantico.md` §6).
+- **Lee el lakehouse como su lector:** el rol de solo `SELECT` del catálogo y la clave S3 de solo lectura (`01-motor-almacenamiento.md` §6.7).
 
 ---
 

@@ -1,6 +1,5 @@
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { rm } from 'node:fs/promises';
 
 import { EnvSecretProvider, SECRET_KEYS } from '@atlasbi/config';
 import { LakehouseError, type LakehouseCatalogType } from '@atlasbi/contracts';
@@ -12,6 +11,11 @@ import {
   seedDevelopmentDataset,
   type LakehouseSettings,
 } from '@atlasbi/warehouse';
+import {
+  createTestLakehouse as createWarehouseTestLakehouse,
+  testS3Storage,
+  type TestLakehouse as WarehouseTestLakehouse,
+} from '@atlasbi/warehouse/testing';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -25,49 +29,39 @@ async function adminUrl(): Promise<string> {
 
 interface TestLakehouse {
   target: Extract<TransformTarget, { mode: 'lakehouse' }>;
-  /** Folder holding the data files (and the SQLite catalog, if any). */
-  root: string;
+  lakehouse: WarehouseTestLakehouse;
   dispose(): Promise<void>;
 }
 
 /**
- * A provisioned, seeded, throwaway lakehouse plus a throwaway SQLMesh state database — or the
- * given state database, which the caller owns.
+ * A provisioned, seeded, throwaway lakehouse of either tier (postgres: data on S3; sqlite: a data
+ * folder) plus a throwaway SQLMesh state database — or the given one, which the caller owns.
  */
 async function createTestLakehouse(
   catalogType: LakehouseCatalogType,
   sharedStateConnectionString?: string,
 ): Promise<TestLakehouse> {
-  const root = await mkdtemp(path.join(tmpdir(), 'atlasbi-transform-test-'));
-  const databases: ThrowawayDatabase[] = [];
-  let state = sharedStateConnectionString;
-  if (state === undefined) {
-    const database = await createThrowawayDatabase(await adminUrl());
-    databases.push(database);
-    state = database.connectionString;
+  const lakehouse = await createWarehouseTestLakehouse(catalogType, { provision: false });
+  let state: ThrowawayDatabase | undefined;
+  try {
+    await provisionAndSeed(lakehouse.settings);
+    if (sharedStateConnectionString === undefined) {
+      state = await createThrowawayDatabase(await adminUrl());
+    }
+  } catch (error) {
+    await lakehouse.dispose().catch(() => undefined);
+    throw error;
   }
-  const catalog =
-    catalogType === 'postgres' ? await createThrowawayDatabase(await adminUrl()) : undefined;
-  if (catalog !== undefined) {
-    databases.push(catalog);
-  }
-  const lakehouse: LakehouseSettings = {
-    catalog:
-      catalog === undefined
-        ? { type: 'sqlite', path: path.join(root, 'catalog', 'catalog.sqlite') }
-        : { type: 'postgres', connectionString: catalog.connectionString },
-    dataPath: path.join(root, 'files'),
-    extensionDirectory: extensionDirectory(),
-  };
-  await provisionAndSeed(lakehouse);
   return {
-    target: { mode: 'lakehouse', lakehouse, stateConnectionString: state },
-    root,
+    target: {
+      mode: 'lakehouse',
+      lakehouse: lakehouse.settings,
+      stateConnectionString: sharedStateConnectionString ?? state?.connectionString ?? '',
+    },
+    lakehouse,
     dispose: async () => {
-      for (const database of databases) {
-        await database.drop();
-      }
-      await rm(root, { recursive: true, force: true });
+      await state?.drop();
+      await lakehouse.dispose();
     },
   };
 }
@@ -101,6 +95,10 @@ for (const catalogType of ['postgres', 'sqlite'] as const) {
 
       expect(run.exitCode, run.stdout + run.stderr).toBe(0);
       expect(run.stdout).toContain('audits passed');
+      const { storage } = lakehouse.target.lakehouse;
+      if (storage.kind === 's3') {
+        expect(run.stdout + run.stderr).not.toContain(storage.secretAccessKey);
+      }
     });
 
     it('produces a mart the platform reads losslessly through its read-only port', async () => {
@@ -126,10 +124,7 @@ for (const catalogType of ['postgres', 'sqlite'] as const) {
     });
 
     it('stores the mart without per-day partitions, and the staging model as a view only', async () => {
-      const dataPath = lakehouse.target.lakehouse.dataPath;
-      const files = (await readdir(dataPath, { recursive: true })).map((file) =>
-        file.replaceAll('\\', '/'),
-      );
+      const files = await lakehouse.lakehouse.listDataFiles();
       const martFiles = files.filter(
         (file) => file.startsWith('sqlmesh__marts/') && file.endsWith('.parquet'),
       );
@@ -186,7 +181,7 @@ describe('SQLMesh state belongs to one lakehouse', () => {
 
       // What `pnpm reset:local` + `pnpm bootstrap` do to the lakehouse. The state database is kept
       // on purpose: the worst case for a state keyed by location.
-      await rm(lakehouse.root, { recursive: true, force: true });
+      await rm(lakehouse.lakehouse.root, { recursive: true, force: true });
       await provisionAndSeed(lakehouse.target.lakehouse);
       const second = await runSqlMesh(lakehouse.target, ['plan', '--auto-apply', '--no-prompts'], {
         output: 'capture',
@@ -205,14 +200,13 @@ describe('the runner protects the lakehouse before SQLMesh ever attaches it', ()
   it('refuses a catalog that was never provisioned, and nothing gets created in it', async () => {
     const empty = await createThrowawayDatabase(await adminUrl());
     const state = await createThrowawayDatabase(await adminUrl());
-    const root = await mkdtemp(path.join(tmpdir(), 'atlasbi-transform-test-'));
     try {
       const error: unknown = await runSqlMesh(
         {
           mode: 'lakehouse',
           lakehouse: {
             catalog: { type: 'postgres', connectionString: empty.connectionString },
-            dataPath: path.join(root, 'files'),
+            storage: await testS3Storage('writer', `tests/${randomUUID()}/`),
             extensionDirectory: extensionDirectory(),
           },
           stateConnectionString: state.connectionString,
@@ -227,7 +221,6 @@ describe('the runner protects the lakehouse before SQLMesh ever attaches it', ()
     } finally {
       await empty.drop();
       await state.drop();
-      await rm(root, { recursive: true, force: true });
     }
   });
 

@@ -15,7 +15,7 @@
 | Cube Core | Sí | Servicio |
 | Cube Store | Sí | Servicio |
 | Postgres | Sí | Servicio |
-| Object storage (MinIO en local, S3-compatible en nube) | Sí en local | Servicio — **decisión pendiente antes del Paso 3:** el repositorio `minio/minio` está archivado, así que la pieza local S3-compatible se reevalúa con la regla 7 antes de agregarla al compose. Hasta entonces el lakehouse usa una carpeta local (Paso 1) |
+| Object storage (Garage en local, S3-compatible en nube) | Sí en local | Servicio — decidido en el Paso 3 con la regla 7, tras descartar MinIO (repositorio archivado): Garage v2.4.1 en un nodo (`11-infraestructura.md` §4.4). El nivel portátil (SQLite) no lo usa: guarda los datos en una carpeta |
 | OTel Collector | Sí | Servicio |
 | Airflow | Sí, cuando se habilita orquestación (perfil MVP en adelante, sección 4) | Servicios de Airflow |
 | ElectricSQL | Sí, fase realtime | Servicio |
@@ -60,7 +60,7 @@ pnpm dev          # ver sección 3
 | `pnpm test` / `pnpm test:integration` / `pnpm test:e2e` | La pirámide de testing de `15-testing-cicd.md` — `test` son unit tests sin infraestructura; `test:integration` necesita `pnpm dev` corriendo (Postgres real); `test:e2e` llega con el primer recorrido de punta a punta |
 | `pnpm seed` | Carga datos de demo (sección 6) — nunca corre solo, siempre a pedido explícito. Llega en el Paso 1 con el dataset del lakehouse; la organización y los usuarios demo se suman en el Paso 4 |
 | `pnpm transform <comando>` | Corre SQLMesh (`plan`, `run`, `test`, `audit`, `lint`…) sobre el lakehouse — **la única forma soportada** (`02-transformacion.md` §6.5): verifica el lakehouse antes y le pasa los secretos solo a ese proceso. `test` y `lint` corren sin lakehouse ni secretos |
-| `pnpm reset:local` | **Destructivo, siempre explícito.** Pide escribir `atlasbi` para confirmar (o `--confirm=atlasbi` en uso no interactivo) y borra los volúmenes; `.env` no se toca. Nunca se esconde un borrado de datos dentro de `dev` — si `pnpm dev` alguna vez necesita limpiar algo, lo pide, no lo hace solo |
+| `pnpm reset:local` | **Destructivo, siempre explícito.** Pide escribir `atlasbi` para confirmar (o `--confirm=atlasbi` en uso no interactivo) y borra los volúmenes —incluidos los del object storage y de Cube Store— y la carpeta `.data/lakehouse`; `.env` no se toca, y las extensiones de DuckDB se conservan (son una caché, no datos). Nunca se esconde un borrado de datos dentro de `dev` — si `pnpm dev` alguna vez necesita limpiar algo, lo pide, no lo hace solo |
 
 **Por qué `pnpm dev` y `pnpm stack:up` son comandos distintos, no el mismo con una bandera:** durante desarrollo, *hot reload* en el código propio (Web, API Gateway) es lo que hace productivo el día a día — nadie quiere reconstruir un contenedor cada vez que cambia una línea de Svelte. Pero esa velocidad esconde diferencias reales con producción (variables de entorno, healthchecks, tiempos de arranque). `stack:up` es la versión honesta — todo en contenedores, la misma forma en que corre de verdad — y es la que se usa para el vertical slice de validación (`16-mvp-definicion-terminado.md`) y para CI.
 
@@ -96,6 +96,24 @@ Si algo no está saludable, `pnpm dev` no imprime el resumen de arriba como si t
 
 **Alcance real a partir del Paso 1:** el resumen lista Postgres, Migrations, OTel Collector y **Lakehouse** (`healthy — Catalog: PostgreSQL`, o `healthy — Catalog: SQLite (single-writer mode — recommended for individual development)`; depende de Postgres solo si el catálogo es PostgreSQL). `pnpm bootstrap` agrega, una sola vez, la base del catálogo, las extensiones de DuckDB (la única descarga, línea `DuckDB extensions`) y el aprovisionamiento del lakehouse; `pnpm dev` solo verifica — nunca instala, descarga ni crea nada (`01-motor-almacenamiento.md` §6.7). `pnpm preflight` verifica sin red las extensiones y que las carpetas del lakehouse se puedan escribir.
 
+**Alcance real a partir del Paso 3 (0.3.0).** El nivel se elige con `ATLASBI_LAKEHOUSE_CATALOG_TYPE`, y cada uno levanta sus servicios:
+
+- **Equipo local (`postgres`, el *default*):** levanta todo el perfil CORE, incluidos el object storage y Cube, y el resumen suma tres líneas:
+  - `Object storage` (`healthy`).
+  - `Cube extensions`: las extensiones `linux_*` que carga Cube.
+  - `Cube` (`healthy — answers from the lakehouse as its reader`).
+- **Portátil (`sqlite`):** levanta solo Postgres y el OTel Collector, sin object storage ni Cube. `pnpm preflight` revisa solo los puertos de los servicios del nivel configurado.
+
+La línea del lakehouse nombra también el almacenamiento: `healthy — Catalog: PostgreSQL · Storage: S3`, o `… · Storage: local folder`.
+
+`pnpm bootstrap` agrega, una sola vez y en este orden:
+
+1. En el object storage, el bucket, la clave del escritor (lectura y escritura) y la de los lectores (solo lectura).
+2. El rol `lakehouse_reader`, de solo `SELECT`, en el catálogo.
+3. Las extensiones de Cube, instaladas desde dentro de su imagen (la única descarga de esa pieza).
+
+`pnpm dev` solo verifica, y falla en el acto con el remedio (`run pnpm bootstrap`) si falta algo. Que Cube esté *healthy* significa que contestó una consulta que lee datos del lakehouse como su lector; que el contenedor corra no alcanza (`04-semantico.md` §6.6).
+
 **Alcance real a partir del Paso 0 (0.1.0):** el resumen solo lista lo que existe — Postgres, Migrations, OTel Collector. Web, API y Cube se suman a la cadena en sus pasos (3, 5, 6); hasta que exista algo con *hot reload*, `pnpm dev` termina después del resumen y la infraestructura queda corriendo en segundo plano (`pnpm stack:down` la detiene).
 
 ---
@@ -106,7 +124,7 @@ Si algo no está saludable, `pnpm dev` no imprime el resumen de arriba como si t
 
 | Perfil | Incluye |
 | --- | --- |
-| `CORE` | Postgres, object storage, Cube, Cube Store, OTel |
+| `CORE` | Postgres, object storage, Cube, Cube Store, OTel — completo desde el Paso 3 (`0.3.0`); el nivel portátil levanta solo Postgres y OTel (§3) |
 | `MVP` | CORE + Airflow |
 | `REALTIME` | MVP + ElectricSQL |
 | `METADATA` | REALTIME + OpenMetadata |

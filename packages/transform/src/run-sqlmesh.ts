@@ -127,7 +127,7 @@ function childEnvironment(
     };
   }
   const location = resolveLakehouseLocation(target.lakehouse);
-  const catalog = target.lakehouse.catalog;
+  const { catalog, storage } = target.lakehouse;
   return {
     ...inherited,
     ...shared,
@@ -139,6 +139,16 @@ function childEnvironment(
     ...(catalog.type === 'postgres'
       ? { ATLASBI_LAKEHOUSE_CATALOG_URL: catalog.connectionString }
       : { ATLASBI_LAKEHOUSE_SQLITE_PATH: location.sqliteCatalogPath ?? '' }),
+    // SQLMesh writes the marts: the writer key, scoped by config.py to the data path.
+    ...(storage.kind === 's3'
+      ? {
+          ATLASBI_LAKEHOUSE_S3_ENDPOINT: storage.endpoint,
+          ATLASBI_LAKEHOUSE_S3_REGION: storage.region,
+          ATLASBI_LAKEHOUSE_S3_USE_SSL: String(storage.useSsl),
+          ATLASBI_LAKEHOUSE_S3_ACCESS_KEY_ID: storage.accessKeyId,
+          ATLASBI_LAKEHOUSE_S3_SECRET_ACCESS_KEY: storage.secretAccessKey,
+        }
+      : {}),
     ATLASBI_TRANSFORM_STATE_URL: target.stateConnectionString,
     ATLASBI_TRANSFORM_STATE_SCHEMA: stateSchema ?? '',
   };
@@ -148,6 +158,9 @@ const CREDENTIAL_PATTERNS: readonly (readonly [RegExp, string])[] = [
   [/(\/\/[^:/@\s]+:)[^@\s]*@/g, '$1***@'],
   [/(password\s*=\s*)('[^']*'|"[^"]*"|[^\s"';]+)/gi, '$1***'],
   [/(PASSWORD\s+)'(?:[^']|'')*'/gi, "$1'***'"],
+  // SQLMesh builds CREATE SECRET (... SECRET '...') from config.py; a traceback may repeat it.
+  [/(\bSECRET\s+)'(?:[^']|'')*'/gi, "$1'***'"],
+  [/(['"]secret['"]\s*:\s*)(['"])[^'"]*\2/gi, '$1$2***$2'],
 ];
 
 /** A Python traceback reduced to the exception it ends with; otherwise SQLMesh's last error line. */

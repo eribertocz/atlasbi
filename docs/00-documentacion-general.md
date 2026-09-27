@@ -172,8 +172,10 @@ El proyecto soporta tres niveles de despliegue reales, posibles porque cada comp
 | Nivel | Catálogo (DuckLake) | Datos (Parquet) | Multi-usuario | Cuándo |
 | --- | --- | --- | --- | --- |
 | **1. Portátil** | SQLite (un archivo) | Carpeta local | No | Tablet, laptop, desarrollo en solitario, sin servidor de ningún tipo |
-| **2. Equipo local** | Postgres en un container (Podman) | Carpeta local o MinIO self-hosteado | Sí (sin colaboración en tiempo real de capa 10) | Un servidor propio, varias personas en la misma red |
+| **2. Equipo local** | Postgres en un container (Podman) | Object storage S3-compatible self-hosteado (Garage, en un container) | Sí (sin colaboración en tiempo real de capa 10) | Un servidor propio, varias personas en la misma red |
 | **3. Nube/producción** | Postgres gestionado, misma región que el storage | Bucket S3-compatible (cualquier proveedor) | Sí, con capa 10 activa | Producción real, multi-usuario remoto |
+
+**Corrección del Paso 3 (2026-09-26): el nivel 2 guarda sus datos en S3, nunca en una carpeta local.** La razón es la frontera de contenedor: la ruta de una carpeta del host no existe dentro de los contenedores que leen el lakehouse, empezando por Cube. Además, MinIO dejó de ser una opción mantenida. El servidor elegido es Garage. El razonamiento completo está en `11-infraestructura.md` §4.4. Cada nivel fija su almacenamiento: el portátil usa SQLite + carpeta, y el equipo local y la nube usan Postgres + S3. El modelo semántico (Cube) corre desde el nivel 2.
 
 **Camino de promoción entre niveles:** migrar de portátil a nube es copiar datos (volcado SQLite → Postgres, sincronización de archivos al bucket), nunca reescribir código de aplicación — el detalle completo, incluyendo el comando de promoción propuesto, está en `11-infraestructura.md`, sección 4.4 y siguientes. OpenTofu es la pieza que garantiza que el catálogo y el storage terminen en la misma región cuando se despliega en nube — ver el mismo documento para el ejemplo de código.
 
