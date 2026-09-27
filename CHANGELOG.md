@@ -4,7 +4,7 @@ Versionado del producto según [`docs/21-engineering-standards.md`](docs/21-engi
 §2: SemVer `0.MINOR.PATCH` hasta 1.0; los contratos (API, Report Schema, Config Schema, DB
 Migration…) versionan por separado y se listan en cada release.
 
-## Unreleased
+## 0.3.0 — capa semántica (2026-09-26)
 
 Paso 3 del orden de construcción: Cube Core sobre el lakehouse. Para que un lector en un contenedor
 vea los mismos datos que la plataforma, el nivel "equipo local" pasa a guardar los datos del

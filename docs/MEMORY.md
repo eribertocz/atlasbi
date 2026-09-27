@@ -145,3 +145,55 @@ Node fijado en **24.21.0** (antes 24.12.0). Al revisar el CVE-2026-58041 (`node:
 **Pendiente, sabido:** `pnpm reset:local` no se corrió en esta tanda (lo verifica el usuario); el esquema `sqlmesh` que usaba el state antes de atarlo al lakehouse quedó sin uso en la base `sqlmesh_state` local, y el lakehouse PostgreSQL de desarrollo tiene dos archivos del mart (al pasar al state nuevo, SQLMesh lo reconstruyó sobre la misma tabla física, sin filas duplicadas) — los dos desaparecen con `reset:local`; tag `v0.2.0` pendiente de pedido explícito.
 
 **Siguiente:** Paso 3 — modelo semántico básico (Cube Core) sobre `marts.mart_sales_orders`, empezando por la decisión de MinIO y la validación "AtlasBI escribe → Cube lee" de la matriz de compatibilidad de `versions.md`, y la batería de *pushdown* de `17` §3.2.2.
+
+### 0.3.0 — capa semántica (Paso 3) — cerrado el 2026-09-26
+
+**Qué quedó construido y verificado en vivo** (Windows 11, Podman 5.8.3, Cube Core y Cube Store 1.7.45, Garage 2.4.1):
+
+- **Almacenamiento S3 en el nivel equipo local:** Garage en el compose, con el bucket y dos claves (escritor de lectura y escritura, lectores de solo lectura) creados por `pnpm bootstrap` con su API de administración. `@atlasbi/warehouse` sobre S3 (`httpfs`, secreto acotado a la ruta de datos, código de error `storage_unreachable`). SQLMesh también escribe en S3. Cada nivel fija su almacenamiento: PostgreSQL + S3 o SQLite + carpeta.
+- **Lectores de solo lectura:** el rol `lakehouse_reader` (`ensureReadOnlyRole`) más la clave S3 de solo lectura. La verificación del lakehouse en `pnpm dev` lee un valor como lector.
+- **`packages/semantic`:** Cube Core + Cube Store, en modo seguro. Un driver propio (subclase del de DuckDB de Cube) abre el lakehouse sin red, como lector, en el orden de la plataforma, y devuelve un error genérico al cliente. Cube vive en una red interna sin salida a Internet, y bootstrap le instala las extensiones `linux_*` desde dentro de su imagen. Modelo `sales_orders` + `regions` con una pre-agregación. El paso `Cube` de `pnpm dev` exige una consulta que lea datos.
+- **Tests:** 169 unit (config 21, database 5, CLI 47, warehouse 73, transform 13, semantic 10) y 120 de integración contra motores reales (database 11, warehouse 73, transform 12, semantic 24). Cada suite de semantic levanta su propio Cube y Cube Store sobre un lakehouse descartable.
+- **En vivo, después del `reset:local` del usuario:** bootstrap, seed, `pnpm transform plan` y `pnpm dev` en verde. Cube devuelve exactamente lo que escribió la plataforma (20.000 órdenes, 5243402.47, las 5 regiones), y además inteligencia de tiempo, join y pre-agregación sin escribir en el lago. Sin `/root/.duckdb` y sin salida a Internet. Negativos:
+  - Secretos equivocados del lector y del escritor, con el remedio.
+  - Object storage caído.
+  - Extensiones de Cube ausentes: falla en el acto con el remedio.
+  - Contraseña del catálogo equivocada: `/readyz` da 500 y el cliente recibe el error genérico.
+  - Secreto S3 equivocado: lo detecta la sonda que lee datos.
+  - Contraseña del SQL API equivocada.
+  - Nivel portátil sin object storage ni Cube.
+
+**Contratos:** Config Schema v3 → v4 (S3, par nivel/almacenamiento, secretos del lector, del object storage y de Cube). `AnalyticalQueryPort` y `LakehouseAdminPort` v1 → v1.1 (`storage_unreachable`; versiones como `"MAJOR.MINOR"`). DB Migration sin cambios. El modelo semántico todavía no es un contrato público: `SemanticQueryPort` se diseña en el Paso 5.
+
+**Decisiones del usuario:**
+
+- Camino B: S3 en el nivel equipo local, con `11` §4.4 corregido. La razón es la frontera de contenedor, que vuelve en el Paso 8 con escritores.
+- Servidor Garage, elegido después de conocer el costo exacto de SigV4 que exigía versitygw.
+- Credenciales de solo lectura para todo lector, y subclase del driver con error genérico.
+- Cube exige el catálogo PostgreSQL, y el join de la batería usa un cube derivado del mart.
+- Cube y Cube Store fijados por digest.
+- D1: se abandona PostgreSQL + carpeta. D2: credenciales de desarrollo fijas. D3: `storage_unreachable`. D4: tests de alerta.
+- Licencia Apache-2.0 (`21` §11), con la auditoría de licencias pendiente antes del lanzamiento público.
+- `member_masking` anotado en `09`.
+- El hueco de Cube Store con medidas decimales queda documentado con su test de alerta, sin arreglo por ahora (se retoma antes del Paso 11 si aparece).
+
+**Desvíos respecto del plan, informados en cada punto de control:**
+
+- S3 en transform se adelantó a la fase A.
+- Se creó la entrada `@atlasbi/warehouse/testing`.
+- El bucket y las claves los crea bootstrap por la API de administración, no con `--default-bucket`.
+- El paso `Cube extensions` también corre en `dev`, donde solo verifica.
+- Un *token* rechazado no se reintenta.
+- La red interna para Cube se aplicó al verificar el riesgo que el plan dejaba abierto.
+
+**Lecciones de la verificación en vivo:**
+
+- `count(*)` en DuckLake sale de las estadísticas y no prueba el acceso a los datos.
+- `READ_ONLY` no impide `COPY … TO` ni `CREATE SECRET` en el motor.
+- El driver original de Cube oculta un lakehouse caído (`/readyz` 200 y pre-agregaciones que siguen respondiendo) y devuelve errores internos al cliente.
+- `/readyz` no detecta una clave S3 equivocada.
+- La batería de *pushdown* de la Fase 0 estaba mal en dos puntos: el remedio `HAVING` y "sin post-procesamiento". La revalidación con el modelo real y su pre-agregación los corrigió en `17` §3.2.2.
+- Sin `--continue`, Turborepo cortaba las suites hermanas antes de su limpieza y dejaba contenedores, bases y objetos. Se limpiaron y ahora no se repite.
+- Con cuatro suites de integración en paralelo, la latencia host→VM llegó a 10 s para un `SELECT 1`.
+
+**Siguiente:** Paso 4 — Auth (better-auth + `workspace_membership` + `data_entitlements`), antes del frontend, porque el MVP exige demostrar RLS con dos usuarios.
