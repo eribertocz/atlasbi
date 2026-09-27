@@ -11,6 +11,7 @@ export {
   lakehouseReaderSecretKeys,
   lakehouseWriterSecretKeys,
   requiredSecretKeys,
+  authSecretKeys,
   SECRET_KEYS,
   semanticSecretKeys,
   transformSecretKeys,

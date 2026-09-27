@@ -31,7 +31,8 @@
 | shadcn-svelte / Tailwind | _(completar)_ | Tailwind v4 |
 | Monaco Editor | _(completar)_ | |
 | ElectricSQL | _(completar)_ | Requiere `wal_level=logical` en Postgres — se agrega al compose en el Paso 10, no antes |
-| better-auth | _(completar)_ | |
+| better-auth | **1.7.6** (`catalog`) — desde el Paso 4 | MIT; Vercel la adquirió el 7/7/2026 (`09-auth-gobernanza.md` §4.1). Publicada el 24/9/2026, con atestación SLSA de npm verificada y las 23 *advisories* conocidas corregidas en versiones anteriores. Plugins: solo `organization` y `jwt` (sin `admin`). Depende de `kysely ^0.28.17 \|\| ^0.29.0`: comparte nuestro Kysely 0.29.6 (una sola copia). El CLI `@better-auth/cli` quedó en 1.4.21: el esquema se genera con su planificador programático (`better-auth/db/migration`), nunca con `migrate`. Telemetría apagada; ninguna llamada de red medida |
+| jose | **6.2.12** (`catalog`) — desde el Paso 4 | MIT, cero dependencias. Verifica localmente el token de identidad (EdDSA) contra el JWKS; es también dependencia de better-auth |
 | OpenTelemetry Collector | **0.161.0**, distribución core (`docker.io/otel/opentelemetry-collector:0.161.0`) | El manifiesto de la distribución core ya incluye `otlpreceiver`, `batchprocessor`, `debugexporter` y `healthcheckextension`; contrib agregaría cientos de componentes sin uso. Imagen distroless: sin healthcheck en el compose, la readiness se prueba desde el host (`:13133`) |
 | OpenTelemetry SDKs | _(completar al instrumentar el primer servicio — Paso 5 en TS, Pasos 2/7 en Python)_ | Graduated CNCF, mayo 2026 |
 | OpenBao | _(completar — solo para producción self-hosteada)_ | Linux Foundation + OpenSSF |

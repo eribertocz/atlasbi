@@ -12,3 +12,23 @@ cubes:
       - name: zone
         sql: "CASE WHEN {CUBE}.region IN ('North', 'South') THEN 'Axis' ELSE 'Other' END"
         type: string
+    # The same row-level security as sales_orders: without it, this cube would list every region
+    # to someone who may see only one. `readiness` is the probe of `pnpm dev`: it reads `zone` —
+    # real values from the lakehouse's storage, which catalog statistics cannot answer — and nothing
+    # else.
+    access_policy:
+      - group: 'region:listed'
+        row_level:
+          filters:
+            - member: region
+              operator: equals
+              values: '{ securityContext.entitlements.region }'
+      - group: 'region:all'
+        row_level:
+          allow_all: true
+      - group: readiness
+        member_level:
+          includes:
+            - zone
+        row_level:
+          allow_all: true

@@ -215,12 +215,12 @@ describe('lakehouse configuration (Config Schema v4)', () => {
         'lakehouse.s3-reader-secret-access-key',
         'object-storage.admin-token',
         'semantic.api-secret',
-        'semantic.sql-password',
+        'auth.secret',
       ]),
     );
     expect(new Set(keys).size).toBe(keys.length);
     expect(
       bootstrapSecretKeys(loadLakehouseConfig({ ATLASBI_LAKEHOUSE_CATALOG_TYPE: 'sqlite' })),
-    ).toEqual(['database.url', 'transform.state-url']);
+    ).toEqual(['database.url', 'transform.state-url', 'auth.secret']);
   });
 });

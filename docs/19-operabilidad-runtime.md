@@ -154,6 +154,14 @@ packages/database/
 
 **Convención fijada al implementar el Paso 0:** seis dígitos (coherente con "DB Migration 000072" de `21-engineering-standards.md` §2), `snake_case` en inglés, SQL plano leído por un `MigrationProvider` propio de Kysely — *forward-only* (un error se corrige con una migración nueva, nunca editando una aplicada). En Postgres, Kysely aplica todo el lote pendiente en una sola transacción: si una migración falla, no queda ninguna aplicada a medias. La carpeta arranca vacía a propósito: la primera tabla real es del Paso 4 (Auth).
 
+**Paso 4 — las primeras migraciones reales:**
+- **`000001_auth_schema.sql`:** las tablas de better-auth en el esquema `auth`.
+  - Es **generada**: es exactamente lo que emite el planificador de migraciones de better-auth para las opciones de la plataforma, y nunca se ejecuta el `migrate` de better-auth.
+  - Un test de contrato falla si una actualización de better-auth cambia el esquema, y muestra el SQL de la diferencia, que pasa a ser una migración nueva.
+- **`000002_access_control.sql`:** las tablas propias en el esquema `access` (`workspace`, `workspace_membership`, `data_entitlements`, `09-auth-gobernanza.md` §6.1–§6.2).
+
+`pnpm dev` las aplica sobre una base existente: no hace falta `reset:local`.
+
 **Corrección de una decisión que quedaba abierta, señalada en una revisión posterior: no es sano dejar que Claude Code elija el mecanismo de migraciones mientras programa — se congela ahora.** La capa de datos de la API Gateway (capa 6) usa **`pg`** (el driver) + **Kysely** (query builder tipado, MIT, sin dependencias en runtime, pensado como una capa delgada sobre SQL — no un ORM pesado tipo Prisma) + **Kysely Migrator** como único mecanismo de migración. Corre como parte de `pnpm setup` (primera vez) y de `pnpm dev`/`stack:up` (migraciones pendientes) — nunca a mano, nunca disperso entre TypeScript y documentos de arquitectura como los `CREATE TABLE` que hasta ahora vivían solo en Markdown.
 
 ---
@@ -169,6 +177,21 @@ Después de `pnpm bootstrap`, `pnpm seed` genera, **solo en desarrollo**:
 Esto es lo que hace posible correr el script de la demo de aceptación (`16-mvp-definicion-terminado.md`, sección 4) sin depender de que una fuente externa real ya esté conectada.
 
 **Implementado en el Paso 1 — solo el dataset:** `pnpm seed` reemplaza `lake.fixture.sales_orders`, 20.000 filas determinísticas (cada columna es función del número de fila: mismas filas en cualquier máquina y en los dos catálogos), y termina con el vaciado explícito de *Inlining v1*. Es idempotente, se niega a correr con `ATLASBI_ENV=production`, y es la base de los primeros modelos del Paso 2 hasta que la ingesta real (Paso 7) lo reemplace. La organización, los usuarios y el reporte demo llegan con el Paso 4.
+
+**Implementado en el Paso 4 — organización, workspaces y usuarios demo:**
+- **Qué crea `pnpm seed`:**
+  - La organización `demo`, con los workspaces `comercial` y `finanzas`.
+  - `ana@example.com`: `admin` en Comercial, con todas las regiones; `viewer` en Finanzas, con North.
+  - `bruno@example.com`: `viewer` en Finanzas, con South.
+
+  Es el escenario de la demo de aceptación (`16-mvp-definicion-terminado.md` §4).
+- **Cómo lo hace:**
+  - Es idempotente.
+  - Valida todos los secretos antes de escribir nada.
+  - Al final prueba cada acceso por la misma cadena que va a usar la Gateway: iniciar sesión, obtener el token de identidad y resolver el contexto de seguridad.
+  - La contraseña es el secreto `seed.demo-password`, y nunca se imprime.
+  - Si los usuarios demo ya existen con otra contraseña, lo dice y da el remedio.
+- **El reporte demo llega con el Report Document Model** (Paso 6 en adelante).
 
 ---
 
@@ -195,6 +218,12 @@ Validación al arrancar (parte de `pnpm dev`/`pnpm bootstrap` y del bootstrap de
 - `loadConfig()` valida la configuración no secreta y la traduce a un objeto de dominio (`{ environment, secretProvider, telemetry }`) — ningún código lee nombres de variables de entorno directo. Un `KEY=` vacío cuenta como "no definido".
 - Los secretos nunca se leen como configuración: pasan por el puerto `SecretProvider` (`11-infraestructura.md` §4.7) con claves lógicas (`database.url`); el adaptador `EnvSecretProvider` las mapea a `ATLASBI_DATABASE_URL`. `assertSecretsAvailable()` resuelve todos los obligatorios al arrancar y lista **todos** los faltantes de una vez, nombrando la variable a definir.
 - El puerto de host de Postgres por defecto es **55432**, no 5432, para no chocar con un Postgres ya instalado en la máquina (caso real encontrado al implementar).
+
+**Paso 4 — "Config Schema v5":**
+- **Secretos nuevos:**
+  - `auth.secret` (`ATLASBI_AUTH_SECRET`, al menos 32 caracteres): firma las sesiones y cifra las claves privadas del token de identidad. Lo exigen `pnpm dev` y `pnpm bootstrap`.
+  - `seed.demo-password` (`ATLASBI_SEED_DEMO_PASSWORD`, al menos 12): solo para `pnpm seed`.
+- **Se retira `semantic.sql-password`:** el SQL API de Cube ya no tiene contraseña fija, porque recibe el token corto de la plataforma (`04-semantico.md` §6.6).
 
 **Paso 1 — "Config Schema v2":** agrega la sección `lakehouse` del objeto de dominio. `ATLASBI_LAKEHOUSE_CATALOG_TYPE` es `postgres` (por defecto) o `sqlite`, y `duckdb` se rechaza explicando por qué; `ATLASBI_LAKEHOUSE_DATA_PATH`, `ATLASBI_LAKEHOUSE_SQLITE_PATH` y `ATLASBI_DUCKDB_EXTENSION_DIRECTORY` son opcionales, con *defaults* bajo `.data/` y rutas relativas a la raíz del repo. El secreto nuevo `lakehouse.catalog-url` (`ATLASBI_LAKEHOUSE_CATALOG_URL`) solo es obligatorio con catálogo PostgreSQL. Como `bootstrap` nunca reescribe un `.env` existente, quien ya tenía uno lo completa a mano desde `.env.example`: `pnpm dev` falla en segundos nombrando la variable que falta.
 

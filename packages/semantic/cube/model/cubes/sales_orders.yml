@@ -55,6 +55,7 @@ cubes:
         sql: product_category
         type: string
     pre_aggregations:
+      # Every pre-aggregation of this cube keeps `region`: row-level security filters on it.
       - name: amount_by_region_month
         measures:
           - total_amount
@@ -63,3 +64,18 @@ cubes:
           - region
         time_dimension: order_date
         granularity: month
+    # Row-level security (build step 4, docs/09 §6.1, docs/04 §6.2). Groups come from the
+    # platform's query token (src/query-claims.ts): a person sees the regions of their grant, or
+    # all of them with an explicit grant; no grant, no group — and no policy matches: denied.
+    # ⚠ Policies of different groups combine with OR: read docs/09 §6.1 before protecting a second
+    # dimension. Never add a policy without `group`: it would apply to everyone.
+    access_policy:
+      - group: 'region:listed'
+        row_level:
+          filters:
+            - member: region
+              operator: equals
+              values: '{ securityContext.entitlements.region }'
+      - group: 'region:all'
+        row_level:
+          allow_all: true

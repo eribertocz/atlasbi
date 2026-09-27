@@ -4,7 +4,7 @@ import { LAKEHOUSE_CATALOG_TYPES, type LakehouseCatalogType } from '@atlasbi/con
 import { z } from 'zod';
 
 /** Config Schema contract version (docs/21 §2) — bump when a variable changes meaning or is removed. */
-export const CONFIG_SCHEMA_VERSION = 4;
+export const CONFIG_SCHEMA_VERSION = 5;
 
 const DUCKDB_CATALOG_REJECTION =
   'a DuckDB-file catalog allows a single client only and is not supported — use postgres (default) or sqlite (docs/01 §6.6)';

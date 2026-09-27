@@ -9,6 +9,7 @@
     "test": "vitest run --dir test/unit"
   },
   "dependencies": {
+    "@atlasbi/auth": "workspace:*",
     "@atlasbi/config": "workspace:*",
     "@atlasbi/contracts": "workspace:*",
     "@atlasbi/database": "workspace:*",

@@ -1,3 +1,4 @@
+import { READINESS_CLAIMS } from './query-claims.ts';
 import { signQueryToken } from './query-token.ts';
 
 export class SemanticLayerUnavailableError extends Error {
@@ -43,7 +44,8 @@ export async function probeSemanticLayer(endpoint: SemanticLayerEndpoint): Promi
       },
     );
   }
-  const token = signQueryToken(endpoint.apiSecret, { sub: 'platform-health' });
+  // The readiness group may read regions.zone and nothing else (cube/model/cubes/regions.yml).
+  const token = signQueryToken(endpoint.apiSecret, READINESS_CLAIMS);
   const url = `${endpoint.url}/cubejs-api/v1/load?query=${encodeURIComponent(JSON.stringify(PROBE_QUERY))}`;
   for (let attempt = 0; attempt < CONTINUE_WAIT_ATTEMPTS; attempt++) {
     const response = await request(url, { authorization: token });

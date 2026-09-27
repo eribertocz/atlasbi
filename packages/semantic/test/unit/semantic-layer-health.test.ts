@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   probeSemanticLayer,
+  QUERY_TOKEN,
   SemanticLayerUnavailableError,
   signQueryToken,
 } from '../../src/index.ts';
@@ -103,16 +104,66 @@ describe('probeSemanticLayer', () => {
   });
 });
 
+function payloadOf(token: string): Record<string, unknown> {
+  return JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8')) as Record<
+    string,
+    unknown
+  >;
+}
+
 describe('signQueryToken', () => {
-  it('signs a short-lived HS256 token Cube can verify with the shared secret', () => {
+  it('signs a short-lived HS256 token for Cube, with the platform issuer and audience', () => {
     const token = signQueryToken(SECRET, { sub: 'someone' }, 30);
-    const payload = JSON.parse(
-      Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8'),
-    ) as { sub: string; iat: number; exp: number };
+    const payload = payloadOf(token) as {
+      sub: string;
+      iss: string;
+      aud: string;
+      iat: number;
+      exp: number;
+    };
 
     expect(verifies(token, SECRET)).toBe(true);
     expect(verifies(token, 'wrong')).toBe(false);
-    expect(payload.sub).toBe('someone');
+    expect(payload).toMatchObject({ sub: 'someone', iss: 'platform-api', aud: 'semantic-layer' });
     expect(payload.exp - payload.iat).toBe(30);
+  });
+
+  it('lives five minutes by default and never longer (decision E3, REST and SQL API alike)', () => {
+    const payload = payloadOf(signQueryToken(SECRET, {})) as { iat: number; exp: number };
+
+    expect(payload.exp - payload.iat).toBe(QUERY_TOKEN.maxLifetimeSeconds);
+    expect(QUERY_TOKEN.maxLifetimeSeconds).toBe(300);
+    expect(() => signQueryToken(SECRET, {}, 301)).toThrow(RangeError);
+    expect(() => signQueryToken(SECRET, {}, 0)).toThrow(RangeError);
+  });
+
+  it('never lets the claims choose the issuer, audience or times', () => {
+    const payload = payloadOf(
+      signQueryToken(SECRET, { iss: 'someone', aud: 'anything', exp: 9_999_999_999 }, 60),
+    ) as { iss: string; aud: string; iat: number; exp: number };
+
+    expect(payload).toMatchObject({ iss: 'platform-api', aud: 'semantic-layer' });
+    expect(payload.exp - payload.iat).toBe(60);
+  });
+
+  it('probes readiness with the readiness group only', async () => {
+    let seen: Record<string, unknown> | undefined;
+    const server = createServer((request, response) => {
+      if (request.url?.startsWith('/cubejs-api')) {
+        seen = payloadOf(request.headers.authorization ?? '');
+      }
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ data: [] }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const { port } = server.address() as AddressInfo;
+      await probeSemanticLayer({ url: `http://127.0.0.1:${port}`, apiSecret: SECRET });
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+
+    expect(seen).toMatchObject({ groups: ['readiness'] });
+    expect(seen).not.toHaveProperty('entitlements');
   });
 });

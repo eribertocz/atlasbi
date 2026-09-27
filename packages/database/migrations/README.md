@@ -12,5 +12,10 @@ and `pnpm stack:up` — never by hand.
   fails, none of them is applied.
 - The latest applied file is the "DB Migration" contract version (`docs/21` §2).
 
-This folder is empty on purpose until build step 4 (Auth), which creates the first tables
-(`workspace_membership`, `data_entitlements`).
+The first tables arrive with build step 4 (Auth):
+
+- `000001_auth_schema.sql` — better-auth's identity tables in the `auth` schema. **Generated**
+  from the platform's better-auth options, never written by hand; a schema contract test in
+  `packages/auth` says when an upgrade needs a new migration.
+- `000002_access_control.sql` — the platform's own authorization in the `access` schema:
+  `workspace`, `workspace_membership` and `data_entitlements` (`docs/09` §6.1–§6.2).

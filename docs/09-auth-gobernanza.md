@@ -38,6 +38,18 @@ El sistema de permisos de Power BI (workspaces, apps, roles de RLS) es un sistem
 
 better-auth nació en 2024 como el proyecto de un solo desarrollador (Bereket Engida), y a mediados de 2025 se convirtió en una startup con una ronda semilla de USD 5M (Y Combinator, Peak XV, entre otros) — en ese momento, habría sido exactamente el mismo patrón de riesgo que ya se descartó en las capas 6 y 8 (una empresa chica). **Pero el panorama cambió con un evento posterior: Vercel adquirió Better Auth**, incorporando al fundador y al equipo core. Hoy el proyecto tiene más de 4,7 millones de descargas semanales en npm y más de 850 colaboradores — pasó de ser "una startup chica" a estar respaldado por una de las empresas más grandes del ecosistema de infraestructura web (la misma que sostiene Next.js), con un nivel de adopción que ya lo vuelve, de hecho, un estándar del ecosistema TypeScript.
 
+**Verificado en la Fase 0 del Paso 4 (2026-09-26):**
+- **La adquisición es real.** Vercel la anunció en su blog el 7/7/2026, y la librería sigue siendo MIT, con el mismo nombre y el mismo modelo de contribución.
+- **Riesgo residual, que se documenta y no se esconde:**
+  - better-auth tiene 23 *advisories* publicadas. Ninguna afecta a 1.7.6, la versión fijada.
+  - Varias de 2026 fueron altas o críticas, casi todas en plugins que este proyecto no usa (`oidcProvider`, `mcp`, `sso`). La única en un plugin nuestro fue la de invitaciones de `organization` (CVE-2026-53514), corregida en 1.6.11; las invitaciones quedan apagadas hasta que exista verificación de email.
+  - Una sola cuenta publica el paquete en npm.
+- **Mitigación:**
+  - Un conjunto mínimo de plugins: email y contraseña, `organization` y `jwt`.
+  - **Sin el plugin `admin`.** Con solo activarlo expondría por HTTP unos 20 endpoints `/admin/*` (impersonación, cambio de rol, cambio de contraseña), protegidos únicamente por la sesión y un rol global. `disabledPaths` los apaga uno por uno, por exclusión, y esa protección ya fue esquivada una vez (GHSA-x732-6j76-qmhm).
+  - Versión fijada por lockfile, con la atestación de npm verificada.
+  - Revisión de *advisories* en cada actualización.
+
 **No es una fundación** — sigue siendo una sola empresa la que lo sostiene. Pero está en la misma categoría que tRPC (capa 6): adopción tan masiva que el proyecto tiene inercia propia más allá de cualquier decisión de una sola empresa, y ahora respaldado por una compañía consolidada, no una startup en etapa semilla.
 
 ### 4.2 La alternativa de máxima seguridad de gobernanza: Keycloak
@@ -98,18 +110,30 @@ flowchart LR
 2. **`data_entitlements`** (tabla nueva, esta sección) responde **qué datos puede ver** — independiente del rol:
 
 ```sql
-CREATE TABLE data_entitlements (
-    user_id      TEXT NOT NULL,
-    workspace_id TEXT NOT NULL,
-    dimension    TEXT NOT NULL,   -- 'region', 'area', etc. — coincide con una dimensión real de Cube
-    values       TEXT[] NOT NULL, -- ['Norte'] o ['La Paz', 'El Alto']
-    PRIMARY KEY (user_id, workspace_id, dimension)
+-- Implementada en el Paso 4 (migración 000002_access_control.sql)
+CREATE TABLE access.data_entitlements (
+    workspace_id   uuid NOT NULL,
+    user_id        uuid NOT NULL,
+    dimension      text NOT NULL,                 -- 'region'… — una dimensión que protege la capa semántica
+    all_values     boolean NOT NULL DEFAULT false, -- "todos" es una concesión explícita
+    allowed_values text[] NOT NULL DEFAULT '{}',   -- ['North'] o ['La Paz', 'El Alto']; nunca vacía
+    PRIMARY KEY (workspace_id, user_id, dimension),
+    -- lo que alguien ve cuelga de su membresía: se borra con ella
+    FOREIGN KEY (workspace_id, user_id)
+        REFERENCES access.workspace_membership (workspace_id, user_id) ON DELETE CASCADE,
+    CHECK ((all_values AND cardinality(allowed_values) = 0)
+        OR (NOT all_values AND cardinality(allowed_values) > 0))
 );
 
 -- Juan y Pedro son los dos 'viewer' en workspace_membership, pero ven datos distintos:
--- (juan_id, 'comercial', 'region', ARRAY['Norte'])
--- (pedro_id, 'comercial', 'region', ARRAY['Sur'])
+-- (comercial, juan_id,  'region', false, ARRAY['North'])
+-- (comercial, pedro_id, 'region', false, ARRAY['South'])
 ```
+
+**Correcciones del Paso 4 sobre esta tabla:**
+- **La columna se llamaba `values`, que es palabra reservada en SQL.** Ahora es `allowed_values`.
+- **Se deniega por defecto.** Si una dimensión protegida no tiene fila para ese usuario y workspace, se deniega; la ausencia de fila nunca significa "todo". "Todos los valores" es una concesión explícita (`all_values`), y la base rechaza una lista vacía o un "todos" con valores.
+- **Qué dimensiones están protegidas lo sabe la capa semántica, no Auth.** Auth devuelve las concesiones que existen, y `@atlasbi/semantic` deniega la dimensión protegida que no tenga una.
 
 **El flujo completo, corregido:**
 
@@ -119,6 +143,31 @@ CREATE TABLE data_entitlements (
 4. **La Gateway firma un JWT corto** (con `CUBEJS_API_SECRET`, la clave que Cube ya usa para verificar tokens) conteniendo ese security context como payload, y lo envía en el header `Authorization` de la llamada a Cube — **nunca como un campo `securityContext` suelto dentro de las opciones de `load()`**. Es el mecanismo de autenticación de **REST/GraphQL** (`checkAuth`, JWT verificado, no un parámetro de conveniencia) — el **SQL API** (`/v1/cubesql`, usado por el Editor de SQL avanzado, `17-self-service-calculations.md`) usa un mecanismo distinto (`checkSqlAuth`), pendiente de validar empíricamente antes de darlo por implementado — no generalizar "JWT en Authorization" como si aplicara a las dos superficies de Cube por igual.
 5. **Cube Core (capa 4)** usa `entitlements.region` (no `workspace_role`) dentro de su YAML para el filtro de fila real — el rol nunca entra en esa ecuación. `workspace_role` sí puede usarse en Cube para decidir qué medidas/dimensiones están permitidas (control de qué puede *hacer*), pero es una regla separada de la de filas.
 6. Si además hay tablas operativas consultadas directo (fuera del camino de Cube), **RLS nativo de Postgres** aplica la misma lógica de `entitlements`, no de `workspace_role`, como capa adicional de defensa.
+
+**Implementado en el Paso 4 (`0.4.0`): pasos 1, 2, 3 y 5 del flujo, y la cadena completa verificada en vivo.**
+- **Paso 1, el token de identidad.** Lleva solo `sub` (el usuario) y `org` (la organización), más los *claims* estándar. Es EdDSA, dura 15 minutos y se verifica localmente con `jose` (§7). Un *claim* de más lo invalida.
+- **Pasos 2 y 3, `resolveSecurityContext` (`@atlasbi/auth`).**
+  - Hace las dos consultas por separado y devuelve `SecurityContext` v1 (`@atlasbi/contracts`).
+  - Deniega un workspace de otra organización, aunque exista una fila de membresía ahí.
+- **Paso 4, el token corto hacia Cube.**
+  - HS256, emisor `platform-api`, audiencia `semantic-layer`, vida de 5 minutos como máximo.
+  - Lleva **grupos** derivados de los *entitlements* (`region:all`, o `region:listed` con la lista), nunca el rol (`04-semantico.md` §6.2 y §6.6).
+  - El SQL API de Cube recibe el mismo token como contraseña y aplica la misma RLS. El transporte HTTP `/v1/cubesql` sigue pendiente para el Paso 5.
+  - Cube vuelve a comprobar el vencimiento en cada consulta, así que una conexión abierta no sobrevive a su token.
+- **Lo que falta es solo el transporte.** La Gateway, que recibe la sesión y firma el token en cada request, llega en el Paso 5.
+
+**⚠ Advertencia — trampa verificada en Cube Core 1.7.45 (Fase 0 del Paso 4): las políticas de acceso se combinan con OR entre grupos.**
+
+- **Cómo combina Cube.** A cada consulta, Cube le aplica todas las `access_policy` de los grupos que devuelve `contextToGroups`. Los filtros de un mismo grupo se combinan con AND; los de grupos distintos, con **OR**. Una política sin `group` vale para todas las personas.
+- **Hoy es seguro, con una sola dimensión protegida (`region`).** La traducción del security context a grupos es: `region:all`; `region:listed` con la lista de valores, que nunca está vacía; o ningún grupo, que deniega todo.
+- **La trampa: agregar una segunda dimensión protegida con ese mismo patrón, un grupo por dimensión, abre el acceso completo.** Alguien con `region:all` y `category:listed` recibiría la **unión** de las dos políticas. Como la de `region:all` no filtra nada, vería todas las filas de todas las categorías: el recorte por categoría desaparece.
+- **Nada lo avisa.** Cube no da error ni advertencia, y los tests de una sola dimensión siguen pasando.
+
+**Antes de proteger una segunda dimensión:**
+1. **Rediseñar la traducción.** Por ejemplo, un solo grupo con todos los filtros en la misma política, que se combinan con AND; o políticas elegidas con `conditions` según la combinación de dimensiones. Recién después, agregar la dimensión.
+2. **Agregar un test que combine las dos dimensiones** y verifique que cada una sigue filtrando por su cuenta.
+
+**Dónde vive la traducción.** Está en un solo lugar, `@atlasbi/semantic`, que arma los grupos a partir del security context, para que este cambio no se disperse. Por la misma razón, nunca se escribe una política sin `group` "por las dudas": se aplicaría a todo el mundo.
 
 **Capacidad disponible, sin implementar todavía: enmascaramiento de datos en Cube Core.** Además de ocultar filas (`row_level`) y miembros (`member_level`), las `access_policy` de Cube Core admiten `member_masking` desde la versión 1.6.23 (la fijada en el Paso 3, 1.7.45, lo incluye): un miembro que el usuario no puede ver en claro devuelve un valor enmascarado (`***`, `-1`, `NULL`, según el `mask` declarado en la dimensión o medida) en vez de negar la consulta entera. Sirve, por ejemplo, para que un reporte compartido siga funcionando para quien no puede ver el nombre del cliente. Queda registrado para cuando haga falta; no forma parte del MVP.
 
@@ -169,6 +218,12 @@ CREATE TABLE workspace_permissions (
 -- workspace_permissions: (123, 'finanzas', 'certify_metric')
 ```
 
+**Implementado en el Paso 4** (migraciones `000001` y `000002`):
+- **Esquemas:** las tablas de better-auth viven en el esquema `auth`, como almacenamiento del proveedor que nuestro código nunca consulta. Las propias viven en `access`: `workspace` (con `organization_id` hacia `auth.organization`), `workspace_membership` (con `CHECK` sobre los cuatro roles) y `data_entitlements` (§6.1).
+- **IDs:** son `uuid`.
+- **`workspace_permissions` todavía no existe.** Nace con su primer consumidor (SQL Lab o certificación), nunca como una tabla "para después".
+- **Una persona pertenece a una sola organización en el MVP.** El token de identidad nombra exactamente una; con ninguna, o con varias, no se emite.
+
 better-auth sigue haciendo lo que hace bien: autenticar y administrar la pertenencia a la organización. Los permisos de contenido por workspace — que es exactamente el problema que Power BI, Tableau y Looker resuelven con un modelo de autorización más rico que "member de un team" — los controla este proyecto con su propia tabla, consultada por la Capa 6 (API Gateway) antes de armar el security context que se le pasa a Cube (capa 4).
 
 **Por qué esto no es "reinventar auth"**: la parte difícil y sensible (contraseñas, sesiones, OAuth, tokens) la sigue resolviendo better-auth entero, sin tocar nada de eso. Lo que se construye a mano es una tabla de autorización de negocio — el mismo tipo de tabla que cualquier plataforma con workspaces termina necesitando, esté o no basada en better-auth.
@@ -187,12 +242,21 @@ better-auth sigue haciendo lo que hace bien: autenticar y administrar la pertene
 
 - **Consume**: credenciales del usuario (email/password, OAuth) para autenticar.
 - **Expone**: una sesión/JWT verificable con claims de **identidad y organización únicamente** (`user_id`, `organization_id`) — nunca un rol de workspace, que se resuelve por request contra `workspace_membership` (sección 6.1), no en el token.
+  - **Implementado en el Paso 4:** el token de identidad lleva `sub`, `org`, `iss: identity`, `aud: platform-api`, `iat` y `exp`. Es EdDSA; las claves viven en `auth.jwks`, con la privada cifrada con `auth.secret`.
+  - **Vida de 15 minutos.** Como se verifica localmente, después de cerrar la sesión el token sigue siendo válido hasta que vence: es el costo de no consultar la base en cada request, acotado por esa vida corta.
+  - **Por qué `definePayload` es obligatorio:** sin él, better-auth mete el usuario entero en el token (email, nombre, imagen). Hay un test que lo impide.
+  - **El puerto propio es `IdentityPort`** (`@atlasbi/contracts`). Ningún tipo de better-auth sale de su adaptador.
 - **No expone**: ninguna noción de qué filas de datos son visibles — eso lo resuelve la Gateway a partir de `data_entitlements` (sección 6.1), nunca del `workspace_role`, y nunca de un dato certificado de antemano en el token.
 - **El API Gateway (capa 6) valida la identidad del token localmente** (sin preguntarle a esta capa por cada request) **y consulta `workspace_membership` (qué puede hacer) y `data_entitlements` (qué puede ver) por separado para resolver el security context de ese workspace específico** — dos preguntas distintas, dos tablas distintas, nunca una combinada en un solo campo de rol.
 
 ---
 
 ## 8. Por dónde empezar a construir (paso a paso concreto)
+
+**Estado (Paso 4, `0.4.0`):**
+- **Hechos:** 1, 2, 3 y 5. El login y el logout se verifican por la API del servidor.
+- **El 4 llega con la API Gateway (Paso 5),** y el login con pantalla, con el frontend (Paso 6).
+- **`pnpm seed`** deja el escenario de la demo de aceptación (`16-mvp-definicion-terminado.md` §4) y lo prueba iniciando sesión con cada usuario.
 
 1. `pnpm add better-auth` dentro de `packages/auth`.
 2. Configurar un solo proveedor (email/password) y confirmar login/logout básico antes de sumar OAuth.

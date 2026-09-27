@@ -94,9 +94,8 @@ services:
       CUBEJS_TELEMETRY: 'false'
       CUBEJS_DB_TYPE: duckdb
       CUBEJS_API_SECRET: ${ATLASBI_SEMANTIC_API_SECRET:-}
+      # The SQL API takes the platform's short query token as the password (cube/cube.js).
       CUBEJS_PG_SQL_PORT: '15432'
-      CUBEJS_SQL_USER: semantic
-      CUBEJS_SQL_PASSWORD: ${ATLASBI_SEMANTIC_SQL_PASSWORD:-}
       CUBEJS_CUBESTORE_HOST: cube-store
       # One instance serves queries and refreshes pre-aggregations in the local tier.
       CUBEJS_REFRESH_WORKER: 'true'

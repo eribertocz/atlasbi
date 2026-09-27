@@ -11,6 +11,8 @@ catalog:
   '@opentelemetry/semantic-conventions': 1.43.0
   '@types/node': 24.13.6
   '@types/pg': 8.23.1
+  better-auth: 1.7.6
+  jose: 6.2.12
   kysely: 0.29.6
   pg: 8.23.0
   typescript: 6.0.3

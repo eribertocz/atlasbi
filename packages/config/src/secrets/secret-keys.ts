@@ -19,8 +19,10 @@ export const SECRET_KEYS = {
   transformStateUrl: 'transform.state-url',
   /** The secret Cube verifies the platform's short-lived query tokens with (CUBEJS_API_SECRET). */
   semanticApiSecret: 'semantic.api-secret',
-  /** Password of Cube's SQL API (PostgreSQL wire protocol). */
-  semanticSqlPassword: 'semantic.sql-password',
+  /** Signs sessions and encrypts the identity token's private keys (better-auth `secret`). */
+  authSecret: 'auth.secret',
+  /** Password of the demo users `pnpm seed` creates — development only (docs/19 §6). */
+  seedDemoPassword: 'seed.demo-password',
 } as const;
 
 /** Secrets that open the lakehouse as its writer (admin port, seed, SQLMesh). */
@@ -55,11 +57,17 @@ export function transformSecretKeys(lakehouse: LakehouseConfig): string[] {
   return [...requiredSecretKeys(lakehouse), SECRET_KEYS.transformStateUrl];
 }
 
-/** The semantic layer (Cube) runs on the postgres tier only: it reads the lakehouse's S3 data. */
+/**
+ * The semantic layer (Cube) runs on the postgres tier only: it reads the lakehouse's S3 data. Its
+ * SQL API has no password of its own: it accepts the platform's short query token (decision E5).
+ */
 export function semanticSecretKeys(lakehouse: LakehouseConfig): string[] {
-  return lakehouse.catalogType === 'postgres'
-    ? [SECRET_KEYS.semanticApiSecret, SECRET_KEYS.semanticSqlPassword]
-    : [];
+  return lakehouse.catalogType === 'postgres' ? [SECRET_KEYS.semanticApiSecret] : [];
+}
+
+/** Identity (better-auth) runs on every tier: its tables live in the platform database. */
+export function authSecretKeys(): string[] {
+  return [SECRET_KEYS.authSecret];
 }
 
 /** Everything `pnpm bootstrap` sets up: writer and reader access, the storage administration, Cube. */
@@ -69,5 +77,6 @@ export function bootstrapSecretKeys(lakehouse: LakehouseConfig): string[] {
     ...lakehouseReaderSecretKeys(lakehouse),
     ...(lakehouse.catalogType === 'postgres' ? [SECRET_KEYS.objectStorageAdminToken] : []),
     ...semanticSecretKeys(lakehouse),
+    ...authSecretKeys(),
   ];
 }

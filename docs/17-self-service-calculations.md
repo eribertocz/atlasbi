@@ -151,6 +151,11 @@ Cuatro consecuencias para el Editor de Semantic SQL:
 
 ### 3.2.3 Corrección bloqueante: la autenticación del SQL API no es la misma que la de REST/GraphQL
 
+**Avance del Paso 4, sobre el SQL API por el protocolo de Postgres (no sobre `/v1/cubesql`):**
+- **`checkSqlAuth` está implementado:** la contraseña es el mismo token corto que usa REST (HS256, ≤ 5 min), y el security context sale de sus *claims*. Así el SQL API aplica exactamente la misma RLS que REST, y no existe una contraseña fija.
+- **`checkSqlAuth` corre una sola vez, al conectar.** Por eso Cube vuelve a verificar el vencimiento en cada consulta (`queryRewrite`), y una conexión abierta muere con su token (`04-semantico.md` §6.6).
+- **Sigue pendiente, para el Paso 5, el transporte HTTP `/v1/cubesql`** (§3.2.4).
+
 **Hallazgo importante, señalado en una revisión posterior y verificado contra la documentación oficial de Cube: el JWT que ya usamos para REST/GraphQL (firmado con `CUBEJS_API_SECRET`, decodificado automáticamente por Cube) NO es el mismo mecanismo que usa el SQL API — ni por el puerto Postgres, ni por el transporte HTTP `/v1/cubesql`.** Cube distingue dos rutas de autenticación completamente separadas:
 
 | API | Mecanismo | Quién lo implementa |

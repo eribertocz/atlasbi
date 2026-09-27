@@ -1,11 +1,11 @@
 import type { AnalyticalQueryPort, QueryResult } from '@atlasbi/contracts';
 import { createAnalyticalQueryEngine } from '@atlasbi/warehouse';
 import { createTestLakehouse, type TestLakehouse } from '@atlasbi/warehouse/testing';
-import pg from 'pg';
+import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { probeSemanticLayer } from '../../src/index.ts';
-import { startCubeStack, type CubeStack } from './support/cube-stack.ts';
+import { ALL_REGIONS, startCubeStack, type CubeStack } from './support/cube-stack.ts';
 import { withoutTrailingZeros, writeSalesMart } from './support/sales-mart.ts';
 
 const MART = 'lake.marts.mart_sales_orders';
@@ -177,7 +177,8 @@ describe("Cube's SQL API (PostgreSQL wire protocol)", () => {
   let client: pg.Client;
 
   beforeAll(async () => {
-    client = sqlClient(cube.sqlPassword);
+    // No fixed password: the SQL API takes a query token (build step 4, decision E5).
+    client = cube.sqlClient(cube.token(ALL_REGIONS));
     await client.connect();
   });
 
@@ -185,18 +186,8 @@ describe("Cube's SQL API (PostgreSQL wire protocol)", () => {
     await client?.end();
   });
 
-  function sqlClient(password: string): pg.Client {
-    return new pg.Client({
-      host: '127.0.0.1',
-      port: cube.sqlPort,
-      user: cube.sqlUser,
-      password,
-      database: 'db',
-    });
-  }
-
-  it('refuses a wrong password', async () => {
-    const intruder = sqlClient('not-the-password');
+  it('refuses a plain password: only a query token opens it', async () => {
+    const intruder = cube.sqlClient('not-a-query-token');
 
     await expect(intruder.connect()).rejects.toThrow(/password authentication failed/);
     await intruder.end().catch(() => undefined);

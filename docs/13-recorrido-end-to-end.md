@@ -245,40 +245,46 @@ Este archivo generado (`packages/contracts/generated/semantic.ts`) se regenera c
 
 **Parte 1: `workspace_role` (qué podés hacer) y `data_entitlements` (qué datos podés ver) son cosas distintas, resueltas por separado** — mezclarlas obligaba a inventar roles combinados (`viewer_norte`, `viewer_sur`) cada vez que aparecía un recorte de datos nuevo. Detalle completo en `09-auth-gobernanza.md`, sección 6.1.
 
+**Implementado en el Paso 4.** La forma real difiere del borrador anterior en tres puntos:
+- **Auth no conoce tRPC.** Deniega con un error de su contrato (`AccessDeniedError`), y la Gateway lo traduce a su protocolo.
+- **La identidad llega verificada del token**, no como un `userId` suelto.
+- **El control entre organizaciones es parte de la resolución.**
+
 ```ts
-// packages/auth/src/security-context.ts
-export async function resolveSecurityContext(userId: string, workspaceId: string) {
-  const [membership, entitlements] = await Promise.all([
-    db.selectFrom('workspace_membership').where('user_id', '=', userId).where('workspace_id', '=', workspaceId)
-      .selectAll().executeTakeFirst(),
-    db.selectFrom('data_entitlements').where('user_id', '=', userId).where('workspace_id', '=', workspaceId)
-      .selectAll().execute(),
+// packages/auth/src/access/access-directory.ts (resumido)
+async resolveSecurityContext(identity: Identity, workspaceId: string): Promise<SecurityContext> {
+  // Dos preguntas, dos consultas: qué puede HACER (rol) y qué puede VER (entitlements).
+  const [workspace, membership, entitlements] = await Promise.all([
+    db.selectFrom('workspace').select(['id', 'organizationId']).where('id', '=', workspaceId).executeTakeFirst(),
+    db.selectFrom('workspaceMembership').select('role')
+      .where('workspaceId', '=', workspaceId).where('userId', '=', identity.userId).executeTakeFirst(),
+    db.selectFrom('dataEntitlements').select(['dimension', 'allValues', 'allowedValues'])
+      .where('workspaceId', '=', workspaceId).where('userId', '=', identity.userId).execute(),
   ]);
-
-  if (!membership) throw new TRPCError({ code: 'FORBIDDEN' });
-
-  return {
-    userId,
-    workspaceId,
-    workspaceRole: membership.role,                         // qué puede HACER
-    entitlements: Object.fromEntries(entitlements.map((e) => [e.dimension, e.values])), // qué puede VER — ej. { region: ['Norte'] }
-  };
+  // Deniega (AccessDeniedError, contrato de @atlasbi/contracts) si el workspace no existe, si es de
+  // otra organización que la del token, o si no hay membresía. Nunca devuelve un contexto parcial.
+  return buildSecurityContext(identity, workspace, membership, entitlements);
+  // → { userId, organizationId, workspaceId, workspaceRole: 'viewer',
+  //     entitlements: { region: { kind: 'listed', values: ['North'] } } }
 }
 ```
 
 **Parte 2: este objeto nunca viaja como un campo suelto de `cubeClient.load()` — Cube solo acepta security context vía un JWT verificado en el header `Authorization`, es su mecanismo real de autenticación, no una opción de conveniencia. Esto describe el camino de REST/GraphQL (`checkAuth`) — el camino del SQL API (`checkSqlAuth`, usado por `/v1/cubesql`) es un mecanismo distinto, todavía pendiente de validar empíricamente antes de escribir su código final (`17-self-service-calculations.md`, secciones 3.2.3 y 3.2.4).**
 
-```ts
-// packages/api-gateway/src/cube-auth.ts
-import jwt from 'jsonwebtoken';
+**Implementado en el Paso 4:**
+- **Lo que viaja a Cube no es el security context tal cual,** sino su traducción a los grupos del modelo, en un solo lugar (`toQueryClaims`, `@atlasbi/semantic`). El rol no viaja, porque Cube no decide filas con él.
+- **El token es corto y lo arma siempre el firmador de la plataforma:** HS256, emisor `platform-api`, audiencia `semantic-layer`, vida ≤ 300 s.
+- **El SQL API por el puerto Postgres ya está resuelto:** `checkSqlAuth` acepta este mismo token como contraseña. Sigue pendiente el transporte HTTP `/v1/cubesql`, que es el experimento del Paso 5.
 
-export function signCubeToken(securityContext: SecurityContext): string {
-  // CUBEJS_API_SECRET es el mismo secreto que Cube Core usa para verificar tokens entrantes
-  return jwt.sign(securityContext, process.env.CUBEJS_API_SECRET!, { expiresIn: '5m' }); // corto, se firma en cada request
-}
+```ts
+// Lo que hará la Gateway por request (Paso 5), con piezas que ya existen:
+const identity = await identityPort.verifyIdentityToken(sessionIdentityToken); // { userId, organizationId }
+const context = await accessDirectory.resolveSecurityContext(identity, workspaceId);
+const queryToken = signQueryToken(apiSecret, toQueryClaims(context));
+// toQueryClaims → { sub, org, workspace, groups: ['region:listed'], entitlements: { region: ['North'] } }
 ```
 
-Cube recibe ese token en el header `Authorization`, lo verifica contra `CUBEJS_API_SECRET`, y construye su propio `securityContext` interno a partir de los claims — recién ahí el YAML de la Capa 4 puede referenciar `entitlements.region` en sus reglas de fila. La Gateway nunca le "dice" a Cube qué filtrar en un campo aparte; Cube lo deriva del token, como cualquier otro cliente autenticado.
+Cube recibe ese token en el header `Authorization`, lo verifica contra `CUBEJS_API_SECRET`, y construye su propio `securityContext` interno a partir de los claims — recién ahí el YAML de la Capa 4 puede referenciar `entitlements.region` en sus reglas de fila (`04-semantico.md` §6.2 y §6.6: `group: 'region:listed'` / `'region:all'`, con `contextToGroups`). La Gateway nunca le "dice" a Cube qué filtrar en un campo aparte; Cube lo deriva del token, como cualquier otro cliente autenticado.
 
 ---
 

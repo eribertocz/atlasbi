@@ -18,6 +18,13 @@ const DUCKDB_CLIENT = {
   message:
     'DuckDB types never cross the adapter boundary (docs/21 §3.2): use the lakehouse ports from @atlasbi/contracts and @atlasbi/warehouse.',
 };
+const BETTER_AUTH_MESSAGE =
+  'better-auth types never cross the adapter boundary (docs/21 §3.2): use IdentityPort from @atlasbi/contracts and @atlasbi/auth.';
+const BETTER_AUTH = { name: 'better-auth', message: BETTER_AUTH_MESSAGE };
+const BETTER_AUTH_SUBPATHS = {
+  group: ['better-auth/*', '@better-auth/*'],
+  message: BETTER_AUTH_MESSAGE,
+};
 
 // Encodes docs/21-engineering-standards.md where a linter can: naming conventions (§8),
 // "consume a package's public entry point, never its internals" (CLAUDE.md rule 2) and
@@ -65,6 +72,20 @@ export default defineConfig(
       ],
       'no-restricted-imports': [
         'error',
+        {
+          paths: [DUCKDB_CLIENT, BETTER_AUTH, INCUBATING_SEMCONV],
+          patterns: [INTERNALS_PATTERN, BETTER_AUTH_SUBPATHS],
+        },
+      ],
+    },
+  },
+  {
+    // The better-auth adapter — and the tests that exercise it — are the only code that may see
+    // better-auth.
+    files: ['packages/auth/src/adapters/better-auth/**/*.ts', 'packages/auth/test/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
         { paths: [DUCKDB_CLIENT, INCUBATING_SEMCONV], patterns: [INTERNALS_PATTERN] },
       ],
     },
@@ -75,7 +96,10 @@ export default defineConfig(
     rules: {
       'no-restricted-imports': [
         'error',
-        { paths: [INCUBATING_SEMCONV], patterns: [INTERNALS_PATTERN] },
+        {
+          paths: [BETTER_AUTH, INCUBATING_SEMCONV],
+          patterns: [INTERNALS_PATTERN, BETTER_AUTH_SUBPATHS],
+        },
       ],
       '@typescript-eslint/naming-convention': [
         'error',

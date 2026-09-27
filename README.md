@@ -38,7 +38,7 @@ pnpm install
 pnpm bootstrap      # crea .env, levanta la infraestructura, aplica migraciones, crea el bucket
                     # y las claves del object storage, instala las extensiones de DuckDB (las del
                     # host y las de Cube: la única descarga) y aprovisiona el lakehouse
-pnpm seed           # opcional: dataset de desarrollo en el lakehouse (20.000 filas)
+pnpm seed           # opcional: dataset de desarrollo (20.000 filas) y usuarios demo
 pnpm transform plan # opcional: SQLMesh construye el mart sobre ese dataset
 ```
 
@@ -51,7 +51,8 @@ Cube), poné `ATLASBI_LAKEHOUSE_CATALOG_TYPE=sqlite` en `.env` y corré `pnpm bo
 
 `bootstrap` nunca reescribe un `.env` existente: si el tuyo es de una versión anterior, agregale las
 variables nuevas desde `.env.example` (al pasar a `0.3.0`: el object storage, el lector del lakehouse
-y Cube). Un lakehouse de desarrollo de `0.2.0` (PostgreSQL con los datos en una carpeta) ya no es un
+y Cube; al pasar a `0.4.0`: `ATLASBI_AUTH_SECRET` y `ATLASBI_SEED_DEMO_PASSWORD`, y
+`ATLASBI_SEMANTIC_SQL_PASSWORD` sobra). Un lakehouse de desarrollo de `0.2.0` (PostgreSQL con los datos en una carpeta) ya no es un
 nivel soportado: recrealo con `pnpm reset:local` y `pnpm bootstrap`.
 
 Turborepo envía telemetría anónima por defecto; para desactivarla en tu máquina:
@@ -63,7 +64,7 @@ Turborepo envía telemetría anónima por defecto; para desactivarla en tu máqu
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `pnpm dev`                                           | Verifica prerrequisitos y `.env`, levanta la infraestructura local (Postgres, OTel Collector, object storage, Cube y Cube Store; en el nivel portátil, solo los dos primeros), aplica migraciones pendientes y espera a que cada pieza —incluidos el lakehouse y Cube respondiendo desde él— esté lista. Nunca descarga ni crea nada |
 | `pnpm preflight`                                     | Solo verifica la máquina: versiones, compose provider, puertos libres (los del nivel configurado), extensiones de DuckDB (las del host y las de Cube) y carpetas del lakehouse. No cambia nada                                                                                                                                       |
-| `pnpm seed`                                          | Carga el dataset de desarrollo en el lakehouse (idempotente; nunca corre solo)                                                                                                                                                                                                                                                       |
+| `pnpm seed`                                          | Carga el dataset de desarrollo en el lakehouse y los accesos demo: organización `demo`, workspaces `comercial` y `finanzas`, `ana@example.com` y `bruno@example.com` con la contraseña de `ATLASBI_SEED_DEMO_PASSWORD` (idempotente; nunca corre solo)                                                                               |
 | `pnpm transform <comando>`                           | Corre SQLMesh (`plan`, `run`, `test`, `audit`, `lint`…) sobre el lakehouse. **Es la única forma soportada**: `uv run sqlmesh` directo se salta la verificación del lakehouse y los secretos ([por qué](docs/02-transformacion.md))                                                                                                   |
 | `pnpm stack:up` / `stack:down` / `stack:logs`        | Todo en contenedores / detener / ver logs                                                                                                                                                                                                                                                                                            |
 | `pnpm reset:local`                                   | **Destructivo**: borra la infraestructura local, sus datos y `.data/lakehouse` (pide confirmación). `.env` y las extensiones de DuckDB no se tocan                                                                                                                                                                                   |
@@ -75,6 +76,8 @@ La infraestructura local publica sus puertos solo en `127.0.0.1`: Postgres en **
 para no chocar con un Postgres ya instalado), OTLP en 4317/4318, el health check del Collector en
 13133, el object storage en 53900 (S3) y 53903 (administración), y Cube en 4000 (REST) y 15432 (SQL
 API). Se cambian en `.env`. Cube y Cube Store no tienen salida a Internet: viven en una red interna.
+Cube solo acepta el token corto que firma la plataforma, también en el SQL API (como contraseña): no
+hay una contraseña fija, y cada consulta ve solo las filas de quien pregunta ([`docs/04`](docs/04-semantico.md) §6.6).
 
 ## Estructura
 

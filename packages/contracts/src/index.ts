@@ -1,4 +1,27 @@
 export {
+  AUTHENTICATION_ERROR_CODES,
+  AuthenticationError,
+  IDENTITY_PORT_VERSION,
+} from './auth/identity-port.ts';
+export type {
+  AuthenticationErrorCode,
+  Identity,
+  IdentityPort,
+  NewUser,
+} from './auth/identity-port.ts';
+export {
+  ACCESS_DENIED_REASONS,
+  AccessDeniedError,
+  SECURITY_CONTEXT_VERSION,
+  WORKSPACE_ROLES,
+} from './auth/security-context.ts';
+export type {
+  AccessDeniedReason,
+  DataEntitlement,
+  SecurityContext,
+  WorkspaceRole,
+} from './auth/security-context.ts';
+export {
   ANALYTICAL_QUERY_PORT_VERSION,
   DEFAULT_QUERY_MAX_ROWS,
 } from './lakehouse/analytical-query-port.ts';

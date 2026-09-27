@@ -4,6 +4,98 @@ Versionado del producto según [`docs/21-engineering-standards.md`](docs/21-engi
 §2: SemVer `0.MINOR.PATCH` hasta 1.0; los contratos (API, Report Schema, Config Schema, DB
 Migration…) versionan por separado y se listan en cada release.
 
+## Unreleased
+
+Paso 4 del orden de construcción: identidad y autorización. Con él, dos usuarios ven recortes
+distintos de la misma métrica. La cadena es la misma que la API Gateway va a recorrer en cada
+request en el Paso 5, y ya está verificada de punta a punta (`docs/16`: el RLS del MVP).
+
+### Agregado — identidad (better-auth 1.7.6)
+
+- **`@atlasbi/auth`**, con el puerto propio `IdentityPort` (`@atlasbi/contracts`): ningún tipo
+  de better-auth sale de su adaptador, y ESLint impide importarlo fuera de él.
+  - Usuarios con email y contraseña (12 a 128 caracteres).
+  - **Sin registro público:** los usuarios los crea una acción de administración (decisión D5).
+  - Organización con el plugin `organization`, sin _teams_ ni invitaciones.
+  - Sesiones.
+- **Token de identidad verificable localmente.**
+  - Lleva **solo** `sub` (el usuario) y `org` (la organización), más `iss`, `aud`, `iat` y `exp`.
+    Nunca un rol ni un permiso sobre datos (`docs/09` §7); cualquier _claim_ extra lo invalida.
+  - EdDSA, 15 minutos de vida, con las claves en la base y la privada cifrada con
+    `auth.secret`.
+  - Sin `definePayload`, better-auth metería el usuario entero en el token: un test lo impide.
+- **Superficie mínima.**
+  - Solo los plugins `organization` y `jwt`. El plugin `admin` queda afuera: con solo activarlo
+    expondría por HTTP unos 20 endpoints `/admin/*` (medido).
+  - Telemetría apagada: ninguna llamada de red, medido en los tests.
+
+### Agregado — autorización propia
+
+- **`resolveSecurityContext`:** resuelve por separado el rol (qué puede hacer) y los permisos
+  sobre datos (qué puede ver), y los combina en `SecurityContext` v1.
+  - Deniega un workspace inexistente, uno de otra organización (aunque haya una fila de
+    membresía ahí) y a quien no es miembro.
+  - Deniega por defecto: una dimensión protegida sin concesión no se ve. "Todos los valores" es
+    una concesión explícita.
+
+### Agregado — RLS en Cube
+
+- **Políticas de acceso en el modelo** (`sales_orders` y `regions`) con los grupos
+  `region:listed` y `region:all`.
+  - Los grupos se arman en un solo lugar, `toQueryClaims` (`@atlasbi/semantic`), a partir del
+    contexto de seguridad; el rol no viaja.
+  - Con una segunda dimensión protegida el código falla a propósito, por la advertencia de
+    `docs/09` §6.1 sobre el OR entre grupos.
+- **Token corto hacia Cube:** HS256, emisor `platform-api`, audiencia `semantic-layer`, vida de
+  5 minutos como máximo.
+  - Por REST, Cube lo verifica fijado a ese algoritmo, emisor y audiencia.
+  - **El SQL API ya no tiene contraseña fija:** acepta el mismo token como contraseña y aplica la
+    misma RLS (decisión E5).
+- **Control de vencimiento en cada consulta.** Una conexión del SQL API no sobrevive a su token
+  (medido: token de 6 s, conexión de 9 s), y un token sin `exp` se rechaza también por REST.
+- **La sonda de `pnpm dev`** usa el grupo `readiness`, que solo ve `regions.zone`.
+
+### Agregado — base de datos, seed y CLI
+
+- **Las primeras migraciones reales.**
+  - `000001_auth_schema.sql`: las tablas de better-auth en el esquema `auth`, generadas por su
+    planificador para las opciones de la plataforma. Un test de contrato detecta cualquier cambio
+    al actualizar.
+  - `000002_access_control.sql`: `access.workspace`, `access.workspace_membership` y
+    `access.data_entitlements`, con restricciones en la base (sin lista vacía, sin permiso sobre
+    datos sin membresía).
+- **`pnpm seed`** agrega la organización `demo`, los workspaces `comercial` y `finanzas`, y los
+  usuarios `ana@example.com` y `bruno@example.com`: el escenario de la demo de aceptación
+  (`docs/16` §4).
+  - Es idempotente y valida todos los secretos antes de escribir.
+  - Prueba cada acceso iniciando sesión, sin imprimir nunca la contraseña.
+  - Si los usuarios ya existen con otra contraseña, lo dice y da el remedio.
+- **`pnpm dev`** exige `auth.secret` y aplica las migraciones nuevas sobre la base existente: no
+  hace falta `reset:local`.
+
+### Contratos
+
+- **Config Schema v4 → v5.**
+  - Secretos nuevos: `auth.secret` (`ATLASBI_AUTH_SECRET`) y `seed.demo-password`
+    (`ATLASBI_SEED_DEMO_PASSWORD`).
+  - Se retira `semantic.sql-password`.
+  - Un `.env` existente se completa desde `.env.example`; `ATLASBI_SEMANTIC_SQL_PASSWORD` sobra.
+- **Contratos nuevos:** `IdentityPort` 1.0, `SecurityContext` 1.0 (con `DataEntitlement`:
+  `all` o una lista que nunca está vacía) y `AccessDeniedError`.
+- **DB Migration:** `000002`, la primera versión con tablas.
+- **Token de consulta hacia Cube:** emisor `platform-api`, audiencia `semantic-layer`, ≤ 300 s,
+  para REST y SQL.
+
+### Corrección
+
+- **`docs/04` §6.2:** el ejemplo de `access_policy` usaba `role:` y una lista anidada. En Cube
+  1.7.45 es `group:` con `contextToGroups`: `contextToRoles` ni siquiera arranca.
+- **`docs/09` §6.1:**
+  - Advertencia explícita sobre la combinación con OR entre grupos de Cube.
+  - `values` pasa a `allowed_values`, porque es palabra reservada en SQL.
+- **`pnpm seed`:** con un `auth.secret` inválido, fallaba después de sembrar el dataset. Ahora
+  valida todo antes de escribir.
+
 ## 0.3.0 — capa semántica (2026-09-26)
 
 Paso 3 del orden de construcción: Cube Core sobre el lakehouse. Para que un lector en un contenedor

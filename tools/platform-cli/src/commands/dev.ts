@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises';
 
 import {
   assertSecretsAvailable,
+  authSecretKeys,
   bootstrapSecretKeys,
   createSecretProvider,
   lakehouseReaderSecretKeys,
@@ -65,6 +66,7 @@ export async function startLocalStack(mode: LakehouseStartMode = 'dev'): Promise
           ...requiredSecretKeys(config.lakehouse),
           ...lakehouseReaderSecretKeys(config.lakehouse),
           ...semanticSecretKeys(config.lakehouse),
+          ...authSecretKeys(),
         ],
   );
   const databaseUrl = await secrets.get(SECRET_KEYS.databaseUrl);

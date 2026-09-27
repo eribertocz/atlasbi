@@ -111,6 +111,7 @@ TECNOLOGÍA (reemplazable)
 | `TransformationEngine` (`plan()`, `run()`, `backfill()`, `getLineage()`) | `SQLMeshAdapter` | SQLMesh |
 | `MetadataCatalogPort` | `OpenMetadataAdapter` | OpenMetadata |
 | `SecretProvider` (ya definido, `11-infraestructura.md` §4.7) | `EnvSecretProvider`, `OpenBaoAdapter`, `CloudSecretAdapter` | — |
+| `IdentityPort` (Paso 4: usuarios, organizaciones, sesiones y el token de identidad con `sub` + `org` únicamente) | `createBetterAuthIdentity`, en `packages/auth/src/adapters/better-auth/` — el único lugar que importa `better-auth` (regla de ESLint) | better-auth |
 | `LLMProvider` (ya definido, `05-cerebro-ia.md`) | `ClaudeProvider` | Claude (por defecto) |
 
 **Honestidad sobre el límite de esta regla:** algunos motores tienen capacidades muy específicas — reemplazar SQLMesh no necesariamente da, de fábrica, exactamente el mismo `getLineage()`. El puerto encapsula el *impacto* del reemplazo en un solo lugar (el adaptador), no promete que cualquier reemplazo sea trivial o completo.

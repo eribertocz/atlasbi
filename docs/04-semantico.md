@@ -115,23 +115,43 @@ flowchart LR
 
 El "security context" recibe, en cada consulta, los claims del usuario autenticado — resueltos por la capa 9 como dos cosas separadas: `workspace_role` (qué puede hacer) y `entitlements` (qué datos puede ver, ej. `{ region: ['Norte'] }`), nunca un solo campo de rol (`09-auth-gobernanza.md`, sección 6.1).
 
-**Corrección de sintaxis, verificada contra la documentación oficial: `SECURITY_CONTEXT` (mayúsculas, interpolado dentro del `sql` de un cube) está deprecado** — Cube lo marca explícitamente como candidato a remoción en versiones futuras. El mecanismo actual es **`access_policy`**, con un bloque `row_level.filters` declarado aparte de la definición de columnas — más declarativo, y sin repetir el filtro de seguridad en el `sql` de cada cube:
+**Corrección de sintaxis, verificada contra la documentación oficial: `SECURITY_CONTEXT` (mayúsculas, interpolado dentro del `sql` de un cube) está deprecado** — Cube lo marca explícitamente como candidato a remoción en versiones futuras. El mecanismo actual es **`access_policy`**, con un bloque `row_level.filters` declarado aparte de la definición de columnas — más declarativo, y sin repetir el filtro de seguridad en el `sql` de cada cube.
+
+**Segunda corrección, medida contra Cube Core 1.7.45 en la Fase 0 del Paso 4.** El ejemplo anterior de esta sección tenía dos errores:
+- **`role:` en lugar de `group:`.** En 1.7.45 las políticas se eligen por `group`/`groups`, con los grupos que devuelve `contextToGroups` en `cube.js`. `contextToRoles` ni siquiera se acepta: Cube no arranca.
+- **`values: ["{ … }"]`,** que metía la lista de valores dentro de otra lista.
+
+Además, los grupos se derivan de los *entitlements* y **nunca del `workspace_role`**, como exige `09-auth-gobernanza.md` §6.1:
 
 ```yaml
 cubes:
-  - name: ventas
-    sql_table: mart_ventas
+  - name: sales_orders
+    sql_table: lake.marts.mart_sales_orders
     # ...
     access_policy:
-      - role: viewer
+      - group: "region:listed"        # ve solo las regiones de su lista
         row_level:
           filters:
             - member: region
               operator: equals
-              values: ["{ securityContext.entitlements.region }"]
+              values: "{ securityContext.entitlements.region }"
+      - group: "region:all"           # concesión explícita de todas las regiones
+        row_level:
+          allow_all: true
 ```
 
-**Una precisión más, importante para no repetir el error de Cube Cloud vs. Cube Core:** el objeto `userAttributes` que aparece en buena parte de la documentación de Cube **es exclusivo de Cube Cloud** — en Cube Core (self-hosteado, lo que usa este proyecto) hay que referenciar `securityContext` directamente, nunca `userAttributes`, como en el ejemplo de arriba. La regla vive en este archivo de `access_policy`, versionado como el resto del cube, no en una capa de roles separada e invisible.
+```js
+// cube.js — Cube solo lee los grupos; quién pertenece a cuál lo decide @atlasbi/semantic
+contextToGroups: ({ securityContext }) => securityContext.groups ?? [],
+```
+
+**Qué se midió en la Fase 0 del Paso 4.**
+- **Falla cerrado.** Sin grupo, o con un grupo desconocido, Cube niega la consulta. También la niega (con un error, nunca con datos) cuando la lista de valores está vacía, falta la clave, falta `entitlements`, o el valor es `null` o un texto suelto.
+- **La RLS se aplica también sobre la pre-agregación y sobre el join con `regions`,** que tiene su propia política.
+- **Toda pre-agregación de un cube protegido debe incluir las dimensiones protegidas.** Si no, una consulta con RLS no puede usarla.
+- **Las políticas de grupos distintos se combinan con OR.** La advertencia que eso implica para una segunda dimensión protegida está en `09-auth-gobernanza.md` §6.1.
+
+**Una precisión más, importante para no repetir el error de Cube Cloud vs. Cube Core:** el objeto `userAttributes` que aparece en buena parte de la documentación de Cube **es exclusivo de Cube Cloud** — en Cube Core (self-hosteado, lo que usa este proyecto) hay que referenciar `securityContext` directamente, nunca `userAttributes`, como en el ejemplo de arriba (con `group` y `contextToGroups`, no `role`). La regla vive en este archivo de `access_policy`, versionado como el resto del cube, no en una capa de roles separada e invisible.
 
 ### 6.3 Caché, sin duplicar el dataset completo
 
@@ -205,7 +225,24 @@ Si algo falla, no lo oculta. El cliente recibe siempre el mismo mensaje genéric
   - Medidas: `count`, `sum`, `count_distinct`, un ratio, `rolling_window` de 3 meses, y `time_shift` y variación mes a mes como medidas `multi_stage`.
   - Una pre-agregación: `amount_by_region_month`.
 - `regions`: un cube derivado del mismo mart (`SELECT DISTINCT region`), sin datos nuevos, que da un join real para la batería de *pushdown* (`17-self-service-calculations.md` §3.2.2).
-- El RLS llega con Auth (Pasos 4 y 5), y el puerto `SemanticQueryPort` que aísla los tipos de Cube, con la API Gateway (Paso 5).
+- El puerto `SemanticQueryPort`, que aísla los tipos de Cube, llega con la API Gateway (Paso 5).
+
+**Seguridad de las consultas (Paso 4, `0.4.0`, `packages/semantic/cube/query-security.cjs`).**
+
+- **Quién pregunta.** Cube acepta solo el token corto de la plataforma: HS256, emisor `platform-api`, audiencia `semantic-layer`, 5 minutos de vida como máximo.
+  - Por REST lo verifica Cube mismo, fijado con su opción `jwt` a ese algoritmo, emisor y audiencia. Lo demás responde un 403 genérico.
+  - **El SQL API no tiene contraseña fija.** `checkSqlAuth` recibe el mismo token como contraseña y lo verifica con `jsonwebtoken`, la librería con la que Cube verifica REST. El resultado es la misma RLS en las dos superficies (decisión E5).
+- **En cada consulta, `queryRewrite` rechaza un contexto vencido o que vive más de 5 minutos.** Esto cierra dos huecos medidos:
+  - **Una conexión del SQL API que sobrevivía a su token.** `checkSqlAuth` solo corre al conectar; medido con un token de 6 s y la conexión abierta 9 s.
+  - **Un token de REST sin `exp`,** que Cube acepta por su cuenta.
+
+  El trabajo interno de Cube, como el refresco de pre-agregaciones, no tiene contexto y pasa.
+- **Qué filas ve.**
+  - `access_policy` en `sales_orders` y en `regions`, con los grupos `region:listed` (filtro por `securityContext.entitlements.region`) y `region:all` (concesión explícita). Sin grupo, se deniega (§6.2).
+  - Los grupos los arma un único lugar, `toQueryClaims` en `@atlasbi/semantic`, a partir del `SecurityContext` de Auth; el rol nunca viaja.
+  - Si alguien agrega una segunda dimensión protegida sin rediseñar esa traducción, el código falla a propósito (advertencia de `09-auth-gobernanza.md` §6.1).
+- **La sonda de `pnpm dev`** firma con el grupo `readiness`, que solo ve `regions.zone`.
+- **Logs.** Cube escribe en su log los tokens que **rechaza** completos, nunca los que acepta. La Gateway (Paso 5) nunca le reenvía a Cube el token del cliente: firma uno propio por request.
 
 ---
 
