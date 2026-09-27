@@ -43,8 +43,37 @@
 | **Observability** | Seguir una petición de punta a punta, correlacionada por `trace_id`+`query_id`+`workspace_id`+`visual_id` | Todo emite OpenTelemetry — el backend (Grafana, etc.) es intercambiable sin reinstrumentar | OpenTelemetry | `11-infraestructura.md` §4.6 |
 | **Performance Intelligence** | Recolectar latencia por etapa (planificación de Cube, ejecución de DuckDB, render), *cache hit rate*, filas escaneadas — y eventualmente recomendaciones automáticas ("esta dimensión causa el 72% del tiempo de consulta") | Se construye **sobre** los datos de Observability, nunca como un sistema de métricas paralelo | **No diseñado todavía** — es una capa de análisis sobre lo que OpenTelemetry ya captura, no una pieza de infraestructura nueva | Pendiente — extensión futura de `11-infraestructura.md` §4.6 |
 | **Export / Rendering Engine** | PDF, PNG, SVG, Excel, snapshots programados — sin depender del navegador del usuario abierto | El render para exportar es un servicio server-side separado del render interactivo, nunca el mismo código | **No diseñado todavía** — ya estaba anotado como hueco de alcance (`00-documentacion-general.md` sección 4) | Pendiente — requisitos de visualización y de Custom Components en `22-visualization-engine.md` §11 |
-| **Audit & Compliance** | Responder "¿quién cambió este entitlement?", "¿quién certificó esta métrica?", "¿quién publicó este reporte?", "¿quién exportó estos datos?" — distinto de Observability, que responde *por qué* algo tardó, no *quién* hizo qué | Un registro `audit_event`, append-only — nunca se edita ni se borra una fila ya escrita | **No diseñado todavía** | Pendiente |
+| **Audit & Compliance** | Responder "¿quién cambió este entitlement?", "¿quién certificó esta métrica?", "¿quién publicó este reporte?", "¿quién exportó estos datos?" — distinto de Observability, que responde *por qué* algo tardó, no *quién* hizo qué | Un registro `audit_event`, append-only — nunca se edita ni se borra una fila ya escrita | **Esquema mínimo fijado (2026-09-27), sin implementar**: nace en el paso que lo use primero (certificación o cambios de membresías) | Abajo, "Audit & Compliance — diseño mínimo" |
 | **Accessibility + Internationalization** | Navegación por teclado, *screen readers*, ARIA, alto contraste, locale, timezone, formatos de número/fecha/moneda — transversal a Viewer, Author y Explore | No es un "extra" que se agrega al final — una decisión de layout o de componente que lo hace imposible más tarde no se toma ahora, aunque la implementación completa espere | **No diseñado todavía** — requisito transversal, no una pieza aislada | Pendiente |
+
+### Audit & Compliance — diseño mínimo (2026-09-27)
+
+**Una sola historia.** `audit_event` es el único registro de quién hizo qué. No hay tablas de auditoría paralelas por capacidad: la certificación (`09-auth-gobernanza.md` §9.1, `05-cerebro-ia.md` §10) escribe acá. Su estado vigente es una vista sobre el último evento de cada recurso (`audit.current_certifications`), o como mucho una proyección materializada que se reconstruye desde los eventos. Nunca es una tabla que se edita a mano.
+
+```sql
+audit.audit_event (
+  id uuid primary key default gen_random_uuid(),
+  occurred_at timestamptz not null default now(),
+  actor_user_id uuid,        -- null cuando actúa la plataforma (p. ej. una revocación automática)
+  organization_id uuid not null,
+  workspace_id uuid,
+  action text not null,      -- 'certification.granted' | 'certification.revoked' | 'agent_rule.changed' | 'entitlement.granted' | …
+  resource_type text not null,
+  resource_id text not null,
+  details jsonb not null default '{}'  -- hash del contenido, camino (git | conversation), nota, motivo
+)
+```
+
+**Append-only de verdad.** El rol de la aplicación no tiene `UPDATE` ni `DELETE` sobre la tabla, y un *trigger* rechaza cualquier `UPDATE` o `DELETE`, incluso de un rol con más privilegios.
+
+**Nadie la escribe directo.** Las capas pasan por un puerto `AuditLog` (agregar un evento y consultar), como con cualquier contrato (regla 2 de `CLAUDE.md`).
+
+**Retención.** La prueba de que alguien con permiso certificó la versión activa de algo vive acá. Por eso la retención nunca borra el último evento de un recurso que sigue certificado. En V1 no hay retención: nada se borra.
+
+**Escritores esperados.**
+- El servicio de certificación del copiloto (`05-cerebro-ia.md` §10.3).
+- Los cambios de membresías y *entitlements* del `AccessDirectory` de `09` ("¿quién cambió este entitlement?").
+- Más adelante: publicaciones y exportaciones.
 
 ## TIER 3 — Ecosistema (lo que permite crecer más allá del equipo original)
 

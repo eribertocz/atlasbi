@@ -279,13 +279,14 @@ Tableau permite que un "data steward" marque una fuente de datos o un dashboard 
 | --- | --- | --- |
 | Rol de organización (better-auth, nativo) | `owner`, `admin`, `member` | Identidad/tenant — quién administra la cuenta de la empresa |
 | Rol de workspace (`workspace_membership`, tabla propia) | `admin`, `editor`, `analyst`, `viewer` | Cuánto acceso day-to-day tiene alguien dentro de un workspace específico |
-| **Permiso de gobernanza** (otorgable, independiente del rol) | `certify_metric`, `sql_lab_access`, `manage_glossary`, `manage_quality` | Una tabla propia (`workspace_permissions`: `user_id`, `workspace_id`, `permission`) — no un rol nuevo por cada capacidad |
+| **Permiso de gobernanza** (otorgable, independiente del rol) | `certify_metric`, `sql_lab_access`, `manage_glossary`, `manage_quality`, `manage_agent_rules` (crear, editar o retirar reglas del copiloto, `05-cerebro-ia.md` §10) | Una tabla propia (`workspace_permissions`: `user_id`, `workspace_id`, `permission`) — no un rol nuevo por cada capacidad |
 
 Con esto, un `analyst` puede tener el permiso `certify_metric` sin ser `admin` — no hace falta inventar un rol combinado para cada combinación posible, y otorgar/revocar una capacidad puntual es una fila más en una tabla, no un cambio de rol completo.
 
 - **Quién puede certificar**: cualquier usuario con el permiso `certify_metric` en ese workspace — no un rol fijo llamado "data steward".
-- **Qué se certifica**: una tabla `mart_*` (capa 2) o una métrica de Cube (capa 4) — nunca una tabla `stg_*`/`int_*` interna, porque esas no son parte del contrato público de ninguna capa.
-- **El registro de auditoría**: una tabla propia (`gobernanza.certificaciones`: recurso, certificado_por, nota, fecha, estado), versionada como cualquier otro dato de esta capa — quién certificó qué y por qué queda escrito, no en la memoria de una persona.
+- **Qué se certifica**: una tabla `mart_*` (capa 2), una métrica de Cube (capa 4) o una consulta certificada del copiloto (`05-cerebro-ia.md` §10) — nunca una tabla `stg_*`/`int_*` interna, porque esas no son parte del contrato público de ninguna capa.
+- **El registro de auditoría — corregido (2026-09-27): no hay una tabla de certificaciones aparte.** Certificar, revocar y cambiar una regla del copiloto son eventos de `audit_event` (`18-first-class-citizens.md`, Audit & Compliance). Cada evento guarda acción, tipo e id del recurso, hash del contenido, camino (`git` o `conversation`), quién y nota. El estado vigente de cada recurso es una vista (`audit.current_certifications`) sobre el último evento: una sola historia, sin una segunda tabla que pueda contradecirla. La versión anterior proponía `gobernanza.certificaciones`.
+- **Por permiso, nunca por perfil.** Todo permiso de gobernanza se ejerce por cualquier camino que ofrezca la plataforma —editar el archivo en Git o un botón en la interfaz— y el acceso lo decide el permiso, nunca una suposición sobre el perfil técnico de la persona (`05-cerebro-ia.md` §10.3).
 
 ### 9.2 Una mejora real sobre el original: certificación continua, no una insignia que se olvida
 

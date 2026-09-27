@@ -240,14 +240,16 @@ Facturación ──area_id──► Área
 
 Relaciones y jerarquías dibujadas visualmente, compiladas a la sintaxis real de Cube (joins y `hierarchies`, ya definidos en `04-semantico.md`).
 
-**Corrección de un hueco real, señalado en la misma revisión: falta decidir dónde vive un borrador de modelo antes de convertirse en YAML certificado — un autor no técnico no puede hacer `git checkout`/editar YAML/PR.** La corrección: el mismo patrón *draft → validate → publish* que ya usa `17-self-service-calculations.md` para medidas, aplicado acá a relaciones/jerarquías:
+**Corrección de un hueco real, señalado en la misma revisión: falta decidir dónde vive un borrador de modelo antes de convertirse en YAML certificado, para quien prefiera no hacer `git checkout`/editar YAML/PR.** La corrección: el mismo patrón *draft → validate → publish* que ya usa `17-self-service-calculations.md` para medidas, aplicado acá a relaciones/jerarquías.
+
+**Corrección de encuadre (2026-09-27): los caminos no se asignan por perfil.** Editar el YAML en Git y el camino borrador → validar → publicar quedan abiertos a **cualquiera con el permiso** correspondiente, que elige el que prefiera. La plataforma nunca decide quién es "técnico" (`09-auth-gobernanza.md` §9.1, `05-cerebro-ia.md` §10.3).
 
 ```
 Borrador de modelo semántico (tabla propia, por workspace)
         ↓ validar (referencias existen, sin ciclos de relaciones)
         ↓ publicar
 YAML de Cube generado — el Git/PR ocurre detrás de escena para lo certificado,
-nunca como un paso que el autor no técnico tiene que ejecutar
+nunca como un paso obligatorio para quien eligió este camino
 ```
 
 **Por qué esto queda fuera del MVP, dicho sin vueltas:** Data Studio es, en los hechos, un Power Query propio — meses de ingeniería real, no una tarde de diseño. Se nombra ahora como capacidad de primer nivel para que nadie la invente mal más tarde (ni como "otro parser propio", ni escondida dentro del Report Builder, ni como una segunda vía de transformación paralela a SQLMesh), pero el MVP (`16-mvp-definicion-terminado.md`) sigue asumiendo que `mart_*` ya existe, preparado por SQLMesh — el camino "autor conecta y prepara sus propios datos" es la evolución natural después de que el Report Studio ya funcione con datos reales.
