@@ -197,3 +197,66 @@ Node fijado en **24.21.0** (antes 24.12.0). Al revisar el CVE-2026-58041 (`node:
 - Con cuatro suites de integración en paralelo, la latencia host→VM llegó a 10 s para un `SELECT 1`.
 
 **Siguiente:** Paso 4 — Auth (better-auth + `workspace_membership` + `data_entitlements`), antes del frontend, porque el MVP exige demostrar RLS con dos usuarios.
+
+### 0.4.0 — identidad y autorización (Paso 4) — cerrado el 2026-09-27
+
+**Qué quedó construido y verificado en vivo** (better-auth 1.7.6, Cube Core 1.7.45):
+
+- **`@atlasbi/auth`:** better-auth detrás de `IdentityPort`: email y contraseña, organización, sesiones.
+  - **Sin registro público:** los usuarios los crea una acción de administración.
+  - **Sin el plugin `admin`:** expondría unos 20 endpoints `/admin/*` por HTTP, medido.
+  - **Token de identidad:** solo `sub` y `org`, EdDSA, 15 minutos, verificado localmente con `jose`.
+  - **`resolveSecurityContext`:** rol y permisos sobre datos por separado, deniega por defecto y controla el cruce entre organizaciones.
+- **Primeras migraciones reales:**
+  - `000001`: el esquema de better-auth en `auth`, generado por su planificador y vigilado por un test de contrato.
+  - `000002`: `access.workspace`, `workspace_membership` y `data_entitlements`, con restricciones en la base.
+- **RLS en Cube:**
+  - Políticas con los grupos `region:listed` y `region:all`, armados solo por `toQueryClaims`; el rol nunca viaja.
+  - Token corto HS256 (≤ 5 minutos, `platform-api` → `semantic-layer`) para REST y, como contraseña, para el SQL API, que ya no tiene contraseña fija.
+  - Control de vencimiento por consulta: una conexión abierta no sobrevive a su token.
+  - Grupo `readiness` para la sonda de `pnpm dev`.
+- **`pnpm seed`:** la organización `demo`, los workspaces `comercial` y `finanzas`, y `ana@example.com` y `bruno@example.com` (el escenario de `16` §4). Es idempotente y prueba cada acceso iniciando sesión.
+- **Tests:** 195 unit (auth 9, config 21, database 5, CLI 47, warehouse 73, transform 13, semantic 27) y 152 de integración (auth 23, database 11, warehouse 73, transform 12, semantic 33).
+- **En vivo:**
+  - `pnpm dev` aplicó las dos migraciones sobre la base existente, sin `reset:local`.
+  - La cadena completa (*sign in* → token de identidad → contexto de seguridad → grupos → token corto → Cube) da, por REST y por SQL, exactamente los números del puerto de lectura: Ana en Comercial, 5 regiones; Ana en Finanzas, North = 1048798.45; Bruno en Finanzas, South = 1048442.15.
+  - La vieja contraseña fija del SQL API se rechaza.
+  - Negativos: `auth.secret` vacío o corto, contraseña demo distinta o corta, `pnpm seed` repetido, nivel portátil.
+
+**Contratos:** Config Schema v4 → v5 (`auth.secret` y `seed.demo-password`; se retira `semantic.sql-password`); `IdentityPort` 1.0; `SecurityContext` 1.0; DB Migration `000002`.
+
+**Decisiones del usuario:**
+- **D1:** la RLS de Cube entra en el Paso 4.
+- **D2:** esquemas `auth` (nombres del proveedor) y `access` (propio).
+- **D3:** se deniega por defecto; "todos" es explícito; `allowed_values`.
+- **D4:** el token de identidad lleva solo `sub` y `org`.
+- **D5:** sin registro público.
+- **D6:** contraseña demo fija de desarrollo.
+- **D7:** secreto vía `SecretProvider`, telemetría apagada.
+- **D8:** `workspace_permissions` pospuesta.
+- **E1:** API interna de better-auth en lugar del plugin `admin`, con evidencia medida.
+- **E2:** la traducción a grupos vive en `@atlasbi/semantic`.
+- **E3:** token HS256 con emisor y audiencia fijados.
+- **E4:** IDs UUID.
+- **E5:** el token como contraseña del SQL API, con la misma vida máxima que REST.
+- **Además:** la advertencia del OR entre grupos queda escrita en `09` §6.1.
+
+**Desvíos respecto del plan, informados en cada punto de control:**
+- `IdentityPort` suma `findUserByEmail` y `findOrganizationBySlug`, para el seed idempotente.
+- Nombres de *claims* neutros, por `21` §1.
+- El control de vencimiento por consulta se agregó al medir E5.
+- El ejemplo con `role:` que había que corregir estaba en `04` §6.2, no en `09` §6.2.
+
+**Lecciones de la verificación:**
+- En Cube 1.7.45 las políticas se eligen por `group`, y `contextToRoles` ni siquiera arranca.
+- Las políticas de grupos distintos se combinan con OR.
+- Una lista vacía o una clave ausente en la política fallan cerrado.
+- Cube acepta HS512 y tokens sin `exp` si no se lo fija.
+- `checkSqlAuth` corre una sola vez por conexión.
+- Cube escribe en su log los tokens rechazados.
+- better-auth mete el usuario entero en el token si no se define `definePayload`.
+- Su CLI quedó en 1.4, así que el esquema de 1.7 se genera con su planificador.
+- `internalAdapter.createUser` exige declarar el origen.
+
+**Siguiente:** Paso 5 — API Gateway (Fastify + tRPC), con la seguridad de Cube por request y el experimento de `checkSqlAuth` sobre `/v1/cubesql`.
+

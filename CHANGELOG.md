@@ -4,7 +4,7 @@ Versionado del producto según [`docs/21-engineering-standards.md`](docs/21-engi
 §2: SemVer `0.MINOR.PATCH` hasta 1.0; los contratos (API, Report Schema, Config Schema, DB
 Migration…) versionan por separado y se listan en cada release.
 
-## Unreleased
+## 0.4.0 — identidad y autorización (2026-09-27)
 
 Paso 4 del orden de construcción: identidad y autorización. Con él, dos usuarios ven recortes
 distintos de la misma métrica. La cadena es la misma que la API Gateway va a recorrer en cada
