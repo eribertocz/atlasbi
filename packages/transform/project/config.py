@@ -145,6 +145,7 @@ config = Config(
             "ambiguousorinvalidcolumn",
             "invalidselectstarexpansion",
             "noplatformmanagedstatements",
+            "noingestioninternals",
         },
     ),
 )

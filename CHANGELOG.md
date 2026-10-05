@@ -38,6 +38,10 @@ no debería tocar a sus vecinos.
     puede leer tablas de contratos que declara.
   - `external_models.yaml` de SQLMesh tiene que coincidir con el contrato de la fuente.
 
+- **Regla de lint `NoIngestionInternals`** (SQLMesh): un modelo no puede leer columnas ni tablas
+  de la herramienta de ingesta (`_dlt_*`) ni su esquema interno (`ingestion_*`), solo el contrato
+  de landing. Recorre el árbol sintáctico, no el texto.
+
 ### Contratos
 
 - **Contratos de datos nuevos:** `mart.sales_orders` 1.0 y `source.development_sales_orders` 1.0.

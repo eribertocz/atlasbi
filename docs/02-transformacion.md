@@ -238,6 +238,11 @@ Medido en la Fase 0 del Paso 2 (SQLMesh 0.236.2, DuckDB 1.5.5, DuckLake 1.0) ant
 - **Partición:** `partition_by_time_column false` en todo modelo incremental (§6.1.1).
 - **Parche temporal y experimental (regla 6), `project/ducklake_compat.py`:** SQLMesh borra tablas y vistas con `DROP … CASCADE` y DuckLake no lo soporta, así que su *janitor* nunca puede borrar una versión vieja de un modelo — cada cambio dejaría una tabla física completa para siempre. El parche declara `SCHEMA` como el único tipo con cascada, que es lo que propone el arreglo upstream (issue SQLMesh/sqlmesh#6032, PR #6034). Un test de alerta falla, con instrucciones, el día que la versión fijada de SQLMesh traiga el arreglo y el parche sobre.
 - **Guardas automáticas de §6.1.2:** una regla propia del linter de SQLMesh (`project/linter/`) rechaza `ATTACH`, `INSTALL`, `LOAD`, `SET`, secrets y `COPY` en cualquier modelo, y un test rechaza módulos de red en modelos Python.
+- **Sin internos de la ingesta en un modelo (después de `0.5.0`, auditoría de aislamiento).** Una segunda regla del linter, `NoIngestionInternals`, rechaza cualquier modelo que nombre:
+  - una columna o tabla propia de la herramienta de ingesta (`_dlt_load_id`, `_dlt_loads`…);
+  - el esquema interno donde esa herramienta escribe (`ingestion_*`).
+
+  Recorre el árbol sintáctico de la consulta y de los *statements*, no el texto. Un modelo lee el contrato de landing (`21-engineering-standards.md` §2.4), con sus columnas técnicas propias `_load_id` y `_loaded_at`. Así, cambiar dlt por otra herramienta de ingesta no toca ningún modelo.
 - **Particularidades de Windows:** redirigir la salida de SQLMesh a `NUL` lo hace terminar con código 1 aunque haya hecho el trabajo (el runner nunca lo hace); los logs van a `packages/transform/logs/` y la caché a `project/.cache/`, ambos fuera de Git y sin secretos.
 
 ---

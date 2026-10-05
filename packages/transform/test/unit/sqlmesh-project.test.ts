@@ -52,6 +52,37 @@ describe('SQLMesh project (offline)', () => {
     }
   });
 
+  it("rejects models that read an ingestion tool's metadata or its internal schema (docs/21 §2.4)", async () => {
+    const intruders = [
+      ['stg_dlt_column', 'SELECT order_id, _dlt_load_id FROM lake.fixture.sales_orders'],
+      ['stg_dlt_table', 'SELECT load_id FROM lake.landing_crm._dlt_loads'],
+      ['stg_ingestion_schema', 'SELECT id FROM lake.ingestion_crm.opportunity'],
+    ] as const;
+    const project = await copyProject();
+    try {
+      for (const [name, query] of intruders) {
+        await writeFile(
+          path.join(project.directory, 'models', 'staging', `${name}.sql`),
+          `MODEL (\n  name staging.${name},\n  kind VIEW\n);\n\n${query}\n`,
+        );
+      }
+
+      const run = await runSqlMesh(offline(), ['lint'], {
+        output: 'capture',
+        projectDirectory: project.directory,
+      });
+      const output = run.stdout + run.stderr;
+
+      expect(run.exitCode).not.toBe(0);
+      expect(output).toContain('noingestioninternals');
+      expect(output).toContain("_dlt_load_id is the ingestion tool's metadata");
+      expect(output).toContain("_dlt_loads is the ingestion tool's metadata");
+      expect(output).toContain("ingestion_crm is ingestion's internal schema");
+    } finally {
+      await project.dispose();
+    }
+  });
+
   it('refuses to load when run directly instead of through `pnpm transform`', async () => {
     const run = await runInTransformEnvironment(
       ['sqlmesh', '-p', SQLMESH_PROJECT_DIRECTORY, 'info'],

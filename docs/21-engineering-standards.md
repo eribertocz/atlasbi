@@ -111,7 +111,7 @@ Commits normales (`feat(matrix): add server-side hierarchy expansion`, `fix(quer
 - `_load_id` (`varchar`, nunca nulo): la carga que escribió la fila. Es opaco y lo elige el adaptador.
 - `_loaded_at` (`timestamp_tz`, nunca nulo): cuándo terminó esa carga.
 
-Las columnas propias de una herramienta (`_dlt_load_id`, `_dlt_id`…) **nunca** forman parte de un contrato: `parseDataContract` las rechaza. Cómo publica el adaptador de dlt ese contrato se decide y se mide en la Fase 0 del Paso 7.
+Las columnas propias de una herramienta (`_dlt_load_id`, `_dlt_id`…) **nunca** forman parte de un contrato: `parseDataContract` las rechaza. Tampoco pueden leerlas los modelos: la regla de lint `NoIngestionInternals` de SQLMesh rechaza cualquier referencia a `_dlt_*` o a los esquemas `ingestion_*` (`02-transformacion.md` §6.5). Cómo publica el adaptador de dlt ese contrato se decide y se mide en la Fase 0 del Paso 7.
 
 **Contratos vigentes:**
 
