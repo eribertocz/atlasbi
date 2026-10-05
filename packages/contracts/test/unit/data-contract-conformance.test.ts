@@ -44,7 +44,7 @@ function publishing(
       return Promise.resolve(result([[facts.repeated]]));
     },
     close: () => Promise.resolve(),
-  } as AnalyticalQueryPort & { sql: string[] };
+  };
 }
 
 describe('findDataContractViolations', () => {
