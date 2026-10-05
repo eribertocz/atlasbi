@@ -260,3 +260,63 @@ Node fijado en **24.21.0** (antes 24.12.0). Al revisar el CVE-2026-58041 (`node:
 
 **Siguiente:** Paso 5 — API Gateway (Fastify + tRPC), con la seguridad de Cube por request y el experimento de `checkSqlAuth` sobre `/v1/cubesql`.
 
+### 0.5.0 — API Gateway (Paso 5) — cerrado el 2026-10-05
+
+**Qué quedó construido y verificado en vivo** (Fastify 5.12.5, tRPC 11.19.0, Cube Core 1.7.45):
+
+- **`SemanticRuntimePort` 1.0** (`@atlasbi/contracts`): `SemanticQuery` v1 con los 12 operadores del Filter AST, `SemanticResult` con filas posicionales y números como string exacto, y errores con códigos cerrados.
+  - **Adaptador de Cube** en `@atlasbi/semantic` (`createCubeSemanticRuntime`): metadata del contexto → validación → datos, con `limit + 1`. Devuelve solo datos y nunca usa `extended=true`.
+  - **Batería de contrato** independiente de los datos, que el adaptador pasa contra un stack propio.
+- **`@atlasbi/api-gateway`:** `session.me`, `semantic.meta` y `semantic.query`.
+  - Identidad verificada en cada llamada; contexto de seguridad por workspace y por llamada.
+  - `/auth`: tres rutas por `IdentityHttpHandler` 1.0, con `Origin` obligatorio. Las otras 51 rutas de better-auth no son alcanzables.
+  - Límites de intentos: 10 por minuto por IP y 5 fallos cada 15 minutos por cuenta. El limitador de better-auth está apagado.
+  - tRPC endurecido, respuestas neutras, CSP, `no-store`, sin CORS, solo `127.0.0.1`.
+  - Trazas OTel de Fastify, `pg` y `undici`, sin *query string* ni valores, y sin propagador.
+- **`pnpm dev`:** levanta el gateway con `node --watch`, espera `/ready` y queda en primer plano. Ctrl+C lo detiene, verificado por el usuario en Windows. El preflight revisa el puerto 4100.
+- **Tests:** 299 unit (api-gateway 28, auth 11, config 24, database 5, CLI 54, warehouse 73, transform 13, semantic 91) y 188 de integración (api-gateway 8, auth 33, database 11, warehouse 73, transform 12, semantic 51).
+- **En vivo:**
+  - Recorrido de Ana y Bruno, 31/31: en Finanzas, Ana ve North y Bruno South; en Comercial, North da el mismo número exacto.
+  - Negativos: `Origin`, rutas ocultas de better-auth, GET, *batch*, 1 MB, *tokens* inválidos, límites de intentos.
+  - p50 por HTTP: `session.me` 2,7 ms; `semantic.query` 24 ms con la caché de Cube y 66 ms sin ella.
+
+**Contratos:** Config Schema v5 → v6 (`ATLASBI_GATEWAY_PORT`, `ATLASBI_PUBLIC_URL`, `ATLASBI_SEMANTIC_URL`, con valores por defecto); `SemanticRuntimePort` 1.0; `IdentityHttpHandler` 1.0. Sin cambios en `IdentityPort`, `SecurityContext` ni en las migraciones.
+
+**Decisiones del usuario:**
+- **G1–G10** y los ajustes 1–6 del plan v2, aprobados sin cambios. Lo central:
+  - Identidad por `Bearer`.
+  - El puerto semántico en `contracts`.
+  - `/auth` por lista explícita.
+  - `/api/v1` reservado.
+  - Límites de intentos en el gateway.
+  - OTel mínimo.
+- **El límite por cuenta también bloquea a su dueño:** el usuario aceptó ese costo, documentado en `06` §6.3.
+- **Sin caché de metadata:** 2–3 ms no justifican servir metadata vieja después de un cambio de permisos.
+- **El *panic* de Cube con un `OR` siempre verdadero** es `cube-js/cube#7880` que evolucionó: se agrega como comentario en ese issue, no como uno nuevo, y lo publica el usuario.
+- **`IDENTITY_HTTP_VERSION = '1.0'`.**
+- **La casilla de la Capa 6 en `16`** queda sin marcar hasta el frontend.
+
+**Desvíos respecto del plan, informados en cada punto de control:**
+- Saqué la *query string* también de los spans de `undici`: la misma fuga que `@fastify/otel`, encontrada en el test de integración. El usuario lo aprobó.
+- Fastify limita a 100 caracteres el parámetro de ruta de tRPC: un *batch* de 10 daba 414, y el límite se subió.
+- `/ready` solo depende de la base de la plataforma.
+- En el nivel portátil, `semantic.*` responde `NOT_IMPLEMENTED`.
+- La verificación de Cube de `pnpm dev` usa `ATLASBI_SEMANTIC_URL`.
+
+**Lecciones de la verificación:**
+- `/v1/cubesql` autentica con `checkAuth`, no con `checkSqlAuth`: la hipótesis de `17` §3.2.3 era incorrecta.
+- Cube repite en `/v1/load` la consulta con los filtros de RLS, y escribe en su log el security context completo.
+- `public: false` no es seguridad.
+- Cube Store trunca las medidas derivadas a 6 decimales.
+- tRPC, por defecto, manda el mensaje interno y el *stack*.
+- better-auth expone 54 rutas, deja pasar requests sin `Origin` y apaga su chequeo de origen con `NODE_ENV=test`.
+- En `@fastify/rate-limit`, el segundo `rateLimit()` de una ruta no corre.
+- `node --watch` sigue vivo cuando su script falla, y su script hijo puede quedar huérfano en Windows: se detiene con `taskkill /T`.
+- La copia de trabajo en Windows puede tener CRLF (`core.autocrlf=true`); el repo normaliza a LF con `.gitattributes`.
+
+**Siguiente:** antes del Paso 6, la tanda propia de la auditoría de aislamiento:
+- La fábrica `createSemanticRuntime`, para que el gateway no conozca a Cube ni la regla de niveles.
+- La batería de contrato de identidad.
+- Los planes, pendientes de decisión: contrato de datos del mart y de landing, la regla de lint contra `_dlt_*`, los verbos de plataforma de los jobs y las claves foráneas hacia better-auth.
+
+Después, el Paso 6: frontend mínimo, modo Viewer.

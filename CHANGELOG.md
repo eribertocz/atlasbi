@@ -4,7 +4,7 @@ Versionado del producto según [`docs/21-engineering-standards.md`](docs/21-engi
 §2: SemVer `0.MINOR.PATCH` hasta 1.0; los contratos (API, Report Schema, Config Schema, DB
 Migration…) versionan por separado y se listan en cada release.
 
-## Unreleased
+## 0.5.0 — API Gateway (2026-10-05)
 
 Paso 5 del orden de construcción: la API Gateway. El navegador tiene un único punto de entrada:
 inicia sesión, obtiene un token de identidad y consulta métricas. El gateway verifica la identidad
