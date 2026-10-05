@@ -36,7 +36,7 @@ describe('loadConfig', () => {
       secretProvider: 'env',
       telemetry: { otlpEndpoint: 'http://127.0.0.1:4318' },
       gateway: { port: 4100, publicUrl: 'http://127.0.0.1:4100' },
-      semantic: { url: 'http://127.0.0.1:4000' },
+      semantic: { enabled: true, url: 'http://127.0.0.1:4000' },
       lakehouse: {
         catalogType: 'postgres',
         storage: {
@@ -86,7 +86,12 @@ describe('gateway configuration (Config Schema v6)', () => {
     });
 
     expect(config.gateway).toEqual({ port: 4200, publicUrl: 'https://bi.example.com' });
-    expect(config.semantic).toEqual({ url: 'http://127.0.0.1:4001' });
+    expect(config.semantic).toEqual({ enabled: true, url: 'http://127.0.0.1:4001' });
+    // The portable tier keeps its data where no container reaches: no semantic layer there.
+    expect(
+      loadConfig({ ...validEnvironment, ATLASBI_LAKEHOUSE_CATALOG_TYPE: 'sqlite' }).semantic
+        .enabled,
+    ).toBe(false);
   });
 
   it('refuses a public address with a path or another scheme, and a port out of range', () => {

@@ -37,14 +37,8 @@ const identityHttp = createBetterAuthHttp({
   publicUrl: config.gateway.publicUrl,
 });
 const access = createAccessDirectory({ connectionString });
-// Cube runs on the postgres tier only (it reads the lakehouse's S3 data, docs/04 §6.6).
-const semanticRuntime =
-  config.lakehouse.catalogType === 'postgres'
-    ? semantic.createCubeSemanticRuntime({
-        url: config.semantic.url,
-        apiSecret: await secrets.get(SECRET_KEYS.semanticApiSecret),
-      })
-    : undefined;
+// Which engine, and whether there is one in this deployment, is the semantic package's business.
+const semanticRuntime = await semantic.createSemanticRuntime({ config, secrets });
 
 const app = await server.buildGatewayServer({
   publicUrl: config.gateway.publicUrl,

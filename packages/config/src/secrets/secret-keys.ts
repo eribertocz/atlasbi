@@ -1,4 +1,4 @@
-import type { LakehouseConfig } from '../config-schema.ts';
+import { type LakehouseConfig, semanticLayerRuns } from '../config-schema.ts';
 
 /** Logical secret keys owned by the platform; adapters map them to their own storage. */
 export const SECRET_KEYS = {
@@ -58,11 +58,11 @@ export function transformSecretKeys(lakehouse: LakehouseConfig): string[] {
 }
 
 /**
- * The semantic layer (Cube) runs on the postgres tier only: it reads the lakehouse's S3 data. Its
- * SQL API has no password of its own: it accepts the platform's short query token (decision E5).
+ * Only where the semantic layer runs (`semanticLayerRuns`). Its SQL API has no password of its own:
+ * it accepts the platform's short query token (decision E5).
  */
 export function semanticSecretKeys(lakehouse: LakehouseConfig): string[] {
-  return lakehouse.catalogType === 'postgres' ? [SECRET_KEYS.semanticApiSecret] : [];
+  return semanticLayerRuns(lakehouse) ? [SECRET_KEYS.semanticApiSecret] : [];
 }
 
 /** Identity (better-auth) runs on every tier: its tables live in the platform database. */

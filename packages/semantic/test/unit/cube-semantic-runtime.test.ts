@@ -2,7 +2,8 @@ import type { SecurityContext, SemanticQuery } from '@atlasbi/contracts';
 import { expectSemanticRuntimeError } from '@atlasbi/contracts/testing';
 import { describe, expect, it } from 'vitest';
 
-import { createCubeSemanticRuntime, QUERY_TOKEN } from '../../src/index.ts';
+import { createCubeSemanticRuntime } from '../../src/adapters/cube/cube-semantic-runtime.ts';
+import { QUERY_TOKEN } from '../../src/index.ts';
 
 const SECRET = 's'.repeat(64);
 /** What an error message must never carry (same rule as the port's contract battery). */

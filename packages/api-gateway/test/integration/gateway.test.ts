@@ -86,15 +86,12 @@ describe('the API gateway, end to end', () => {
     // Only now: instrumentation sees pg and Fastify load (main.ts does the same).
     const config = await import('@atlasbi/config');
     const auth = await import('@atlasbi/auth');
-    const { createCubeSemanticRuntime } = await import('@atlasbi/semantic');
+    const { createSemanticRuntime } = await import('@atlasbi/semantic');
     const { migrateToLatest } = await import('@atlasbi/database');
     const { createThrowawayDatabase } = await import('@atlasbi/database/testing');
     const { buildGatewayServer } = await import('../../src/gateway-server.ts');
 
     const platformConfig = config.loadConfig();
-    if (platformConfig.lakehouse.catalogType !== 'postgres') {
-      throw new Error('This test needs the postgres tier: the semantic layer runs there only.');
-    }
     const secrets = new config.EnvSecretProvider();
     const database = await createThrowawayDatabase(
       await secrets.get(config.SECRET_KEYS.databaseUrl),
@@ -113,10 +110,11 @@ describe('the API gateway, end to end', () => {
     });
     const access = auth.createAccessDirectory({ connectionString: database.connectionString });
     closeAccess = () => access.close();
-    const semantic: SemanticRuntimePort = createCubeSemanticRuntime({
-      url: platformConfig.semantic.url,
-      apiSecret: await secrets.get(config.SECRET_KEYS.semanticApiSecret),
-    });
+    const runtime = await createSemanticRuntime({ config: platformConfig, secrets });
+    if (runtime === undefined) {
+      throw new Error('This test needs the semantic layer: the postgres tier.');
+    }
+    const semantic: SemanticRuntimePort = runtime;
 
     // Ana and Bruno, two viewers of Finanzas: Ana sees one region, Bruno all of them.
     const { userId: anaId } = await identity.createUser({

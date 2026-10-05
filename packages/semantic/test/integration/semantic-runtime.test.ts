@@ -4,7 +4,8 @@ import { createAnalyticalQueryEngine } from '@atlasbi/warehouse';
 import { createTestLakehouse, type TestLakehouse } from '@atlasbi/warehouse/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { createCubeSemanticRuntime, probeSemanticLayer } from '../../src/index.ts';
+import { createCubeSemanticRuntime } from '../../src/adapters/cube/cube-semantic-runtime.ts';
+import { probeSemanticLayer } from '../../src/index.ts';
 import { startCubeStack, type CubeStack } from './support/cube-stack.ts';
 import { writeSalesMart } from './support/sales-mart.ts';
 

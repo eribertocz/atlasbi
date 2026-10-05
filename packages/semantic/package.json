@@ -13,10 +13,10 @@
     "test:integration": "vitest run --dir test/integration --test-timeout 300000 --hook-timeout 300000"
   },
   "dependencies": {
+    "@atlasbi/config": "workspace:*",
     "@atlasbi/contracts": "workspace:*"
   },
   "devDependencies": {
-    "@atlasbi/config": "workspace:*",
     "@atlasbi/database": "workspace:*",
     "@atlasbi/warehouse": "workspace:*",
     "@types/node": "catalog:",

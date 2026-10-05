@@ -161,13 +161,25 @@ export interface PlatformConfig {
     publicUrl: string;
   };
   semantic: {
-    /** Cube's REST address, without a trailing slash. */
+    /** Whether the semantic layer runs in this deployment (see {@link semanticLayerRuns}). */
+    enabled: boolean;
+    /** The semantic layer's REST address, without a trailing slash. */
     url: string;
   };
   lakehouse: LakehouseConfig;
 }
 
+/**
+ * The semantic layer reads the lakehouse's S3 data, so it runs on the postgres tier only — the
+ * portable tier keeps its data in a local folder no container reaches (docs/04 §6.6). The one place
+ * that decides it: callers ask `config.semantic.enabled`, never the catalog type.
+ */
+export function semanticLayerRuns(lakehouse: LakehouseConfig): boolean {
+  return lakehouse.catalogType === 'postgres';
+}
+
 export function toPlatformConfig(environment: Environment, baseDirectory: string): PlatformConfig {
+  const lakehouse = toLakehouseConfig(environment, baseDirectory);
   return {
     environment: environment.ATLASBI_ENV,
     secretProvider: environment.ATLASBI_SECRET_PROVIDER,
@@ -179,9 +191,10 @@ export function toPlatformConfig(environment: Environment, baseDirectory: string
       publicUrl: new URL(environment.ATLASBI_PUBLIC_URL).origin,
     },
     semantic: {
+      enabled: semanticLayerRuns(lakehouse),
       url: new URL(environment.ATLASBI_SEMANTIC_URL).origin,
     },
-    lakehouse: toLakehouseConfig(environment, baseDirectory),
+    lakehouse,
   };
 }
 

@@ -4,10 +4,9 @@ export {
   CUBE_IMAGE,
   CUBE_STORE_IMAGE,
 } from './cube-images.ts';
-export { createCubeSemanticRuntime } from './adapters/cube/cube-semantic-runtime.ts';
-export type { CubeSemanticRuntimeOptions } from './adapters/cube/cube-semantic-runtime.ts';
 export { PROTECTED_DIMENSIONS, READINESS_CLAIMS, toQueryClaims } from './query-claims.ts';
 export type { QueryClaims } from './query-claims.ts';
 export { QUERY_TOKEN, signQueryToken } from './query-token.ts';
 export { probeSemanticLayer, SemanticLayerUnavailableError } from './semantic-layer-health.ts';
 export type { SemanticLayerEndpoint } from './semantic-layer-health.ts';
+export { createSemanticRuntime } from './semantic-runtime.ts';

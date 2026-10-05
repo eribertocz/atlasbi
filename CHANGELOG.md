@@ -4,6 +4,19 @@ Versionado del producto según [`docs/21-engineering-standards.md`](docs/21-engi
 §2: SemVer `0.MINOR.PATCH` hasta 1.0; los contratos (API, Report Schema, Config Schema, DB
 Migration…) versionan por separado y se listan en cada release.
 
+## Unreleased
+
+Primera tanda de la auditoría de aislamiento entre capas (2026-10-04): reemplazar una herramienta
+no debería tocar a sus vecinos.
+
+### Cambiado
+
+- **`createSemanticRuntime({ config, secrets })`**, la fábrica pública de `@atlasbi/semantic`.
+  Decide el motor y si hay capa semántica en el despliegue. La Gateway ya no nombra a Cube ni
+  conoce la regla de niveles, y `createCubeSemanticRuntime` deja de exportarse.
+- **`config.semantic.enabled`:** la regla "la capa semántica corre solo en el nivel equipo
+  local" vive ahora en un solo lugar (`semanticLayerRuns`). La usan también `semanticSecretKeys`.
+
 ## 0.5.0 — API Gateway (2026-10-05)
 
 Paso 5 del orden de construcción: la API Gateway. El navegador tiene un único punto de entrada:

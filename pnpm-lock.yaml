@@ -285,13 +285,13 @@ importers:
 
   packages/semantic:
     dependencies:
+      '@atlasbi/config':
+        specifier: workspace:*
+        version: link:../config
       '@atlasbi/contracts':
         specifier: workspace:*
         version: link:../contracts
     devDependencies:
-      '@atlasbi/config':
-        specifier: workspace:*
-        version: link:../config
       '@atlasbi/database':
         specifier: workspace:*
         version: link:../database

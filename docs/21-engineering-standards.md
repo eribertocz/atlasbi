@@ -104,7 +104,7 @@ TECNOLOGÍA (reemplazable)
 
 | Puerto | Adaptador de hoy | Tecnología |
 | --- | --- | --- |
-| `SemanticRuntimePort` (Paso 5, contrato 1.0: `describe(context)` y `query(query, context)`, con el `SecurityContext` de la plataforma, `SemanticQuery` v1 y errores con códigos cerrados) | `createCubeSemanticRuntime`, en `packages/semantic/src/adapters/cube/`. La Gateway nunca lo nombra fuera de su punto de composición (`main.ts`) | Cube Core |
+| `SemanticRuntimePort` (Paso 5, contrato 1.0: `describe(context)` y `query(query, context)`, con el `SecurityContext` de la plataforma, `SemanticQuery` v1 y errores con códigos cerrados) | `createCubeSemanticRuntime`, en `packages/semantic/src/adapters/cube/`, privado del paquete. Lo elige `createSemanticRuntime({ config, secrets })`, la fábrica pública de `@atlasbi/semantic`, que decide el motor y si hay capa semántica en ese despliegue. La Gateway no conoce ni a Cube ni la regla de niveles | Cube Core |
 | `VisualizationRendererPort` | `EChartsAdapter`, `MatrixAdapter` (hoy); `VegaAdapter`, `DeckGLAdapter` como candidatos a evaluar — `22-visualization-engine.md` §2.2 | ECharts, TanStack Table |
 | `RealtimeSyncPort` | `ElectricAdapter` | ElectricSQL |
 | `AnalyticalQueryPort` (solo lectura) + `LakehouseAdminPort` (administración/escritura) — antes un único `AnalyticalEnginePort`; separados en el Paso 1 para que el futuro SQL Lab nunca reciba un puerto con `execute` (`01-motor-almacenamiento.md` §6.7 y §7) | `DuckDBAnalyticalQueryEngine` + `DuckDBLakehouseAdmin` en `packages/warehouse/src/adapters/duckdb/` (y un adaptador ClickHouse cuando aplique, `01` §6.3) | DuckDB + DuckLake / ClickHouse |
