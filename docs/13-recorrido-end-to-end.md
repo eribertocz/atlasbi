@@ -108,7 +108,7 @@ WHERE fecha_cierre BETWEEN @start_ds AND @end_ds  -- obligatorio: SQLMesh sustit
 
 **Por qué el `WHERE` no es opcional:** SQLMesh no adivina qué filas pertenecen al intervalo que está procesando — el modelo tiene que decírselo explícitamente con `@start_ds`/`@end_ds` (macros que SQLMesh reemplaza en cada ejecución). Sin ese filtro, cada corrida reprocesaría todo el historial, no solo el intervalo nuevo — el mismo problema que el modelo `INCREMENTAL_BY_TIME_RANGE` existe para evitar.
 
-**Resultado concreto:** `mart_ventas`, con un audit de `not_null`/`unique` sobre `oportunidad_id` — la única tabla de esta cadena que la Capa 4 tiene permitido leer.
+**Resultado concreto:** `mart_ventas`, con un audit de `not_null`/`unique` sobre `oportunidad_id` — la única tabla de esta cadena que la Capa 4 tiene permitido leer. **Desde el paso posterior a `0.5.0`, ese mart tiene además un contrato de datos versionado** (`21-engineering-standards.md` §2.4), con sus columnas, tipos, nulabilidad y grano. La Capa 2 verifica con los datos que lo cumple, y la Capa 4 prueba su modelo contra el contrato, no contra lo que la Capa 2 publique ese día. En la plataforma real, el primero es `mart.sales_orders` 1.0.
 
 ---
 

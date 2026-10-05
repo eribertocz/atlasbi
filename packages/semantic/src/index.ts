@@ -1,3 +1,4 @@
+export { CONSUMED_DATA_CONTRACTS } from './data-contracts.ts';
 export {
   CUBE_CONFIG_DIRECTORY,
   CUBE_EXTENSION_DIRECTORY,

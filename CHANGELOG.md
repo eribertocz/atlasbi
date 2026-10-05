@@ -28,6 +28,19 @@ no debería tocar a sus vecinos.
 - **El adaptador de better-auth corre las dos baterías.** Sus tests propios quedan solo para lo
   que es suyo: EdDSA, emisor y audiencia, el nombre de la _cookie_ y el token que sigue válido
   después de cerrar la sesión.
+- **Contratos de datos** (`docs/21` §2.4): archivos JSON propios y versionados en
+  `packages/contracts/data/`, con los tipos de la plataforma (`LogicalType`), nunca los de un motor.
+  - `parseDataContract` rechaza las columnas propias de una herramienta (`_dlt_*`) y exige
+    `_load_id` y `_loaded_at` en un contrato de landing.
+  - Los productores verifican con los datos lo que publican, con `findDataContractViolations`: el
+    dataset de desarrollo en `warehouse` y el mart en `transform`.
+  - `semantic` corre sus tests sobre un mart generado desde el contrato, y su modelo de Cube solo
+    puede leer tablas de contratos que declara.
+  - `external_models.yaml` de SQLMesh tiene que coincidir con el contrato de la fuente.
+
+### Contratos
+
+- **Contratos de datos nuevos:** `mart.sales_orders` 1.0 y `source.development_sales_orders` 1.0.
 
 ## 0.5.0 — API Gateway (2026-10-05)
 

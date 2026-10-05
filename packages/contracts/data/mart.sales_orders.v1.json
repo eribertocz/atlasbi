@@ -1,0 +1,26 @@
+{
+  "id": "mart.sales_orders",
+  "version": "1.0",
+  "kind": "mart",
+  "description": "One row per sales order: the analytical result transformation publishes and the semantic layer reads.",
+  "table": { "schema": "marts", "name": "mart_sales_orders" },
+  "grain": ["order_id"],
+  "columns": [
+    { "name": "order_id", "type": { "kind": "int64" }, "nullable": false },
+    { "name": "order_date", "type": { "kind": "date" }, "nullable": false },
+    { "name": "customer_id", "type": { "kind": "int64" }, "nullable": true },
+    { "name": "region", "type": { "kind": "varchar" }, "nullable": false },
+    { "name": "product_category", "type": { "kind": "varchar" }, "nullable": true },
+    { "name": "quantity", "type": { "kind": "int32" }, "nullable": true },
+    {
+      "name": "unit_price",
+      "type": { "kind": "decimal", "precision": 10, "scale": 2 },
+      "nullable": true
+    },
+    {
+      "name": "amount",
+      "type": { "kind": "decimal", "precision": 12, "scale": 2 },
+      "nullable": false
+    }
+  ]
+}

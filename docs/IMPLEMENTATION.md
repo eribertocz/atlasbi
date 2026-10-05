@@ -45,6 +45,9 @@ Realtime (10) ──sync/broadcast── visual, filter_definition (Postgres)
 
 **Regla de oro repetida en las 12 capas, con una precisión sobre qué significa "cruzado"**: ninguna capa lee la base de datos interna de otra, ni importa código privado de otro paquete. Lo que **sí** está permitido: importar la API pública que un paquete exporta explícitamente (ej. `import { resolveSecurityContext } from '@atlasbi/auth'`, si `@atlasbi/auth` lo exporta desde su entrada pública) — eso es consumir un contrato, no romperlo. Lo prohibido es importar un archivo interno de otro paquete (`../../auth/src/internal/db-helper`) o hacer un `fetch` directo a otra capa saltándose su API. La diferencia es "contrato publicado" vs. "detalle de implementación" — no "cero imports entre paquetes".
 
+
+**Las fronteras que se cruzan por tablas también son contratos** (`21-engineering-standards.md` §2.4). Lo que una capa publica como tabla y otra lee (`source`, `landing`, `mart`) tiene un contrato de datos versionado en `packages/contracts/data/`. El productor verifica con los datos que lo cumple, y el consumidor prueba contra el contrato, nunca contra el productor. Las columnas propias de una herramienta (`_dlt_*`) nunca forman parte de un contrato.
+
 ---
 
 ## Las tablas propias que no vienen de ninguna herramienta (construirlas primero)

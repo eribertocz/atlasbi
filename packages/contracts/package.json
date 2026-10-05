@@ -9,7 +9,8 @@
     "./testing": "./src/testing/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --dir test/unit"
   },
   "peerDependencies": {
     "vitest": "catalog:"

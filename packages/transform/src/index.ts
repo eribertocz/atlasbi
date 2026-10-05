@@ -1,3 +1,4 @@
+export { CONSUMED_DATA_CONTRACTS, PRODUCED_DATA_CONTRACTS } from './data-contracts.ts';
 export {
   describeFailure,
   runSqlMesh,

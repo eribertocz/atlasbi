@@ -1,0 +1,26 @@
+{
+  "id": "source.development_sales_orders",
+  "version": "1.0",
+  "kind": "source",
+  "description": "The deterministic development dataset (pnpm seed): every column is a pure function of the row number. Real sources replace it from build step 7.",
+  "table": { "schema": "fixture", "name": "sales_orders" },
+  "grain": ["order_id"],
+  "columns": [
+    { "name": "order_id", "type": { "kind": "int64" }, "nullable": false },
+    { "name": "order_date", "type": { "kind": "date" }, "nullable": false },
+    { "name": "customer_id", "type": { "kind": "int64" }, "nullable": false },
+    { "name": "region", "type": { "kind": "varchar" }, "nullable": false },
+    { "name": "product_category", "type": { "kind": "varchar" }, "nullable": false },
+    { "name": "quantity", "type": { "kind": "int32" }, "nullable": false },
+    {
+      "name": "unit_price",
+      "type": { "kind": "decimal", "precision": 10, "scale": 2 },
+      "nullable": false
+    },
+    {
+      "name": "amount",
+      "type": { "kind": "decimal", "precision": 12, "scale": 2 },
+      "nullable": false
+    }
+  ]
+}

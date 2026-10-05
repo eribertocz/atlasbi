@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 
 import { EnvSecretProvider, SECRET_KEYS } from '@atlasbi/config';
-import { LakehouseError, type LakehouseCatalogType } from '@atlasbi/contracts';
+import { getDataContract, LakehouseError, type LakehouseCatalogType } from '@atlasbi/contracts';
+import { findDataContractViolations } from '@atlasbi/contracts/testing';
 import { createThrowawayDatabase, type ThrowawayDatabase } from '@atlasbi/database/testing';
 import {
   createAnalyticalQueryEngine,
@@ -19,7 +20,7 @@ import {
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { runSqlMesh, type TransformTarget } from '../../src/index.ts';
+import { PRODUCED_DATA_CONTRACTS, runSqlMesh, type TransformTarget } from '../../src/index.ts';
 import { extensionDirectory, workspaceEnvironment } from '../support/transform-environment.ts';
 
 async function adminUrl(): Promise<string> {
@@ -118,6 +119,21 @@ for (const catalogType of ['postgres', 'sqlite'] as const) {
           'date',
         ]);
         expect(staging.rows).toEqual([['20000']]);
+      } finally {
+        await port.close();
+      }
+    });
+
+    it('publishes every mart as its data contract says (docs/21 §2.4)', async () => {
+      const port = await createAnalyticalQueryEngine(lakehouse.target.lakehouse);
+      try {
+        for (const { id, major } of PRODUCED_DATA_CONTRACTS) {
+          const contract = getDataContract(id, major);
+          expect(
+            await findDataContractViolations(port, contract, { catalog: 'lake' }),
+            `${id}@${major}`,
+          ).toEqual([]);
+        }
       } finally {
         await port.close();
       }

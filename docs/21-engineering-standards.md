@@ -37,6 +37,7 @@ Version 1.8.2
 ├── Plugin SDK           1.3.0
 ├── Transformation AST   v1   (lo que produce Data Studio)
 ├── Config Schema        v2
+├── Data Contracts       mart.sales_orders 1.0 · source.… (cada uno con su versión, §2.4)
 └── DB Migration         000072
 ```
 
@@ -82,6 +83,42 @@ Commits normales (`feat(matrix): add server-side hierarchy expansion`, `fix(quer
 ### 2.3 La API pública y el Report Schema no siguen al producto
 
 `API v1` puede seguir siendo `v1` durante varios MAJOR del producto — recién se rompe (`/api/v2`, con ventana de deprecación) cuando hace falta de verdad. El `Report Schema` (`schemaVersion`) migra con sus propias funciones de migración (`19-operabilidad-runtime.md` sección 8.1) — un reporte creado hoy tiene que poder abrirse dentro de años, migrado de forma transparente, sin que eso tenga nada que ver con qué versión de producto esté corriendo.
+
+### 2.4 Contratos de datos: lo que una capa publica como tabla y otra lee
+
+**Agregado después de la auditoría de aislamiento entre capas (2026-10-04), primera implementación en el paso posterior a `0.5.0`.** Los puertos protegían las fronteras que se cruzan por código. Las que se cruzan por **tablas** (transformación → capa semántica, ingesta → transformación) eran implícitas: un nombre de tabla y unas columnas que tres lugares repetían sin que nada los comparara.
+
+**Qué es un contrato de datos.** Un archivo JSON propio en `packages/contracts/data/`, en texto plano y versionado en Git (regla 4). Sus campos se pueden traducir 1:1 al estándar ODCS (Bitol, LF AI & Data) si alguna vez hace falta exportarlo. Declara:
+
+- **`id`:** `<tipo>.<nombre>`, donde el tipo es `source`, `landing` o `mart`.
+- **`version`:** `MAJOR.MINOR`.
+- **`table`:** dónde se publica, como esquema y tabla. Nunca lleva el alias de catálogo de un motor (`lake`).
+- **`grain`:** las columnas que identifican una fila. Ninguna puede admitir nulos.
+- **`columns`:** nombre, tipo y si admite nulos. El tipo es el `LogicalType` de la plataforma, el mismo que devuelve el puerto de lectura, nunca un tipo de DuckDB.
+
+`parseDataContract` lo valida al cargar, y un archivo inválido hace fallar a todos sus consumidores.
+
+**Versionado.**
+- Agregar una columna que admite nulos sube la versión **menor**.
+- Quitar, renombrar o cambiar el tipo de una columna, o volver nula una que no lo era, es un archivo nuevo con otra versión **mayor**. Durante la migración conviven las dos versiones.
+- Cada productor y cada consumidor declaran qué versiones mayores usan (`PRODUCED_DATA_CONTRACTS` y `CONSUMED_DATA_CONTRACTS` en su paquete), y las buscan con `getDataContract(id, major)`.
+
+**Tests cruzados: el contrato es el único punto de encuentro.**
+- **El productor verifica lo que publica.** `findDataContractViolations` (`@atlasbi/contracts/testing`) compara las columnas y los tipos por el puerto de lectura. Los nulos y la unicidad del grano los comprueba **con los datos**, porque una vista, como las que publica SQLMesh, declara todas sus columnas como nulables.
+- **El consumidor prueba contra el contrato, no contra el productor.** Los tests de la capa semántica corren sobre un mart **generado desde el contrato**. Si un miembro de Cube lee una columna que el contrato no promete, falla ahí. Además, el modelo de Cube solo puede leer tablas de contratos que la capa declara.
+
+**El contrato de landing.** Un contrato `landing` lleva siempre, además de las columnas de negocio, dos columnas técnicas de la plataforma, que escribe el adaptador de ingesta sea cual sea la herramienta que extrae los datos:
+- `_load_id` (`varchar`, nunca nulo): la carga que escribió la fila. Es opaco y lo elige el adaptador.
+- `_loaded_at` (`timestamp_tz`, nunca nulo): cuándo terminó esa carga.
+
+Las columnas propias de una herramienta (`_dlt_load_id`, `_dlt_id`…) **nunca** forman parte de un contrato: `parseDataContract` las rechaza. Cómo publica el adaptador de dlt ese contrato se decide y se mide en la Fase 0 del Paso 7.
+
+**Contratos vigentes:**
+
+| Contrato | Productor | Consumidor | Tabla |
+| --- | --- | --- | --- |
+| `source.development_sales_orders` 1.0 | `@atlasbi/warehouse` (`pnpm seed`) | `@atlasbi/transform` | `fixture.sales_orders` |
+| `mart.sales_orders` 1.0 | `@atlasbi/transform` | `@atlasbi/semantic` | `marts.mart_sales_orders` |
 
 ---
 

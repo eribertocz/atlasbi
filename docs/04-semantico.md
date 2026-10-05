@@ -267,6 +267,11 @@ Si algo falla, no lo oculta. El cliente recibe siempre el mismo mensaje genéric
 - **Consume**: únicamente tablas `mart_*` expuestas por la capa de transformación (documento 02), vía el driver DuckDB/DuckLake de la capa 1. Nunca lee `stg_*` ni `int_*` directamente.
 - **Expone**: una API de métricas por SQL, REST y GraphQL — nunca acceso directo al warehouse desde el frontend o desde el copiloto de IA. Todo consumidor de datos de negocio *gobernado* (dashboards compartidos, el copiloto de capa 5, cualquier número que otra persona va a confiar sin revisar el SQL detrás) pasa por acá. **Única excepción explícita, con su propio control de acceso:** SQL Lab (capa 8, sección 10.3) — para el MVP, restringido a quien tenga el permiso de gobernanza `sql_lab_access` (capa 9, sección 9.1) — nunca abierto por defecto, porque DuckDB no aísla usuarios dentro del mismo proceso lo suficiente como para que una vista filtrada por sí sola sea una frontera de seguridad real.
 - **No expone**: MDX ni DAX — a diferencia de Cube Cloud (el producto comercial), **Cube Core self-hosteado solo expone SQL, REST y GraphQL**. Esto cierra, en la práctica, el camino nativo a "Analizar en Excel" o a herramientas legadas que hablan MDX/DAX — se documenta como una limitación real, no se finge que existe un puente que no está disponible en la versión open source. También: autenticación en sí (recibe el contexto de usuario ya resuelto por la capa 9, no gestiona login), ni renderizado de ningún tipo.
+- **Contratos de datos (`21-engineering-standards.md` §2.4).** Los `mart_*` que lee los recibe por su contrato de datos, no por lo que transformación publique ese día. Hoy es `mart.sales_orders` 1.0, declarado en `CONSUMED_DATA_CONTRACTS`. Hay dos garantías:
+  - El modelo de Cube solo puede nombrar tablas de contratos que la capa declara (test unitario).
+  - Los tests de integración corren sobre un mart **generado desde el contrato**, así que un miembro que lea una columna que el contrato no promete falla ahí.
+
+  Cumplir el contrato es responsabilidad de la capa 2, que lo verifica de su lado.
 - **Intercambiabilidad**: si en el futuro OSI madura como estándar universal, el modelo de esta capa tiene un camino de exportación/migración sin reescritura completa — el contrato de la sección no cambia igual, la capa de arriba sigue viendo la misma API.
 
 ---

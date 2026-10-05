@@ -92,3 +92,21 @@ export type {
   SemanticRuntimeCapabilities,
   SemanticRuntimePort,
 } from './semantic/semantic-runtime-port.ts';
+export {
+  DATA_CONTRACT_KINDS,
+  InvalidDataContractError,
+  LANDING_TECHNICAL_COLUMNS,
+  majorVersion,
+  parseDataContract,
+} from './data/data-contract.ts';
+export type {
+  DataContract,
+  DataContractColumn,
+  DataContractKind,
+  DataContractType,
+} from './data/data-contract.ts';
+export {
+  getDataContract,
+  listDataContracts,
+  UnknownDataContractError,
+} from './data/data-contracts.ts';
