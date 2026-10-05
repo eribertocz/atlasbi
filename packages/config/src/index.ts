@@ -8,6 +8,7 @@ export { createSecretProvider } from './secrets/create-secret-provider.ts';
 export { EnvSecretProvider, toEnvironmentVariableName } from './secrets/env-secret-provider.ts';
 export {
   bootstrapSecretKeys,
+  gatewaySecretKeys,
   lakehouseReaderSecretKeys,
   lakehouseWriterSecretKeys,
   requiredSecretKeys,

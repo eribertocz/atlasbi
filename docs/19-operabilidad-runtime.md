@@ -114,6 +114,19 @@ La línea del lakehouse nombra también el almacenamiento: `healthy — Catalog:
 
 `pnpm dev` solo verifica, y falla en el acto con el remedio (`run pnpm bootstrap`) si falta algo. Que Cube esté *healthy* significa que contestó una consulta que lee datos del lakehouse como su lector; que el contenedor corra no alcanza (`04-semantico.md` §6.6).
 
+**Alcance real a partir del Paso 5 (`0.5.0`): `pnpm dev` levanta la API Gateway y queda en primer plano.**
+
+- **Cómo arranca:** después de la infraestructura, corre `packages/api-gateway/src/main.ts` con `node --watch`. Se reinicia con cada cambio del gateway y también de los paquetes que importa (`@atlasbi/auth`, `@atlasbi/semantic`…).
+- **El paso `API Gateway` de la cadena:** espera que `/ready` responda 200 y depende de `Migrations` y, en el nivel "equipo local", de `Cube`. El resumen muestra `healthy — http://127.0.0.1:4100`.
+- **Si el gateway no arranca** (por ejemplo, por una variable inválida), el paso falla enseguida con la línea del error. No espera el plazo.
+- **Primer plano.** Después del resumen, `pnpm dev` muestra la salida del gateway, cada línea con la etiqueta `api-gateway │`.
+- **Ctrl+C.** Detiene el gateway, y también el proceso que corre `node --watch`. La infraestructura sigue corriendo; `pnpm stack:down` la detiene.
+  - En `cmd.exe` aparece antes el aviso "¿Desea terminar el trabajo por lotes (S/N)?". Viene del acceso `.cmd` de pnpm, no de la plataforma: se responde S.
+  - Verificado en Windows: la siguiente corrida de `pnpm dev` encuentra el puerto 4100 libre.
+- **`pnpm preflight` revisa el puerto 4100** (`ATLASBI_GATEWAY_PORT`) en los dos niveles. Si está ocupado, casi siempre es que `pnpm dev` ya está corriendo.
+- **`pnpm stack:up` sigue sin el gateway:** su imagen OCI llega en el Paso 6.
+- **El nivel portátil** levanta el gateway igual. Sin Cube, los procedimientos `semantic.*` responden `NOT_IMPLEMENTED`.
+
 **Alcance real a partir del Paso 0 (0.1.0):** el resumen solo lista lo que existe — Postgres, Migrations, OTel Collector. Web, API y Cube se suman a la cadena en sus pasos (3, 5, 6); hasta que exista algo con *hot reload*, `pnpm dev` termina después del resumen y la infraestructura queda corriendo en segundo plano (`pnpm stack:down` la detiene).
 
 ---
@@ -218,6 +231,12 @@ Validación al arrancar (parte de `pnpm dev`/`pnpm bootstrap` y del bootstrap de
 - `loadConfig()` valida la configuración no secreta y la traduce a un objeto de dominio (`{ environment, secretProvider, telemetry }`) — ningún código lee nombres de variables de entorno directo. Un `KEY=` vacío cuenta como "no definido".
 - Los secretos nunca se leen como configuración: pasan por el puerto `SecretProvider` (`11-infraestructura.md` §4.7) con claves lógicas (`database.url`); el adaptador `EnvSecretProvider` las mapea a `ATLASBI_DATABASE_URL`. `assertSecretsAvailable()` resuelve todos los obligatorios al arrancar y lista **todos** los faltantes de una vez, nombrando la variable a definir.
 - El puerto de host de Postgres por defecto es **55432**, no 5432, para no chocar con un Postgres ya instalado en la máquina (caso real encontrado al implementar).
+
+**Paso 5 — "Config Schema v6":** tres variables nuevas, todas con un valor por defecto. Un `.env` anterior sigue funcionando.
+- `ATLASBI_GATEWAY_PORT` (4100): el gateway escucha solo en `127.0.0.1`.
+- `ATLASBI_PUBLIC_URL` (`http://127.0.0.1:4100`): la dirección que usa el navegador. Es el único `Origin` en el que confía la identidad, y si es https, la *cookie* de sesión sale `Secure`. Admite solo `esquema://host[:puerto]`, sin ruta.
+- `ATLASBI_SEMANTIC_URL` (`http://127.0.0.1:4000`): la API REST de Cube tal como la alcanza el gateway. Si cambia `ATLASBI_CUBE_PORT`, cambia esta también. `pnpm dev` verifica Cube en esta misma dirección.
+- La lista de secretos que exige el gateway sale de `gatewaySecretKeys`: la base de la plataforma, `auth.secret` y, en el nivel "equipo local", `semantic.api-secret`.
 
 **Paso 4 — "Config Schema v5":**
 - **Secretos nuevos:**
@@ -367,6 +386,9 @@ Web ready
 
 Cada servicio de la sección 1 expone un endpoint de *readiness* — `pnpm dev` (sección 3) espera esta cadena antes de imprimir el resumen final, en vez de asumir que "el proceso arrancó" significa "está listo para recibir tráfico".
 
+**API Gateway (Paso 5).** `/health` responde mientras el proceso atiende. `/ready` responde 200 solo si la base de la plataforma contesta en menos de 2 s; si no, 503 sin decir qué falló.
+- **Por qué `/ready` no depende de Cube:** Cube ya tiene su propio paso en la cadena, antes que el gateway. Y si `/ready` dependiera de Cube, una caída de Cube sacaría de servicio también el inicio de sesión. Con Cube caído, `semantic.*` responde `SERVICE_UNAVAILABLE`, que el cliente puede reintentar.
+
 ---
 
 ## 10. Un solo punto de entrada HTTP — el navegador no conoce la topología interna
@@ -378,8 +400,8 @@ https://bi.empresa.com  (o http://localhost:3000 en local)
 │
 ├── /              → SvelteKit
 ├── /api/trpc      → API Gateway (BFF interno)
-├── /api/v1        → API Gateway (OpenAPI público, 06-api-gateway.md)
-└── /auth          → flujo de better-auth
+├── /api/v1        → API Gateway (OpenAPI público, 06-api-gateway.md) — reservado, 404 hasta que exista un consumidor externo (Paso 5)
+└── /auth          → API Gateway: tres rutas de identidad, nunca better-auth entero (06-api-gateway.md §6.4)
 ```
 
 Cube, Postgres, Cube Store, Electric, Airflow, OpenMetadata quedan en la red interna, nunca expuestos directo — es la misma regla que ya rige en `06-api-gateway.md` ("Cube Core nunca se expone directo al frontend"), aplicada ahora a nivel de red, no solo de código. **Pendiente de decidir al momento de desplegar producción, no bloqueante para escribir el primer modelo:** el proxy/*ingress* concreto (Caddy o Nginx son los candidatos razonables) — resolverlo ahora sería adelantarse a una decisión que no cambia nada del código de las 12 capas. Esto también evita, de entrada, problemas de CORS y cookies entre dominios que aparecerían si el navegador tuviera que hablar con varios *hosts* distintos.

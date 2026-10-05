@@ -7,11 +7,24 @@ packages:
 # stack-level ones). Packages reference them with "catalog:" — never a floating range.
 catalog:
   '@duckdb/node-api': 1.5.5-r.5
+  '@fastify/helmet': 13.1.1
+  '@fastify/otel': 0.21.0
+  '@fastify/rate-limit': 11.2.0
   '@opentelemetry/api': 1.9.1
+  '@opentelemetry/exporter-trace-otlp-http': 0.222.0
+  '@opentelemetry/instrumentation': 0.222.0
+  '@opentelemetry/instrumentation-pg': 0.74.0
+  '@opentelemetry/instrumentation-undici': 0.32.0
+  '@opentelemetry/resources': 2.11.0
+  '@opentelemetry/sdk-trace-base': 2.11.0
+  '@opentelemetry/sdk-trace-node': 2.11.0
   '@opentelemetry/semantic-conventions': 1.43.0
+  '@trpc/client': 11.19.0
+  '@trpc/server': 11.19.0
   '@types/node': 24.13.6
   '@types/pg': 8.23.1
   better-auth: 1.7.6
+  fastify: 5.12.5
   jose: 6.2.12
   kysely: 0.29.6
   pg: 8.23.0

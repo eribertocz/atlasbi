@@ -9,6 +9,8 @@
 > **Paso 1 (DuckDB + DuckLake, 2026-09-25):** DuckDB, DuckLake, `@duckdb/node-api` y la API de OpenTelemetry fijados con evidencia de la Fase 0 del Paso 1; la matriz de compatibilidad del lakehouse arranca con la plataforma validada y el resto de los consumidores pendientes de su paso.
 
 > **Paso 3 (Cube Core + S3, 2026-09-26):** Garage (object storage del nivel "equipo local"), la extensión `httpfs`, Cube Core y Cube Store fijados con evidencia de la Fase 0 del Paso 3; la fila de Cube en la matriz pasa a validada con el test de integración del producto.
+>
+> **Paso 5 (API Gateway, 2026-09-27; revisado al cerrar `0.5.0`, 2026-10-05):** Fastify, tRPC, `@fastify/helmet`, `@fastify/rate-limit`, `@fastify/otel` y el SDK de trazas de OpenTelemetry fijados con evidencia de la Fase 0 del Paso 5 (P5-1: licencias del árbol instalado, atestaciones, *advisories* y antigüedad). Antes de cerrar la versión se volvió a revisar el GitHub Advisory Database para cada paquete de npm y de PyPI fijado, incluidos los de los Pasos 0–4: sin *advisories*. Las imágenes de contenedor no se revisaron por esa vía. Node 24.21.0 sigue siendo la última 24.x.
 
 | Pieza | Versión fijada | Notas |
 | --- | --- | --- |
@@ -34,12 +36,28 @@
 | better-auth | **1.7.6** (`catalog`) — desde el Paso 4 | MIT; Vercel la adquirió el 7/7/2026 (`09-auth-gobernanza.md` §4.1). Publicada el 24/9/2026, con atestación SLSA de npm verificada y las 23 *advisories* conocidas corregidas en versiones anteriores. Plugins: solo `organization` y `jwt` (sin `admin`). Depende de `kysely ^0.28.17 \|\| ^0.29.0`: comparte nuestro Kysely 0.29.6 (una sola copia). El CLI `@better-auth/cli` quedó en 1.4.21: el esquema se genera con su planificador programático (`better-auth/db/migration`), nunca con `migrate`. Telemetría apagada; ninguna llamada de red medida |
 | jose | **6.2.12** (`catalog`) — desde el Paso 4 | MIT, cero dependencias. Verifica localmente el token de identidad (EdDSA) contra el JWKS; es también dependencia de better-auth |
 | OpenTelemetry Collector | **0.161.0**, distribución core (`docker.io/otel/opentelemetry-collector:0.161.0`) | El manifiesto de la distribución core ya incluye `otlpreceiver`, `batchprocessor`, `debugexporter` y `healthcheckextension`; contrib agregaría cientos de componentes sin uso. Imagen distroless: sin healthcheck en el compose, la readiness se prueba desde el host (`:13133`) |
-| OpenTelemetry SDKs | _(completar al instrumentar el primer servicio — Paso 5 en TS, Pasos 2/7 en Python)_ | Graduated CNCF, mayo 2026 |
+| OpenTelemetry SDKs | TypeScript: **SDK de trazas 2.11.0**, desde el Paso 5. Detalle en la sección "API Gateway (Paso 5)". Python: _(completar en los Pasos 7–8)_ | Graduated CNCF, mayo 2026. Sin `@opentelemetry/sdk-node`, que trae decenas de instrumentaciones que nadie usa (P5-1) |
 | OpenBao | _(completar — solo para producción self-hosteada)_ | Linux Foundation + OpenSSF |
 | OpenMetadata | _(completar)_ | Collate Inc., riesgo documentado |
 | OpenTofu | _(completar)_ | |
 | Podman | **5.8.3** (mínimo aceptado por `pnpm preflight`: 5.0) — máquina `quay.io/podman/machine-os:5.8` sobre WSL2 | Verificado con el Paso 0 en vivo. Instalado con `winget install -e --id RedHat.Podman`; firma Authenticode válida de "Red Hat, Inc". El repositorio oficial hoy es `github.com/podman-container-tools/podman` (transferido desde `containers/podman`, mismo id 109145553 — no es un typosquat). Podman Desktop es solo la interfaz: no instala el motor por sí solo |
 | docker-compose (compose provider de Podman) | **5.5.1** (mínimo aceptado: 2.20) | Binario standalone (`winget install -e --id Docker.DockerCompose`), SHA-256 idéntico al checksum oficial del release de `docker/compose`. No es el de Docker Desktop (`11-infraestructura.md` §4.2): si Docker Desktop está instalado, su copia va antes en el PATH aunque esté detenido, así que la CLI del proyecto elige el standalone y se lo pasa como `PODMAN_COMPOSE_PROVIDER` **solo a sus propios procesos `podman compose`** — nunca como variable global ni en `containers.conf` |
+
+## API Gateway (Paso 5)
+
+Todas en el `catalog` de `pnpm-workspace.yaml`. Fechas de publicación y licencias, del registro de npm.
+
+| Pieza | Versión | Notas |
+| --- | --- | --- |
+| `fastify` | **5.12.5** (2026-09-16) | MIT, OpenJS Foundation (`06-api-gateway.md` §1.1). La última de la línea 5 |
+| `@trpc/server` / `@trpc/client` | **11.19.0** (2026-09-16) | MIT. El adaptador de Fastify es el oficial de tRPC. `@trpc/client` solo en los tests; el frontend lo suma en el Paso 6 |
+| `@fastify/helmet` | **13.1.1** (2026-08-19) | MIT. CSP `default-src 'none'` para una API JSON |
+| `@fastify/rate-limit` | **11.2.0** (2026-07-29) | MIT. Dos `rateLimit()` en una misma ruta: el segundo nunca corre (medido), por eso se usa `createRateLimit()` (`06-api-gateway.md` §6.3) |
+| `@fastify/otel` | **0.21.0** (2026-09-06) | MIT, proyecto oficial de Fastify. La 0.21.1 (2026-10-02) solo sube su dependencia `@opentelemetry/instrumentation`, sin cambio de seguridad; se queda la 0.21.0 |
+| `@opentelemetry/sdk-trace-node`, `sdk-trace-base`, `resources` | **2.11.0** (2026-08-31) | Apache 2.0, CNCF Graduated |
+| `@opentelemetry/exporter-trace-otlp-http`, `instrumentation` | **0.222.0** (2026-08-31) | Apache 2.0. OTLP/HTTP hacia el Collector local |
+| `@opentelemetry/instrumentation-pg` | **0.74.0** (2026-08-31) | Apache 2.0, `opentelemetry-js-contrib`. Registra el SQL parametrizado, sin valores (medido) |
+| `@opentelemetry/instrumentation-undici` | **0.32.0** (2026-08-31) | Apache 2.0, `opentelemetry-js-contrib`. Las llamadas a Cube; `url.full` y `url.query` recortados (`06-api-gateway.md` §6.5) |
 
 ## Toolchain TypeScript (Paso 0)
 

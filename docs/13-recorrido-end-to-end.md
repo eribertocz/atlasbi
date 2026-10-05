@@ -140,6 +140,12 @@ cubes:
 
 ## Paso 4 — API Gateway (Capa 6): la consulta llega tipada al frontend — con la traducción real al formato de Cube
 
+**Cómo quedó en el Paso 5 (`0.5.0`). Corrige los bloques de esta sección en tres puntos:**
+
+1. **El adaptador no vive en la Gateway.** `toCubeQuery` y la traducción de operadores están en `packages/semantic/src/adapters/cube/cube-query.ts`. La Gateway solo conoce `SemanticRuntimePort` (`21-engineering-standards.md` §3). Los archivos `packages/api-gateway/src/cube-adapter.ts` y `procedures/getMetric.ts` de abajo no existen.
+2. **El procedimiento es `semantic.query({ workspaceId, query })`**, con `SemanticQuery` v1: medidas, dimensiones, tiempo, filtros, orden y límite. No hay un campo `metric`. La traducción de filtros es la de abajo, más `in`/`notIn`, que van como `equals`/`notEquals`.
+3. **Los tipos generados desde `/meta` no se adoptaron en el Paso 5.** Un `enum` estático de miembros no sabe qué puede ver cada persona. La validación que importa es en tiempo de ejecución, contra la metadata visible para ese security context, y la hace el adaptador antes de pedir datos: un miembro inexistente y uno no visible fallan igual. Si el frontend del Paso 6 necesita los miembros en tiempo de compilación, se reevalúa ahí.
+
 **Corrección 4, la más importante de este documento: Cube nunca recibió un campo `metric`.** Su formato de consulta real, verificado contra la documentación oficial, es `{ measures: [...], dimensions: [...], filters: [...], timeDimensions: [...] }` — siempre arrays, nunca un string suelto. El contrato original de este documento (`{ metric, dimensions, filters }`) es una abstracción propia razonable para exponer al frontend, **pero necesita un adaptador explícito antes de llegar a Cube, nunca un passthrough directo**.
 
 **Corrección adicional, señalada en una revisión posterior: los operadores del Filter AST (`14-interaction-state-engine.md`) no son idénticos a los operadores reales de Cube — traducirlos "casi sin cambios" fue una simplificación excesiva.** Cube tiene operadores propios que no tienen un equivalente 1:1 obvio (`set`/`notSet` en vez de "no es nulo", `inDateRange` para fechas, sin un `between` genérico para números). El adaptador tiene que traducir explícitamente, no asumir que el mismo nombre sirve — **y una corrección más: `between` sobre un número no es un solo filtro de Cube, son dos (`gte` + `lte`), así que el adaptador devuelve una lista de filtros por cada entrada del AST, no una traducción 1 a 1**:
@@ -253,7 +259,7 @@ Este archivo generado (`packages/contracts/generated/semantic.ts`) se regenera c
 ```ts
 // packages/auth/src/access/access-directory.ts (resumido)
 async resolveSecurityContext(identity: Identity, workspaceId: string): Promise<SecurityContext> {
-  // Dos preguntas, dos consultas: qué puede HACER (rol) y qué puede VER (entitlements).
+  // Dos preguntas — qué puede HACER (rol) y qué puede VER (entitlements) — en tres consultas paralelas.
   const [workspace, membership, entitlements] = await Promise.all([
     db.selectFrom('workspace').select(['id', 'organizationId']).where('id', '=', workspaceId).executeTakeFirst(),
     db.selectFrom('workspaceMembership').select('role')
@@ -274,10 +280,10 @@ async resolveSecurityContext(identity: Identity, workspaceId: string): Promise<S
 **Implementado en el Paso 4:**
 - **Lo que viaja a Cube no es el security context tal cual,** sino su traducción a los grupos del modelo, en un solo lugar (`toQueryClaims`, `@atlasbi/semantic`). El rol no viaja, porque Cube no decide filas con él.
 - **El token es corto y lo arma siempre el firmador de la plataforma:** HS256, emisor `platform-api`, audiencia `semantic-layer`, vida ≤ 300 s.
-- **El SQL API por el puerto Postgres ya está resuelto:** `checkSqlAuth` acepta este mismo token como contraseña. Sigue pendiente el transporte HTTP `/v1/cubesql`, que es el experimento del Paso 5.
+- **El SQL API por el puerto Postgres ya está resuelto:** `checkSqlAuth` acepta este mismo token como contraseña. El transporte HTTP `/v1/cubesql` quedó resuelto en el Paso 5: autentica con `checkAuth`, no con `checkSqlAuth` (`17-self-service-calculations.md` §3.2.4).
 
 ```ts
-// Lo que hará la Gateway por request (Paso 5), con piezas que ya existen:
+// Lo que pasa en cada request desde el Paso 5 (la firma del token corto la hace el adaptador de @atlasbi/semantic):
 const identity = await identityPort.verifyIdentityToken(sessionIdentityToken); // { userId, organizationId }
 const context = await accessDirectory.resolveSecurityContext(identity, workspaceId);
 const queryToken = signQueryToken(apiSecret, toQueryClaims(context));

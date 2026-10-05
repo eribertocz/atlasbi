@@ -4,7 +4,7 @@ import { LAKEHOUSE_CATALOG_TYPES, type LakehouseCatalogType } from '@atlasbi/con
 import { z } from 'zod';
 
 /** Config Schema contract version (docs/21 §2) — bump when a variable changes meaning or is removed. */
-export const CONFIG_SCHEMA_VERSION = 5;
+export const CONFIG_SCHEMA_VERSION = 6;
 
 const DUCKDB_CATALOG_REJECTION =
   'a DuckDB-file catalog allows a single client only and is not supported — use postgres (default) or sqlite (docs/01 §6.6)';
@@ -92,12 +92,29 @@ function refineTier(
 /** The lakehouse variables alone, so preflight can read them before the rest of .env exists. */
 export const lakehouseEnvironmentSchema = z.object(lakehouseVariables).superRefine(refineTier);
 
+/** An http(s) address with nothing after the host and port: a path would never match an Origin. */
+const originUrl = z
+  .url({ protocol: /^https?$/ })
+  // zod runs refinements after a failed check too: an unparsable value is z.url()'s to report.
+  .refine((value) => !URL.canParse(value) || new URL(value).origin === value.replace(/\/$/, ''), {
+    message: 'must be scheme://host[:port] only — no path, query or fragment',
+  });
+
 /** Wire format: the non-secret environment variables a platform process reads. */
 export const environmentSchema = z
   .object({
     ATLASBI_ENV: z.enum(['development', 'test', 'production']).default('development'),
     ATLASBI_SECRET_PROVIDER: z.enum(['env']).default('env'),
     OTEL_EXPORTER_OTLP_ENDPOINT: z.url(),
+    /** The API gateway listens on 127.0.0.1 only (build step 5, decision G9). */
+    ATLASBI_GATEWAY_PORT: z.coerce.number().int().min(1).max(65535).default(4100),
+    /**
+     * The address the browser uses: the only trusted Origin of the identity layer, and https there
+     * makes the session cookie Secure. In build step 6 it becomes the single domain (docs/19 §10).
+     */
+    ATLASBI_PUBLIC_URL: originUrl.default('http://127.0.0.1:4100'),
+    /** Cube's REST API as the gateway reaches it. Follows ATLASBI_CUBE_PORT (compose). */
+    ATLASBI_SEMANTIC_URL: originUrl.default('http://127.0.0.1:4000'),
     ...lakehouseVariables,
   })
   .superRefine(refineTier);
@@ -138,6 +155,15 @@ export interface PlatformConfig {
   telemetry: {
     otlpEndpoint: string;
   };
+  gateway: {
+    port: number;
+    /** An origin: scheme, host and port, without a trailing slash. */
+    publicUrl: string;
+  };
+  semantic: {
+    /** Cube's REST address, without a trailing slash. */
+    url: string;
+  };
   lakehouse: LakehouseConfig;
 }
 
@@ -147,6 +173,13 @@ export function toPlatformConfig(environment: Environment, baseDirectory: string
     secretProvider: environment.ATLASBI_SECRET_PROVIDER,
     telemetry: {
       otlpEndpoint: environment.OTEL_EXPORTER_OTLP_ENDPOINT,
+    },
+    gateway: {
+      port: environment.ATLASBI_GATEWAY_PORT,
+      publicUrl: new URL(environment.ATLASBI_PUBLIC_URL).origin,
+    },
+    semantic: {
+      url: new URL(environment.ATLASBI_SEMANTIC_URL).origin,
     },
     lakehouse: toLakehouseConfig(environment, baseDirectory),
   };

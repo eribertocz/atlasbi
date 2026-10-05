@@ -14,6 +14,12 @@ export const IDENTITY_TOKEN_ISSUER = 'identity';
 export const IDENTITY_TOKEN_AUDIENCE = 'platform-api';
 export const IDENTITY_TOKEN_LIFETIME = '15m';
 
+/** Where the identity layer's HTTP surface is mounted, and better-auth's own base path. */
+export const AUTH_BASE_PATH = '/auth';
+
+/** Session cookies are `identity.session_token`: never a vendor name on a public surface. */
+export const COOKIE_PREFIX = 'identity';
+
 export const MIN_PASSWORD_LENGTH = 12;
 export const MAX_PASSWORD_LENGTH = 128;
 const MIN_SECRET_LENGTH = 32;
@@ -31,7 +37,11 @@ export interface AuthOptionsInput {
  * - organization plugin without teams (docs/09 §6.2); no invitations are sent (no email yet);
  * - jwt plugin: the identity token carries `sub` and `org` only, never a role or an entitlement
  *   (docs/09 §7) — without `definePayload` it would carry the whole user (Phase 0, P4-5);
- * - UUID ids, tables in the `auth` schema, telemetry off (decisions D2, D7, E4).
+ * - UUID ids, tables in the `auth` schema, telemetry off (decisions D2, D7, E4);
+ * - better-auth's own rate limiter off, always: it turns itself on with NODE_ENV=production and,
+ *   without a client IP, shares one bucket per route — three wrong passwords from anyone locked
+ *   everyone out (build step 5, P5-10). The API gateway limits sign-in instead (docs/06 §6.3);
+ * - its Origin (CSRF) check on, always: no security switch depends on NODE_ENV.
  */
 export function createAuthOptions(input: AuthOptionsInput) {
   if (input.secret.length < MIN_SECRET_LENGTH) {
@@ -51,7 +61,15 @@ export function createAuthOptions(input: AuthOptionsInput) {
         }
       },
     },
-    advanced: { database: { generateId: 'uuid' } },
+    advanced: {
+      database: { generateId: 'uuid' },
+      cookiePrefix: COOKIE_PREFIX,
+      // Explicit, always: left out, better-auth skips its Origin (CSRF) check whenever
+      // NODE_ENV=test or any TEST variable is set — silently (build step 5, phase B).
+      disableOriginCheck: false,
+      disableCSRFCheck: false,
+    },
+    rateLimit: { enabled: false },
     emailAndPassword: {
       enabled: true,
       disableSignUp: true,

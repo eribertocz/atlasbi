@@ -244,6 +244,22 @@ Si algo falla, no lo oculta. El cliente recibe siempre el mismo mensaje genéric
 - **La sonda de `pnpm dev`** firma con el grupo `readiness`, que solo ve `regions.zone`.
 - **Logs.** Cube escribe en su log los tokens que **rechaza** completos, nunca los que acepta. La Gateway (Paso 5) nunca le reenvía a Cube el token del cliente: firma uno propio por request.
 
+**Cómo la consume la plataforma (Paso 5, `0.5.0`).** El único consumidor es el puerto `SemanticRuntimePort` 1.0 (`@atlasbi/contracts`). Su adaptador, `createCubeSemanticRuntime` (`packages/semantic/src/adapters/cube/`), es el único código que conoce el formato de consulta de Cube, su metadata y sus errores.
+
+- **Por consulta: metadata → validación → datos**, sin caché (decisión del Paso 5, `06-api-gateway.md` §6.6).
+  - Pide `/v1/meta` con el token de ese contexto: Cube devuelve solo los miembros que ese contexto puede usar.
+  - Valida la consulta contra esa metadata, y recién entonces pide `/v1/load`, con "Continue wait" y un plazo total.
+  - Pide `limit + 1` filas para saber si el resultado está truncado.
+- **Traducción del Filter AST (`14-interaction-state-engine.md` §1.1):**
+  - `between` pasa a `inDateRange` en un tiempo, y a `gte` + `lte` en un número.
+  - `isNull` pasa a `notSet`.
+  - `in` y `notIn` se mandan como `equals` y `notEquals`. Cube 1.7.45 acepta `in` y `notIn`, pero no los documenta.
+- **Resultado:** filas posicionales y todo número como el string exacto que da Cube, sin rellenar la escala. La respuesta de `/v1/load` repite la consulta efectiva, con los filtros de RLS y los valores de los entitlements, y el adaptador la descarta: devuelve solo datos.
+- **Errores:** códigos cerrados (`invalid_query`, `unknown_member`, `unavailable`, `query_failed`), nunca el texto de Cube. Los códigos HTTP de Cube no sirven para clasificar: un miembro denegado u oculto da 500 "hidden member".
+- **Nunca `meta?extended=true`:** expone el SQL del modelo, sus tablas y sus archivos (medido; las políticas de acceso no).
+- **`public: false` nunca se usa como seguridad.** Se puede filtrar y ordenar por un miembro marcado así (`09-auth-gobernanza.md` §6.1).
+- **La batería de contrato** (`describeSemanticRuntimePortContract`) no depende de los datos: el fixture declara los roles del modelo y la batería verifica propiedades que cualquier motor correcto cumple. El adaptador de Cube la corre contra un stack propio. Para que otro motor reemplace a Cube, tiene que pasar la misma batería (`21-engineering-standards.md` §3.3).
+
 ---
 
 ## 7. Contrato de esta capa (qué consume, qué expone)

@@ -18,6 +18,8 @@ const POSTGRES_READY: RetryPolicy = {
 };
 const COLLECTOR_READY: RetryPolicy = { timeoutMs: 30_000, intervalMs: 1_000 };
 
+export const MIGRATIONS_STEP = 'Migrations';
+
 export function localStackReadinessSteps(
   databaseUrl: string,
   ports: LocalInfraPorts,
@@ -31,7 +33,7 @@ export function localStackReadinessSteps(
       },
     },
     {
-      name: 'Migrations',
+      name: MIGRATIONS_STEP,
       dependsOn: ['Postgres'],
       ensureReady: async () => {
         const { applied } = await migrateToLatest({ connectionString: databaseUrl });

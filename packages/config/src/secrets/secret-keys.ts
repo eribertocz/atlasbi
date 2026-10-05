@@ -70,6 +70,14 @@ export function authSecretKeys(): string[] {
   return [SECRET_KEYS.authSecret];
 }
 
+/**
+ * The API gateway: the platform database (identity and access), `auth.secret` (sessions, identity
+ * tokens) and, on the postgres tier, the secret it signs Cube's query tokens with.
+ */
+export function gatewaySecretKeys(lakehouse: LakehouseConfig): string[] {
+  return [SECRET_KEYS.databaseUrl, ...authSecretKeys(), ...semanticSecretKeys(lakehouse)];
+}
+
 /** Everything `pnpm bootstrap` sets up: writer and reader access, the storage administration, Cube. */
 export function bootstrapSecretKeys(lakehouse: LakehouseConfig): string[] {
   return [

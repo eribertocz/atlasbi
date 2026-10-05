@@ -4,6 +4,7 @@ import { ComposeProviderNotFoundError } from '../container-runtime/compose-provi
 import { runningServices } from '../container-runtime/podman.ts';
 import {
   hasEnvFile,
+  LOCAL_PROCESSES,
   portsByService,
   stackServices,
   type LocalInfraPorts,
@@ -18,12 +19,13 @@ export function checkEnvFile(): CheckResult {
 }
 
 /**
- * Only the ports of the services this tier starts; ports already held by this project's own
- * running containers are not conflicts.
+ * Only the ports of the services this tier starts, and of the local processes `pnpm dev` runs;
+ * ports already held by this project's own running containers are not conflicts. A port of a
+ * local process in use usually means `pnpm dev` is running already.
  */
 export async function checkPorts(
   ports: LocalInfraPorts,
-  services: readonly string[] = stackServices(),
+  services: readonly string[] = [...stackServices(), ...LOCAL_PROCESSES],
 ): Promise<CheckResult> {
   const running = await runningServicesOrNone();
   const conflicts: string[] = [];

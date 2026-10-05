@@ -5,7 +5,7 @@ import {
   WORKSPACE_ROLES,
   type WorkspaceRole,
 } from '@atlasbi/contracts';
-import { CamelCasePlugin, type Generated, Kysely, PostgresDialect } from 'kysely';
+import { CamelCasePlugin, type Generated, Kysely, PostgresDialect, sql } from 'kysely';
 import pg from 'pg';
 
 import { buildSecurityContext } from './security-context.ts';
@@ -38,6 +38,14 @@ interface AccessTables {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const DIMENSION = /^[a-z][a-z0-9_]*$/;
+
+/** A workspace someone belongs to, and what they can do in it. */
+export interface WorkspaceMembership {
+  workspaceId: string;
+  slug: string;
+  name: string;
+  role: WorkspaceRole;
+}
 
 export class InvalidAccessRequestError extends Error {
   constructor(message: string) {
@@ -77,6 +85,13 @@ export interface AccessDirectory {
   }): Promise<void>;
   /** Rejects with AccessDeniedError; never resolves with a partial context. */
   resolveSecurityContext(identity: Identity, workspaceId: string): Promise<SecurityContext>;
+  /**
+   * The workspaces of the identity's organization this person is a member of, with their role —
+   * never what they can see there: that is per workspace and per request (docs/09 §6.1).
+   */
+  listMemberships(identity: Identity): Promise<WorkspaceMembership[]>;
+  /** Resolves once the directory's database answers; for readiness probes. */
+  ping(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -181,8 +196,35 @@ export function createAccessDirectory(options: { connectionString: string }): Ac
       return buildSecurityContext(identity, workspace, membership, entitlements);
     },
 
+    async listMemberships(identity) {
+      if (!UUID.test(identity.userId) || !UUID.test(identity.organizationId)) {
+        return [];
+      }
+      const rows = await db
+        .selectFrom('workspaceMembership as membership')
+        .innerJoin('workspace', 'workspace.id', 'membership.workspaceId')
+        .select(['workspace.id', 'workspace.slug', 'workspace.name', 'membership.role'])
+        .where('membership.userId', '=', identity.userId)
+        .where('workspace.organizationId', '=', identity.organizationId)
+        .orderBy('workspace.name')
+        .execute();
+      return rows.flatMap((row) =>
+        isWorkspaceRole(row.role)
+          ? [{ workspaceId: row.id, slug: row.slug, name: row.name, role: row.role }]
+          : [],
+      );
+    },
+
+    async ping() {
+      await sql`SELECT 1`.execute(db);
+    },
+
     async close() {
       await pool.end();
     },
   };
+}
+
+function isWorkspaceRole(role: string): role is WorkspaceRole {
+  return (WORKSPACE_ROLES as readonly string[]).includes(role);
 }

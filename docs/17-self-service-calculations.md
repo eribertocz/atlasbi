@@ -142,19 +142,32 @@ Si se permiten fórmulas arbitrariamente complejas sin ningún límite, el riesg
 | Rolling window | Medida del modelo (`rolling_window`): una consulta de Cube. `SUM() OVER (… ROWS 2 PRECEDING)` en SQL: SQL completo en DuckDB |
 | Time-shift | Medida `multi_stage` con `time_shift`: una consulta de Cube. `LAG()` en SQL: SQL completo en DuckDB |
 
-Cuatro consecuencias para el Editor de Semantic SQL:
+Seis consecuencias para el Editor de Semantic SQL:
 
 - **Qué corre dentro de Cube, y con qué límite.** La agregación corre siempre en DuckDB. Cube hace, a lo sumo, operaciones por fila sobre el resultado ya agregado: una proyección (el ratio sin `ORDER BY`) o un filtro (CTE unidos y filtrados). Es trabajo liviano, pero tiene un límite real: el SQL API agrega **`LIMIT 50000`** a lo que empuja, así que un filtro que aplica Cube ve, como mucho, 50 000 filas agregadas. Si la consulta empujada produjera más, ese filtro trabajaría sobre un resultado truncado — se deduce del límite, no se midió con más de 50 000 grupos. Por eso el Visual Builder solo genera formas cuyo filtro viaja a Cube (`HAVING`, o `WHERE` sobre un CTE sin `JOIN`), nunca una donde el filtro quede del lado de Cube.
 - **Hueco de Cube Store con medidas decimales.** Un filtro sobre una medida decimal, en una consulta con orden (REST aplica un orden por defecto aunque no se pida), falla cuando la responde una pre-agregación: `Invalid comparison operation: Decimal128(38, 2) > Decimal128(37, 2)`. Falla igual por REST que por el SQL API, y con cualquier forma del filtro — `HAVING`, CTE o subconsulta. **La primera versión de esta sección recomendaba `HAVING` como remedio, y era incorrecto:** solo funcionaba porque esa prueba no tenía `ORDER BY`. La misma consulta respondida por DuckDB (una dimensión que la pre-agregación no cubre) funciona, y con una medida entera (`count`) también. **Decisión del Paso 3:** la pre-agregación se queda, y el hueco queda documentado con su test de alerta, sin buscarle un arreglo ahora. Se retoma si aparece antes del Paso 11: el Visual Builder es quien realmente puede generar ese patrón (un "top N con umbral" sobre una medida decimal).
+- **Hueco del SQL API: un `OR` con una constante siempre verdadera termina en *panic*.** `WHERE region = 'North' OR 1 = 1` falla con `Rewrite Error: Unexpected panic. Reason: Expected filter but found CubeScanFilters([])` (`converter.rs:1948`). Falla igual con `OR TRUE`, con la constante primero (`1 = 1 OR …`) y sin `GROUP BY`. Con una constante siempre falsa (`OR 1 = 0`) funciona, igual que `WHERE 1 = 1` sola o `AND 1 = 1`.
+  - **Es el caso de `cube-js/cube#7880`, que evolucionó.** Ese issue está abierto desde 2024 y nace del "Todos" de un filtro de Grafana: `('ALL' = 'ALL' OR region IN (…))`. En la 0.34 las dos ramas fallaban con un error de reescritura. Hoy la forma con constante falsa funciona y la verdadera termina en *panic*. El dato actualizado va como comentario en #7880, no como issue nuevo.
+  - **Medido el 2026-10-04**, con la imagen oficial de Cube, un modelo mínimo (`VALUES` en DuckDB) y sin código de la plataforma: igual en Cube 1.7.45 y en 1.7.50.
+  - **No afecta a la Capa 6 hoy:** no expone `/v1/cubesql`, y el adaptador de `SemanticRuntimePort` solo arma filtros sobre miembros.
+  - **Importa en el Paso 11:** el Editor de Semantic SQL puede recibir esa forma tal cual, escrita a mano o generada por una herramienta como Grafana. El Visual Builder nunca debe generarla: un filtro "Todos" se omite, no se escribe como una condición siempre verdadera.
+- **Hueco de Cube Store con medidas derivadas: las trunca a 6 decimales.** Una medida derivada de tipo `number` (por ejemplo `average_order_value`, total dividido por cantidad), cuando la responde una pre-agregación, llega **truncada**, no redondeada: South da `262.110537` en vez de `262.1105375`. La misma consulta respondida por DuckDB conserva el `double` completo. Se midió en la Fase A del Paso 5, con la batería de contrato de `SemanticRuntimePort`, que compara el ratio con una tolerancia absoluta de 1e-6 por este motivo.
+  - **Consecuencia para el Paso 11:** una medida derivada no da el mismo número según quién responda la consulta. Para un ratio que se muestra con pocos decimales es invisible. Para una comparación exacta (un umbral, un filtro de igualdad) no lo es.
+  - Se revalida con cada versión nueva de Cube, como los otros huecos.
 - **Exactitud:** el SQL API devuelve las medidas decimales como punto flotante (`262.43600250000003`). La API REST las devuelve como string, pero sin la escala (`446207.5`, no `446207.50`). Ninguna de las dos es el formato sin pérdida del puerto de lectura (`01-motor-almacenamiento.md` §7); la representación la define el contrato de la Capa 6 (Paso 5).
 - **Los dos huecos (`RANK` y el filtro decimal) no tienen issue en `cube-js/cube`** (revisado el 2026-09-26; no se publicó ninguno). El PR #11684, ya incorporado, empujó las funciones de ventana y registra un problema de tipos parecido con `NTILE`. Los dos se revalidan con cada versión nueva de Cube — sus tests de alerta fallan el día que Cube los resuelva. Mientras sigan abiertos, el Visual Builder usa `CAST` en las funciones de ranking; para el filtro decimal no hay forma de SQL que lo evite mientras una pre-agregación responda la consulta (ver la decisión de arriba).
 
 ### 3.2.3 Corrección bloqueante: la autenticación del SQL API no es la misma que la de REST/GraphQL
 
+**Corrección del Paso 5, medida en la Fase 0 (P5-4, 2026-09-27, Cube Core 1.7.45): la hipótesis de esta sección era incorrecta para el transporte HTTP.** Decía que `/v1/cubesql` autentica con `checkSqlAuth`, igual que el protocolo de Postgres. **No es así.**
+- **`/v1/cubesql` autentica con `checkAuth`:** la opción `jwt`, la misma verificación de JWT que REST/GraphQL. No invoca `checkSqlAuth` en ningún caso.
+- **`checkSqlAuth` solo corre en el protocolo de Postgres.**
+- **La tabla de abajo está mal en su segunda fila**, y la frase "ni por el transporte HTTP `/v1/cubesql`" del hallazgo también. Se dejan como estaban para que se vea qué se suponía; lo medido está en §3.2.4.
+
 **Avance del Paso 4, sobre el SQL API por el protocolo de Postgres (no sobre `/v1/cubesql`):**
 - **`checkSqlAuth` está implementado:** la contraseña es el mismo token corto que usa REST (HS256, ≤ 5 min), y el security context sale de sus *claims*. Así el SQL API aplica exactamente la misma RLS que REST, y no existe una contraseña fija.
 - **`checkSqlAuth` corre una sola vez, al conectar.** Por eso Cube vuelve a verificar el vencimiento en cada consulta (`queryRewrite`), y una conexión abierta muere con su token (`04-semantico.md` §6.6).
-- **Sigue pendiente, para el Paso 5, el transporte HTTP `/v1/cubesql`** (§3.2.4).
+- **El transporte HTTP `/v1/cubesql` quedó resuelto en el Paso 5:** no pasa por `checkSqlAuth` (§3.2.4).
 
 **Hallazgo importante, señalado en una revisión posterior y verificado contra la documentación oficial de Cube: el JWT que ya usamos para REST/GraphQL (firmado con `CUBEJS_API_SECRET`, decodificado automáticamente por Cube) NO es el mismo mecanismo que usa el SQL API — ni por el puerto Postgres, ni por el transporte HTTP `/v1/cubesql`.** Cube distingue dos rutas de autenticación completamente separadas:
 
@@ -162,6 +175,8 @@ Cuatro consecuencias para el Editor de Semantic SQL:
 | --- | --- | --- |
 | REST / GraphQL | `checkAuth` — decodifica y verifica un JWT automáticamente, con los claims ya disponibles como `securityContext` | En buena parte, comportamiento de fábrica de Cube |
 | **SQL API** (los dos transportes: Postgres y `/v1/cubesql`) | **`checkSqlAuth`** — una función que **nosotros mismos escribimos** dentro de la configuración de Cube (`cube.js`/`cube.py`), que recibe usuario/contraseña de la conexión y devuelve `{ password, securityContext }` | Código propio, no viene resuelto de fábrica |
+
+**Lo que sigue (este párrafo y el bloque de código) es la hipótesis anterior, descartada por la medición del Paso 5:** para `/v1/cubesql`, Cube sí decodifica el JWT automáticamente (`checkAuth`). El bloque de código no describe nada que exista: el `checkSqlAuth` real, del Paso 4, está en `packages/semantic/cube/` y solo atiende el protocolo de Postgres.
 
 **La corrección al flujo de la sección 3.2 (`API Gateway → JWT firmado → /v1/cubesql`): el paso "Cube decodifica el JWT automáticamente" no está garantizado para el SQL API — depende de que nuestra propia implementación de `checkSqlAuth` sepa leer ese JWT y devolver el `securityContext` correcto.** El concepto de fondo no cambia (la Gateway sigue resolviendo `workspace_role` + `entitlements` y pasándoselos a Cube de forma verificable) — lo que cambia es que hay una pieza de configuración propia que escribir dentro de Cube, no algo que "ya funciona igual que REST":
 
@@ -188,6 +203,24 @@ module.exports = {
 3. ¿Qué `securityContext` recibe realmente `access_policy` cuando se resuelve por esta vía — coincide con lo que devuelve `checkSqlAuth`, o hay alguna transformación intermedia?
 
 Recién con esas tres respuestas confirmadas empíricamente se termina de escribir el código real de `checkSqlAuth` — el bloque de arriba es la hipótesis de partida, no la implementación final.
+
+**Resuelto en el Paso 5.** Se midió en la Fase 0 (P5-4) contra el Cube Core 1.7.45 de desarrollo, con la configuración del Paso 4, por los dos transportes. **La hipótesis de partida era incorrecta: `/v1/cubesql` no usa `checkSqlAuth`.**
+
+1. **¿Invoca `checkSqlAuth`?** No, nunca. Invoca `checkAuth` (la opción `jwt`), igual que REST. Lo distinguió un token válido de 3600 s:
+   - Por HTTP, pasó la autenticación y lo rechazó recién `queryRewrite` ("not short-lived").
+   - El mismo token, como contraseña por el protocolo de Postgres, falló en `checkSqlAuth` ("password authentication failed").
+2. **¿Cómo llega la credencial?** En el header `Authorization`, el token crudo o con `Bearer`. `Basic` se rechaza. No hay usuario ni contraseña de la request.
+3. **¿Qué `securityContext` reciben las `access_policy`?** El *payload* del JWT verificado, tal cual, sin ninguna transformación: el mismo que con REST. Cube lo escribe completo en su log (`09-auth-gobernanza.md` §6.1).
+
+Medido además:
+
+- **`queryRewrite` es imprescindible también por HTTP.** Un token sin `exp` pasa `checkAuth`, y solo `queryRewrite` impone la vida máxima de 300 s.
+- **Un error posterior a la autenticación llega como HTTP 200**, con `{"error": …}` en el cuerpo. El cliente tiene que leer el cuerpo, no solo el estado.
+- **El cambio de usuario `__user` se rechaza por los dos transportes** ("from unknown" por HTTP).
+- **La RLS se sostuvo en todas las formas de consulta probadas:** sin agrupar, CTE, función de ventana, `UNION`, *join*, y filtros ensanchados con `OR` o `IN`.
+- **La única falla fue un *panic* del reescritor** con un `OR` siempre verdadero, que no filtra datos. Está en §3.2.2.
+
+**Consecuencia:** para el transporte HTTP no hay ningún código propio que escribir dentro de Cube. Quien use `/v1/cubesql` (el Editor de Semantic SQL del Paso 11) manda el mismo token corto que REST en `Authorization`. `checkSqlAuth`, del Paso 4, queda solo para las herramientas que hablan el protocolo de Postgres.
 
 
 
@@ -295,7 +328,7 @@ El SQL API de Cube Core está **deshabilitado por defecto** — se habilita conf
 NODE_ENV=production
 CUBEJS_DEV_MODE=false
 CUBEJS_API_SECRET=<secreto real, el mismo que usa la Capa 6 para firmar el JWT>
-# + contraseña configurada para el SQL API — sin esto, acepta credenciales arbitrarias
+# + autenticación del SQL API — sin esto, acepta credenciales arbitrarias (implementada en el Paso 4: el token corto como contraseña, §3.2.3)
 ```
 
 **Cube Store: decisión explícita, no "después vemos".** Varias capacidades de producción de Cube (pre-agregaciones, caché distribuido) requieren Cube Store — sin él, Cube corre con caché en memoria, válido para un MVP simple pero no para validar comportamiento de producción. Dos opciones igual de válidas, pero hay que elegir una antes de construir, no dejarlo abierto:
@@ -307,7 +340,7 @@ Este proyecto elige **MVP production-like** (Cube Store incluido desde el princi
 
 **Implementado en el Paso 3 (`0.3.0`).** Cube Core 1.7.45 y Cube Store 1.7.45, fijados por digest, corren en el perfil CORE del compose del nivel "equipo local" (`19-operabilidad-runtime.md` §1):
 
-- **Modo seguro desde el primer arranque:** `NODE_ENV=production`, `CUBEJS_DEV_MODE=false` y `CUBEJS_TELEMETRY=false`. `CUBEJS_API_SECRET` es el secreto `semantic.api-secret`, y el SQL API escucha en `15432` con usuario `semantic` y el secreto `semantic.sql-password`. Los tests de integración verifican que una contraseña incorrecta se rechaza.
+- **Modo seguro desde el primer arranque:** `NODE_ENV=production`, `CUBEJS_DEV_MODE=false` y `CUBEJS_TELEMETRY=false`. `CUBEJS_API_SECRET` es el secreto `semantic.api-secret`, y el SQL API escucha en `15432` con usuario `semantic`. **Corregido en el Paso 5:** esta línea todavía nombraba el secreto `semantic.sql-password`, que desapareció en el Paso 4 (`0.4.0`). La contraseña del protocolo de Postgres es el mismo token corto de REST, que `checkSqlAuth` verifica (§3.2.3), y no hay contraseña fija. Los tests de integración verifican que una contraseña incorrecta y un token vencido se rechazan. Por HTTP, `/v1/cubesql` no usa contraseña: autentica con `checkAuth` (§3.2.4).
 - **Cube Store en un nodo**, con su *metastore* y su *remote dir* en el volumen `cube-store-data`, que `pnpm reset:local` borra.
 - **Sin salida a Internet.** Cube y Cube Store viven solo en la red interna `semantic` del compose, a la que se unen Postgres y el object storage. Publican sus puertos en `127.0.0.1`, pero no tienen ruta hacia afuera, y un test lo verifica. Las extensiones de DuckDB que carga Cube las instala `pnpm bootstrap` desde dentro de su imagen (`04-semantico.md` §6).
 - **Lee el lakehouse como su lector:** el rol de solo `SELECT` del catálogo y la clave S3 de solo lectura (`01-motor-almacenamiento.md` §6.7).

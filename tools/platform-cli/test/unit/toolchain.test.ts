@@ -55,6 +55,7 @@ describe('readLocalInfraPorts', () => {
       objectStorageAdmin: 53903,
       cube: 4000,
       cubeSql: 15432,
+      gateway: 4100,
     });
   });
 

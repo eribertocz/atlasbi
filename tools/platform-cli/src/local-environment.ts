@@ -53,6 +53,8 @@ const localInfraSchema = z.object({
   ATLASBI_OBJECT_STORAGE_ADMIN_PORT: portSchema.default(53903),
   ATLASBI_CUBE_PORT: portSchema.default(4000),
   ATLASBI_CUBE_SQL_PORT: portSchema.default(15432),
+  // Same default as the Config Schema's (a unit test keeps both in step).
+  ATLASBI_GATEWAY_PORT: portSchema.default(4100),
 });
 
 export interface LocalInfraPorts {
@@ -64,9 +66,14 @@ export interface LocalInfraPorts {
   objectStorageAdmin: number;
   cube: number;
   cubeSql: number;
+  /** The API gateway: a local process under `pnpm dev`, not a container (decision G7). */
+  gateway: number;
 }
 
-/** Host ports published by compose.yaml, keyed the same way the compose services use them. */
+/**
+ * Host ports published by compose.yaml, keyed the same way the compose services use them — and
+ * the port of the platform services `pnpm dev` runs as local processes.
+ */
 export function readLocalInfraPorts(env: EnvironmentVariables = process.env): LocalInfraPorts {
   const values = localInfraSchema.parse(
     Object.fromEntries(Object.entries(env).filter(([, value]) => value !== '')),
@@ -80,6 +87,7 @@ export function readLocalInfraPorts(env: EnvironmentVariables = process.env): Lo
     objectStorageAdmin: values.ATLASBI_OBJECT_STORAGE_ADMIN_PORT,
     cube: values.ATLASBI_CUBE_PORT,
     cubeSql: values.ATLASBI_CUBE_SQL_PORT,
+    gateway: values.ATLASBI_GATEWAY_PORT,
   };
 }
 
@@ -96,6 +104,12 @@ export const LOCAL_TIER_SERVICES = [
 export const PORTABLE_TIER_SERVICES = ['postgres', 'otel-collector'] as const;
 
 /**
+ * Platform services `pnpm dev` runs as local processes with hot reload (docs/19 §2), on every
+ * tier. Their container images arrive with build step 6.
+ */
+export const LOCAL_PROCESSES = ['api-gateway'] as const;
+
+/**
  * The services the stack starts for the catalog type in `env` — read without validating the rest
  * of the configuration, so preflight checks the right ports even when .env has other errors.
  */
@@ -105,10 +119,10 @@ export function stackServices(env: EnvironmentVariables = process.env): readonly
     : LOCAL_TIER_SERVICES;
 }
 
-/** Host ports of the given services (all of them by default), as compose.yaml publishes them. */
+/** Host ports of the given services (every one by default): containers and local processes. */
 export function portsByService(
   ports: LocalInfraPorts,
-  services: readonly string[] = LOCAL_TIER_SERVICES,
+  services: readonly string[] = [...LOCAL_TIER_SERVICES, ...LOCAL_PROCESSES],
 ): Record<string, number[]> {
   const all: Record<string, number[]> = {
     postgres: [ports.postgres],
@@ -117,6 +131,7 @@ export function portsByService(
     // Cube Store publishes nothing: only Cube talks to it, inside the stack network.
     'cube-store': [],
     cube: [ports.cube, ports.cubeSql],
+    'api-gateway': [ports.gateway],
   };
   return Object.fromEntries(Object.entries(all).filter(([service]) => services.includes(service)));
 }

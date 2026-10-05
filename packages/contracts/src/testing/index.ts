@@ -7,3 +7,13 @@ export { describeLakehouseAdminPortContract } from './lakehouse-admin-port-contr
 export type { LakehouseAdminPortFixture } from './lakehouse-admin-port-contract.ts';
 export { describeSecretProviderContract } from './secret-provider-contract.ts';
 export type { SecretProviderFixture } from './secret-provider-contract.ts';
+export {
+  describeSemanticRuntimePortContract,
+  expectSemanticRuntimeError,
+  normalizeDecimal,
+  sumDecimals,
+} from './semantic-runtime-port-contract.ts';
+export type {
+  SemanticContractModel,
+  SemanticRuntimePortFixture,
+} from './semantic-runtime-port-contract.ts';

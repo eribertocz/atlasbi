@@ -16,7 +16,7 @@ import type { ReadinessStep } from './readiness-chain.ts';
 import { retryUntil, type RetryPolicy } from './retry-until.ts';
 
 export const CUBE_EXTENSIONS_STEP = 'Cube extensions';
-const CUBE_STEP = 'Cube';
+export const CUBE_STEP = 'Cube';
 
 /** What Cube's DuckDB loads: DuckDB registers postgres as postgres_scanner on disk. */
 const CUBE_EXTENSIONS = [

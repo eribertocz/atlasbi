@@ -4,6 +4,107 @@ Versionado del producto según [`docs/21-engineering-standards.md`](docs/21-engi
 §2: SemVer `0.MINOR.PATCH` hasta 1.0; los contratos (API, Report Schema, Config Schema, DB
 Migration…) versionan por separado y se listan en cada release.
 
+## Unreleased
+
+Paso 5 del orden de construcción: la API Gateway. El navegador tiene un único punto de entrada:
+inicia sesión, obtiene un token de identidad y consulta métricas. El gateway verifica la identidad
+en cada llamada, resuelve el contexto de seguridad por workspace y le pide los datos a la capa
+semántica por un puerto propio, sin conocer el motor. Dos personas con el mismo rol en el mismo
+workspace ven datos distintos, verificado por HTTP de punta a punta.
+
+### Agregado — puerto semántico (`SemanticRuntimePort` 1.0)
+
+- **El contrato, en `@atlasbi/contracts`:**
+  - `SemanticQuery` v1: medidas, dimensiones, dimensiones de tiempo con granularidad y rango,
+    los 12 operadores del Filter AST (`docs/14` §1.1), orden y un límite de 1 a 10.000 filas.
+  - `SemanticResult`: columnas y filas posicionales, con todo número como el string exacto del
+    motor, más `rowCount` y `truncated`.
+  - `SemanticModel` (lo que un contexto puede consultar) y capacidades por nombre, nunca por
+    motor (`docs/21` §3.4).
+  - `SemanticRuntimeError`, con cuatro códigos cerrados y `retryable`. Un miembro inexistente y
+    uno que el contexto no puede usar fallan igual: sin oráculo.
+- **El adaptador de Cube, `createCubeSemanticRuntime`, en `@atlasbi/semantic`.**
+  - Por consulta: metadata visible para ese contexto, validación y recién después los datos,
+    con `limit + 1` filas.
+  - Devuelve solo datos: Cube repite la consulta efectiva con los filtros de RLS y sus valores.
+  - Nunca pide `meta?extended=true`, que expone el SQL del modelo (`docs/04` §6.6).
+- **Batería de contrato** `describeSemanticRuntimePortContract`, independiente de los datos.
+  El adaptador de Cube la pasa contra un stack propio.
+
+### Agregado — `@atlasbi/api-gateway` (Fastify 5.12.5 + tRPC 11.19.0)
+
+- **Procedimientos:** `session.me`, `semantic.meta` y `semantic.query` (`docs/06` §7).
+  - Identidad en cada llamada, con `Authorization: Bearer` y verificación local.
+  - Contexto de seguridad por workspace y por llamada, sin caché.
+  - El mismo `FORBIDDEN` para toda denegación.
+  - El frontend importa el tipo `AppRouter` (Paso 6).
+- **Identidad por HTTP: tres rutas y nada más** (`docs/06` §6.4). Las demás rutas de
+  better-auth, que permiten crear organizaciones o listar sesiones con sus _tokens_, no son
+  alcanzables.
+  - `Origin` obligatorio en los POST.
+  - El limitador de better-auth se apaga y el gateway limita el inicio de sesión: 10 intentos
+    por minuto por IP y 5 fallos cada 15 minutos por cuenta (`docs/06` §6.3).
+- **Endurecimiento** (`docs/06` §6.5):
+  - tRPC: sin _stack_ ni mensaje interno, _batch_ de hasta 10, solo POST y cuerpo de hasta 1 MB.
+  - 404 y 500 neutros, CSP `default-src 'none'`, `no-store` y sin CORS.
+  - Escucha solo en `127.0.0.1`.
+- **Trazas OpenTelemetry** de Fastify, `pg` y las llamadas a Cube:
+  - sin _query string_, sin valores de SQL y sin cabeceras;
+  - el `traceparent` del cliente se ignora.
+- **`/health` y `/ready`.** `/ready` depende solo de la base de la plataforma.
+- **`@atlasbi/auth`:** `IdentityHttpHandler` sobre better-auth (`createBetterAuthHttp`), y en el
+  directorio de acceso, `listMemberships` y `ping`.
+
+### Agregado — `pnpm dev`
+
+- **Arranca la API Gateway** con `node --watch`, después de la infraestructura.
+  - El paso `API Gateway` de la cadena espera `/ready`.
+  - Si el gateway no arranca, el paso falla enseguida con la línea del error.
+- **Queda en primer plano** con la salida del gateway.
+  - Ctrl+C lo detiene, junto con el proceso que corre `node --watch`.
+  - La infraestructura sigue corriendo.
+- **`pnpm preflight` revisa el puerto 4100.**
+- **La sonda de Cube usa `ATLASBI_SEMANTIC_URL`**, la misma dirección que el gateway.
+- `pnpm stack:up` no cambia: la imagen del gateway llega en el Paso 6.
+
+### Medido
+
+- **`/v1/cubesql` autentica con `checkAuth`, no con `checkSqlAuth`.** La hipótesis anterior de
+  `docs/17` §3.2.3 era incorrecta (`docs/17` §3.2.4).
+- **Costo por request por HTTP** (`docs/06` §6.6):
+  - `session.me`: 2,7 ms de p50.
+  - `semantic.query`: 24 ms de p50 cuando la responde la caché de Cube, 66 ms si no.
+  - Sin caché de metadata: ahorraría 2–3 ms y arriesgaría servir permisos viejos.
+- **Dos huecos nuevos de Cube** (`docs/17` §3.2.2):
+  - Las medidas derivadas que responde Cube Store se truncan a 6 decimales.
+  - Un `OR` con una constante siempre verdadera termina en _panic_, igual en 1.7.45 y en 1.7.50.
+    Es `cube-js/cube#7880`, que evolucionó.
+- **better-auth apaga su chequeo de `Origin` con `NODE_ENV=test`.** Ahora queda encendido de
+  forma explícita.
+
+### Contratos
+
+- **Config Schema v5 → v6:** `ATLASBI_GATEWAY_PORT`, `ATLASBI_PUBLIC_URL` y
+  `ATLASBI_SEMANTIC_URL`, con valores por defecto. Un `.env` existente sigue funcionando.
+- **Contratos nuevos:**
+  - `SemanticRuntimePort` 1.0, con `SemanticQuery` v1 y `SemanticResult`.
+  - `IdentityHttpHandler` 1.0 (`IDENTITY_HTTP_VERSION`), con las operaciones `sign-in`,
+    `sign-out` y `token`.
+- **Sin cambios:** `IdentityPort` 1.0, `SecurityContext` 1.0, el token de consulta hacia Cube y
+  las migraciones (`000002`).
+- **La API pública** sigue sin procedimientos: `/api/v1` queda reservado. El BFF de tRPC es
+  interno y no se versiona como API pública.
+
+### Corrección
+
+- **`docs/17` §8** todavía nombraba `semantic.sql-password`, retirado en `0.4.0`.
+- **`docs/13`, paso 4:**
+  - El adaptador de Cube vive en `@atlasbi/semantic`, no en la Gateway.
+  - El procedimiento es `semantic.query`.
+  - Los tipos generados desde `/meta` no se adoptaron: la validación es en tiempo de ejecución,
+    contra lo que cada contexto puede ver.
+- **`docs/06` §1.1:** better-auth no se monta como plugin.
+
 ## 0.4.0 — identidad y autorización (2026-09-27)
 
 Paso 4 del orden de construcción: identidad y autorización. Con él, dos usuarios ven recortes

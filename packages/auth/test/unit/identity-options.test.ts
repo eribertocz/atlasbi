@@ -60,4 +60,19 @@ describe('the better-auth configuration', () => {
     expect(options.advanced.database.generateId).toBe('uuid');
     expect(options.database.schemaName).toBe('auth');
   });
+
+  it("turns better-auth's own rate limiter off and names the cookies neutrally", () => {
+    const options = createAuthOptions({ pool, secret: 'x'.repeat(40) });
+
+    // Explicit, so NODE_ENV=production cannot switch its shared bucket on (P5-10).
+    expect(options.rateLimit).toEqual({ enabled: false });
+    expect(options.advanced.cookiePrefix).toBe('identity');
+  });
+
+  it('keeps the Origin (CSRF) check on whatever NODE_ENV or TEST say', () => {
+    const options = createAuthOptions({ pool, secret: 'x'.repeat(40) });
+
+    // Left out, better-auth skips it under NODE_ENV=test or TEST=true (build step 5, phase B).
+    expect(options.advanced).toMatchObject({ disableOriginCheck: false, disableCSRFCheck: false });
+  });
 });

@@ -134,6 +134,25 @@ describe('authorization owned by the platform (workspace_membership + data_entit
     expect(inFinanzas.entitlements).toEqual({ region: { kind: 'listed', values: ['North'] } });
   });
 
+  it("lists the workspaces of the identity's organization with the role in each — never another organization's", async () => {
+    expect(await access.listMemberships(ana)).toEqual([
+      { workspaceId: comercial, slug: 'comercial', name: 'Comercial', role: 'admin' },
+      { workspaceId: finanzas, slug: 'finanzas', name: 'Finanzas', role: 'viewer' },
+    ]);
+    expect(await access.listMemberships(bruno)).toEqual([
+      { workspaceId: finanzas, slug: 'finanzas', name: 'Finanzas', role: 'viewer' },
+    ]);
+    // Ana's membership row in the other organization's workspace does not show up.
+    expect(
+      (await access.listMemberships(ana)).some((row) => row.workspaceId === foreignWorkspace),
+    ).toBe(false);
+    expect(await access.listMemberships({ userId: 'not-a-uuid', organizationId: 'x' })).toEqual([]);
+  });
+
+  it('answers a readiness ping', async () => {
+    await expect(access.ping()).resolves.toBeUndefined();
+  });
+
   it('lets two people with the same role see different data', async () => {
     const anaView = await access.resolveSecurityContext(ana, finanzas);
     const brunoView = await access.resolveSecurityContext(bruno, finanzas);

@@ -11,9 +11,9 @@
 | 1 | Almacenamiento | `packages/warehouse` | DuckDB + DuckLake (catálogo SQLite/Postgres según nivel; datos en carpeta local o en S3 — Garage en el nivel "equipo local") | SQL |
 | 2 | Transformación | `packages/transform` | SQLMesh | SQL + Python |
 | 3 | Ingesta | `packages/ingestion` | dlt (+ ADBC) — solo para fuentes que no se leen directo | Python |
-| 4 | Semántico | `packages/semantic` | Cube Core | YAML |
+| 4 | Semántico | `packages/semantic` | Cube Core; el adaptador de `SemanticRuntimePort` vive acá (Paso 5) | YAML |
 | 5 | IA/copiloto | `packages/ai-copilot` | `LLMProvider` (Claude por defecto) + MCP propio | TypeScript |
-| 6 | API Gateway | `packages/api-gateway` | tRPC (BFF) + OpenAPI 3.x (público) | TypeScript |
+| 6 | API Gateway | `packages/api-gateway` | Fastify + tRPC (BFF, **implementado en el Paso 5**) + OpenAPI 3.x (público, reservado en `/api/v1`) | TypeScript |
 | 7 | Orquestación | `packages/orchestrator` | Apache Airflow | Python |
 | 8 | Frontend | `apps/web` | SvelteKit + Svelte 5 + ECharts + GridStack + shadcn-svelte + Tailwind v4 | TypeScript |
 | 9 | Auth | `packages/auth` | better-auth + `workspace_membership` propia | TypeScript |
@@ -113,7 +113,7 @@ Realtime (10) ──sync/broadcast── visual, filter_definition (Postgres)
 
 **Corrección de orden, señalada en una revisión posterior: Auth tiene que ir antes del frontend, no en el paso 8 — el checklist del MVP exige demostrar RLS con dos usuarios viendo datos distintos, y eso es imposible sin Auth ya construido.** Secuencia completa (repetida en `CLAUDE.md`, que es la que Claude Code obedece):
 
-1. Almacenamiento (nivel "equipo local mínimo" — no "portátil") → 2. Transformación → 3. Semántico básico + *pushdown* validado → **4. Auth (`workspace_membership` + `data_entitlements`)** → 5. API Gateway + seguridad de Cube (JWT REST + experimento `checkSqlAuth`) → 6. Frontend mínimo Viewer → 7. Ingesta real → 8. Orquestación → 9. Interaction/State Engine → 10. Realtime (Electric) → 11. Self-service calculations → 12. IA → 13. Metadata → 14. Producción avanzada (OpenBao, nube, Edge Agent completo).
+1. Almacenamiento (nivel "equipo local mínimo" — no "portátil") → 2. Transformación → 3. Semántico básico + *pushdown* validado → **4. Auth (`workspace_membership` + `data_entitlements`)** → **5. API Gateway + seguridad de Cube** (JWT REST; el experimento de `/v1/cubesql` dio que usa `checkAuth`, no `checkSqlAuth`, `17` §3.2.4) → 6. Frontend mínimo Viewer → 7. Ingesta real → 8. Orquestación → 9. Interaction/State Engine → 10. Realtime (Electric) → 11. Self-service calculations → 12. IA → 13. Metadata → 14. Producción avanzada (OpenBao, nube, Edge Agent completo).
 
 **No saltar pasos.** Si te piden trabajar en el paso 7 sin que el 1-6 exista, decilo antes de improvisar una base temporal.
 

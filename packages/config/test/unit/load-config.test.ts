@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   bootstrapSecretKeys,
   ConfigurationError,
+  gatewaySecretKeys,
   lakehouseReaderSecretKeys,
   loadConfig,
   loadLakehouseConfig,
@@ -34,6 +35,8 @@ describe('loadConfig', () => {
       environment: 'development',
       secretProvider: 'env',
       telemetry: { otlpEndpoint: 'http://127.0.0.1:4318' },
+      gateway: { port: 4100, publicUrl: 'http://127.0.0.1:4100' },
+      semantic: { url: 'http://127.0.0.1:4000' },
       lakehouse: {
         catalogType: 'postgres',
         storage: {
@@ -70,6 +73,45 @@ describe('loadConfig', () => {
     const issues = (error as ConfigurationError).issues.join('\n');
     expect(issues).toContain('ATLASBI_ENV');
     expect(issues).toContain('OTEL_EXPORTER_OTLP_ENDPOINT');
+  });
+});
+
+describe('gateway configuration (Config Schema v6)', () => {
+  it("takes the port, the public address and Cube's address, as origins", () => {
+    const config = loadConfig({
+      ...validEnvironment,
+      ATLASBI_GATEWAY_PORT: '4200',
+      ATLASBI_PUBLIC_URL: 'https://bi.example.com/',
+      ATLASBI_SEMANTIC_URL: 'http://127.0.0.1:4001',
+    });
+
+    expect(config.gateway).toEqual({ port: 4200, publicUrl: 'https://bi.example.com' });
+    expect(config.semantic).toEqual({ url: 'http://127.0.0.1:4001' });
+  });
+
+  it('refuses a public address with a path or another scheme, and a port out of range', () => {
+    for (const [name, value] of [
+      ['ATLASBI_PUBLIC_URL', 'http://127.0.0.1:4100/app'],
+      ['ATLASBI_PUBLIC_URL', 'ftp://bi.example.com'],
+      ['ATLASBI_PUBLIC_URL', 'http://127.0.0.1:4100/?x=1'],
+      ['ATLASBI_SEMANTIC_URL', 'not a url'],
+      ['ATLASBI_GATEWAY_PORT', '70000'],
+    ] as const) {
+      const error = captureError(() => loadConfig({ ...validEnvironment, [name]: value }));
+      expect(error, `${name}=${value}`).toBeInstanceOf(ConfigurationError);
+      expect((error as ConfigurationError).issues.join('\n')).toContain(name);
+    }
+  });
+
+  it('gives the gateway the database, identity and — on the postgres tier — Cube secrets', () => {
+    expect(gatewaySecretKeys(loadLakehouseConfig({}))).toEqual([
+      'database.url',
+      'auth.secret',
+      'semantic.api-secret',
+    ]);
+    expect(
+      gatewaySecretKeys(loadLakehouseConfig({ ATLASBI_LAKEHOUSE_CATALOG_TYPE: 'sqlite' })),
+    ).toEqual(['database.url', 'auth.secret']);
   });
 });
 

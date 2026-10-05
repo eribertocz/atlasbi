@@ -9,6 +9,8 @@ export type {
   IdentityPort,
   NewUser,
 } from './auth/identity-port.ts';
+export { IDENTITY_HTTP_OPERATIONS, IDENTITY_HTTP_VERSION } from './auth/identity-http.ts';
+export type { IdentityHttpHandler, IdentityHttpOperation } from './auth/identity-http.ts';
 export {
   ACCESS_DENIED_REASONS,
   AccessDeniedError,
@@ -55,3 +57,38 @@ export type {
 } from './lakehouse/query-result.ts';
 export { SecretNotFoundError } from './secret-provider.ts';
 export type { SecretProvider } from './secret-provider.ts';
+export {
+  FILTER_OPERATORS,
+  SEMANTIC_QUERY_MAX_ROWS,
+  SORT_DIRECTIONS,
+  TIME_GRANULARITIES,
+} from './semantic/semantic-query.ts';
+export type {
+  FilterOperator,
+  SemanticFilter,
+  SemanticOrder,
+  SemanticQuery,
+  SemanticTimeDimension,
+  SortDirection,
+  TimeGranularity,
+} from './semantic/semantic-query.ts';
+export { SEMANTIC_VALUE_TYPES } from './semantic/semantic-result.ts';
+export type {
+  SemanticColumn,
+  SemanticMember,
+  SemanticModel,
+  SemanticResult,
+  SemanticValue,
+  SemanticValueType,
+} from './semantic/semantic-result.ts';
+export {
+  SEMANTIC_RUNTIME_ERROR_CODES,
+  SemanticRuntimeError,
+} from './semantic/semantic-runtime-error.ts';
+export type { SemanticRuntimeErrorCode } from './semantic/semantic-runtime-error.ts';
+export { SEMANTIC_RUNTIME_PORT_VERSION } from './semantic/semantic-runtime-port.ts';
+export type {
+  SemanticQueryOptions,
+  SemanticRuntimeCapabilities,
+  SemanticRuntimePort,
+} from './semantic/semantic-runtime-port.ts';
