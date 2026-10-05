@@ -17,6 +17,18 @@ no debería tocar a sus vecinos.
 - **`config.semantic.enabled`:** la regla "la capa semántica corre solo en el nivel equipo
   local" vive ahora en un solo lugar (`semanticLayerRuns`). La usan también `semanticSecretKeys`.
 
+### Agregado
+
+- **Baterías de contrato de identidad** en `@atlasbi/contracts/testing`:
+  - `describeIdentityPortContract`: usuarios, organizaciones, inicio de sesión, el token de
+    identidad (solo `sub` y `org`, como mucho 15 minutos, rechazo de uno adulterado, sin firma o
+    de otro despliegue) y el cierre de sesión.
+  - `describeIdentityHttpContract`: las tres operaciones, las respuestas limpias, el `Origin` y los
+    atributos de la _cookie_.
+- **El adaptador de better-auth corre las dos baterías.** Sus tests propios quedan solo para lo
+  que es suyo: EdDSA, emisor y audiencia, el nombre de la _cookie_ y el token que sigue válido
+  después de cerrar la sesión.
+
 ## 0.5.0 — API Gateway (2026-10-05)
 
 Paso 5 del orden de construcción: la API Gateway. El navegador tiene un único punto de entrada:

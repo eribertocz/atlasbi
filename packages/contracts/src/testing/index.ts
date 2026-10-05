@@ -17,3 +17,11 @@ export type {
   SemanticContractModel,
   SemanticRuntimePortFixture,
 } from './semantic-runtime-port-contract.ts';
+export { describeIdentityHttpContract } from './identity-http-contract.ts';
+export type { IdentityHttpDeployment, IdentityHttpFixture } from './identity-http-contract.ts';
+export {
+  decodeToken,
+  describeIdentityPortContract,
+  expectAuthenticationError,
+} from './identity-port-contract.ts';
+export type { IdentityDeployment, IdentityPortFixture } from './identity-port-contract.ts';
