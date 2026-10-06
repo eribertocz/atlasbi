@@ -7,6 +7,7 @@ export type {
   AuthenticationErrorCode,
   Identity,
   IdentityPort,
+  IdentityReconciliation,
   NewUser,
 } from './auth/identity-port.ts';
 export { IDENTITY_HTTP_OPERATIONS, IDENTITY_HTTP_VERSION } from './auth/identity-http.ts';

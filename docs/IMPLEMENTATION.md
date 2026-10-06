@@ -54,7 +54,8 @@ Realtime (10) ──sync/broadcast── visual, filter_definition (Postgres)
 
 | Tabla | Dónde vive | Para qué | Doc |
 |---|---|---|---|
-| `access.workspace` (id, organization_id, slug, name) | Postgres, capa 9 — **implementada en el Paso 4** | El workspace, dentro de una organización de better-auth | `09-auth-gobernanza.md` §6.2 |
+| `identity.organization`, `identity.principal`, `identity.provider_subject` | Postgres, capa 9 — **implementadas después de `0.5.0`** (migración `000003`) | Quién existe para la plataforma, fuera del proveedor de identidad; qué cuenta de qué proveedor es qué principal. `access` apunta acá, nunca a `auth.*` | `09-auth-gobernanza.md` §6.4 |
+| `access.workspace` (id, organization_id, slug, name) | Postgres, capa 9 — **implementada en el Paso 4** | El workspace, dentro de una organización (`identity.organization` desde la migración `000003`) | `09-auth-gobernanza.md` §6.2 |
 | `access.workspace_membership` (workspace_id, user_id, role) | Postgres, capa 9 — **implementada en el Paso 4** | Rol por workspace — qué puede **hacer** alguien (admin/editor/analyst/viewer). better-auth no lo da de fábrica | `09-auth-gobernanza.md` §6.2 |
 | `workspace_permissions` (user_id, workspace_id, permission) | Postgres, capa 9 — **todavía no existe**: nace con su primer consumidor (SQL Lab o certificación), decisión D8 del Paso 4 | Permisos de gobernanza otorgables (`certify_metric`, `sql_lab_access`, `manage_agent_rules`) | `09-auth-gobernanza.md` §9.1 |
 | `access.data_entitlements` (workspace_id, user_id, dimension, all_values, allowed_values) | Postgres, capa 9 — **implementada en el Paso 4**, denegar por defecto y "todos" explícito | Qué datos puede **ver** alguien — separado del rol, para no inventar roles como `viewer_norte`/`viewer_sur` por cada recorte de datos. El security context de Cube combina `workspace_role` (acciones) + `data_entitlements` (filas), nunca uno solo | `09-auth-gobernanza.md` §6.1 |

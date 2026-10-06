@@ -243,6 +243,30 @@ better-auth sigue haciendo lo que hace bien: autenticar y administrar la pertene
 
 ---
 
+### 6.4 Identidad propia de la plataforma: quién existe, fuera del proveedor (después de `0.5.0`)
+
+**Decisión de la auditoría de aislamiento entre capas (opción 1, aprobada el 2026-10-05).** Hasta `0.5.0`, las tablas de autorización apuntaban con claves foráneas a las tablas de better-auth: `access.workspace` a `auth.organization`, y `access.workspace_membership` a `auth."user"`. Cambiar de proveedor obligaba entonces a rehacer la autorización. Federar con Keycloak, donde los usuarios ni siquiera viven en nuestro Postgres, la habría vuelto imposible. Desde la migración `000003`, la plataforma tiene su propia identidad:
+
+- **`identity.organization` e `identity.principal`:** quién existe para la plataforma. Las claves foráneas de `access` apuntan acá, nunca a `auth.*`.
+- **`identity.provider_subject` (`provider`, `subject`, `principal_id`):** qué cuenta de qué proveedor es qué principal.
+  - Con better-auth, el sujeto es el mismo id del principal, así que el `sub` del token de identidad no cambia.
+  - Un proveedor con ids propios, como Keycloak, se mapea acá sin otra migración.
+- **El proveedor conserva lo suyo:** credenciales, sesiones, las claves del token y la pertenencia a la organización.
+
+**Escrituras explícitas, no *hooks*.** El adaptador escribe estas filas justo después de cada alta en el proveedor, y si esa escritura falla, deshace el alta. Alcanza porque el puerto es el único camino que crea cuentas: no hay registro público (decisión D5).
+
+**⚠ Si algún día se habilita el registro público, esta decisión tiene que revisarse.** Lo mismo vale para cualquier otro camino que cree cuentas sin pasar por `IdentityPort`, como un panel de administración del proveedor. Ese camino crearía personas que la plataforma no registra, y la reconciliación las detectaría recién después.
+
+**La reconciliación** (`IdentityPort.reconcile`, versión 1.1) **corre en dos lugares:**
+- **`pnpm dev` detecta.** El paso `Identity` de la cadena falla si el proveedor conoce a alguien que la plataforma no, y da el remedio.
+- **`pnpm identity:reconcile` repara:** agrega lo que falta. **Nunca borra.** Lo que la plataforma conoce y el proveedor no, un principal huérfano, se lista para que lo decida una persona: borrarlo arrastraría sus membresías.
+
+**La batería de contrato de `IdentityPort` verifica esto para cualquier proveedor:**
+- Todo lo que crea el puerto aparece en `identity.*`.
+- La reconciliación detecta un desfase y lo repara sin borrar nada.
+
+La migración se probó antes sobre el escenario que deja `pnpm seed`: no quedan datos huérfanos y ninguna clave foránea de `access` apunta a `auth.*`.
+
 ## 7. Contrato de esta capa (qué expone, qué consume)
 
 - **Consume**: credenciales del usuario (email/password, OAuth) para autenticar.

@@ -2,6 +2,7 @@ import { styleText } from 'node:util';
 
 import { runBootstrap } from './commands/bootstrap.ts';
 import { runDev } from './commands/dev.ts';
+import { runIdentityReconcile } from './commands/identity-reconcile.ts';
 import { runPreflight } from './commands/preflight.ts';
 import { runResetLocal } from './commands/reset-local.ts';
 import { runSeed } from './commands/seed.ts';
@@ -14,6 +15,7 @@ const COMMANDS: Record<string, (args: readonly string[]) => Promise<void>> = {
   bootstrap: runBootstrap,
   dev: runDev,
   seed: runSeed,
+  'identity:reconcile': runIdentityReconcile,
   transform: runTransform,
   'stack:up': runStackUp,
   'stack:down': runStackDown,

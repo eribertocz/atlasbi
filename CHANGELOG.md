@@ -42,9 +42,24 @@ no debería tocar a sus vecinos.
   de la herramienta de ingesta (`_dlt_*`) ni su esquema interno (`ingestion_*`), solo el contrato
   de landing. Recorre el árbol sintáctico, no el texto.
 
+- **Identidad propia de la plataforma** (`docs/09` §6.4, migración `000003`):
+  - `identity.organization`, `identity.principal` e `identity.provider_subject`. Las claves
+    foráneas de `access` apuntan ahí, nunca a las tablas de better-auth.
+  - El adaptador escribe esas filas justo después de cada alta en el proveedor, y si falla,
+    deshace el alta. Si algún día se habilita el registro público, esta decisión tiene que
+    revisarse.
+  - `IdentityPort.reconcile`: `pnpm dev` detecta el desfase (paso `Identity`) y
+    `pnpm identity:reconcile` agrega lo que falta, sin borrar nunca nada.
+  - La batería de contrato de identidad cubre la sincronización.
+  - La migración se probó sobre el escenario de `pnpm seed`: sin datos huérfanos, con las
+    claves foráneas apuntando a `identity.*`.
+
 ### Contratos
 
 - **Contratos de datos nuevos:** `mart.sales_orders` 1.0 y `source.development_sales_orders` 1.0.
+- **`IdentityPort` 1.0 → 1.1:** agrega `reconcile`. Sus consumidores no cambian; cada adaptador
+  tiene que implementarlo.
+- **DB Migration `000003`:** el esquema `identity`.
 
 ## 0.5.0 — API Gateway (2026-10-05)
 

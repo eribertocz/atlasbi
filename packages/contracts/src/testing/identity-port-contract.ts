@@ -7,9 +7,25 @@ import {
   type IdentityPort,
 } from '../auth/identity-port.ts';
 
+/**
+ * The platform's own identity (`identity.*`, docs/09 §6.4), read and disturbed by the fixture: it
+ * is the platform's table, the same for every provider, so the battery can check the adapter
+ * keeps it in step.
+ */
+export interface PlatformIdentityView {
+  principals(): Promise<string[]>;
+  organizations(): Promise<string[]>;
+  /** Drops a person's platform rows — what a crash between the provider and the platform leaves. */
+  forgetPrincipal(id: string): Promise<void>;
+  forgetOrganization(id: string): Promise<void>;
+  /** Adds a principal no provider account backs; returns its id. */
+  addStrayPrincipal(): Promise<string>;
+}
+
 /** One deployment of the identity provider: its own users, organizations, sessions and keys. */
 export interface IdentityDeployment {
   identity: IdentityPort;
+  platform: PlatformIdentityView;
   dispose(): Promise<void>;
 }
 
@@ -252,6 +268,72 @@ export function describeIdentityPortContract(
           'session_not_found',
         );
         await expectAuthenticationError(identity.signOut(sessionToken), 'session_not_found');
+      });
+    });
+
+    describe('the platform identity (docs/09 §6.4)', () => {
+      it('records every person and organization the port creates, and the token names one of them', async () => {
+        const token = await identity.issueIdentityToken(
+          (await signedIn('ana@example.com')).sessionToken,
+        );
+        const { userId } = await identity.verifyIdentityToken(token);
+
+        expect(await deployment.platform.principals()).toContain(anaId);
+        expect(await deployment.platform.principals()).toContain(userId);
+        expect(await deployment.platform.organizations()).toContain(organizationId);
+      });
+
+      it('is in step with the provider after every operation of this battery', async () => {
+        await expect(identity.reconcile()).resolves.toEqual({
+          missing: { principals: [], organizations: [] },
+          orphaned: { principals: [], organizations: [] },
+          repaired: false,
+        });
+      });
+
+      it('reports drift, repairs what is missing, and never deletes anything', async () => {
+        const drift = await fixture.create();
+        try {
+          const { userId } = await drift.identity.createUser({
+            email: 'drift@example.com',
+            name: 'Drift',
+            password: PASSWORD,
+          });
+          const { organizationId: driftOrganization } = await drift.identity.createOrganization({
+            name: 'Drift',
+            slug: 'drift',
+            ownerUserId: userId,
+          });
+          await drift.platform.forgetPrincipal(userId);
+          await drift.platform.forgetOrganization(driftOrganization);
+          const stray = await drift.platform.addStrayPrincipal();
+          const expected = {
+            missing: { principals: [userId], organizations: [driftOrganization] },
+            orphaned: { principals: [stray], organizations: [] },
+          };
+
+          await expect(drift.identity.reconcile()).resolves.toEqual({
+            ...expected,
+            repaired: false,
+          });
+          expect(await drift.platform.principals()).not.toContain(userId);
+
+          await expect(drift.identity.reconcile({ repair: true })).resolves.toEqual({
+            ...expected,
+            repaired: true,
+          });
+          expect(await drift.platform.principals()).toEqual(
+            expect.arrayContaining([userId, stray]),
+          );
+          expect(await drift.platform.organizations()).toContain(driftOrganization);
+          await expect(drift.identity.reconcile()).resolves.toEqual({
+            missing: { principals: [], organizations: [] },
+            orphaned: { principals: [stray], organizations: [] },
+            repaired: false,
+          });
+        } finally {
+          await drift.dispose();
+        }
       });
     });
   });

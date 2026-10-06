@@ -24,5 +24,9 @@ export {
   describeIdentityPortContract,
   expectAuthenticationError,
 } from './identity-port-contract.ts';
-export type { IdentityDeployment, IdentityPortFixture } from './identity-port-contract.ts';
+export type {
+  IdentityDeployment,
+  IdentityPortFixture,
+  PlatformIdentityView,
+} from './identity-port-contract.ts';
 export { findDataContractViolations } from './data-contract-conformance.ts';

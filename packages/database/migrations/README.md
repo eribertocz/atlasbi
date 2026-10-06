@@ -19,3 +19,7 @@ The first tables arrive with build step 4 (Auth):
   `packages/auth` says when an upgrade needs a new migration.
 - `000002_access_control.sql` — the platform's own authorization in the `access` schema:
   `workspace`, `workspace_membership` and `data_entitlements` (`docs/09` §6.1–§6.2).
+- `000003_identity.sql` — the platform's own identity in the `identity` schema: `organization`,
+  `principal` and `provider_subject`, filled once from better-auth's tables; `access` now
+  references them, never `auth.*` (`docs/09` §6.4). The last migration that reads the provider's
+  tables. Tested over the `pnpm seed` scenario before release (`identity-migration.test.ts`).

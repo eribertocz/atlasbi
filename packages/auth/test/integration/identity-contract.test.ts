@@ -5,6 +5,7 @@ import {
 
 import { createBetterAuthHttp, createBetterAuthIdentity } from '../../src/index.ts';
 import { createAuthDatabase, testSecret } from './support/auth-database.ts';
+import { platformIdentityView } from './support/platform-identity-view.ts';
 
 // The batteries any identity provider must pass to replace better-auth (docs/21 §3.3). Each
 // deployment is a throwaway database with its own secret: its own users and keys.
@@ -15,9 +16,12 @@ describeIdentityPortContract('better-auth', {
       connectionString: database.connectionString,
       secret: testSecret(),
     });
+    const platform = platformIdentityView(database.connectionString);
     return {
       identity,
+      platform,
       async dispose() {
+        await platform.close();
         await identity.close();
         await database.drop();
       },

@@ -17,6 +17,7 @@ import type { SecretProvider } from '@atlasbi/contracts';
 import { checkComposeProvider } from '../checks/container-checks.ts';
 import { composeUp, ensureEngineRunning } from '../container-runtime/podman.ts';
 import { GATEWAY_SCRIPT, gatewayReadinessStep } from '../health/gateway-probes.ts';
+import { identityReadinessStep } from '../health/identity-probes.ts';
 import { lakehouseReadinessSteps, type LakehouseStartMode } from '../health/lakehouse-probes.ts';
 import { localStackReadinessSteps, MIGRATIONS_STEP } from '../health/local-stack-probes.ts';
 import {
@@ -110,6 +111,10 @@ export async function startLocalStack(
 
   const report = await runReadinessChain([
     ...localStackReadinessSteps(databaseUrl, ports),
+    identityReadinessStep({
+      connectionString: databaseUrl,
+      authSecret: await secrets.get(SECRET_KEYS.authSecret),
+    }),
     ...(postgresTier
       ? objectStorageReadinessSteps(
           adminEndpoint(ports),

@@ -59,6 +59,7 @@ pnpm dev          # ver sección 3
 | `pnpm preflight` | Verifica que la máquina tiene lo necesario (Node, pnpm, uv, Podman, compose provider, puertos libres) antes de arrancar nada — solo verifica, nunca instala ni cambia nada |
 | `pnpm test` / `pnpm test:integration` / `pnpm test:e2e` | La pirámide de testing de `15-testing-cicd.md` — `test` son unit tests sin infraestructura; `test:integration` necesita `pnpm dev` corriendo (Postgres real); `test:e2e` llega con el primer recorrido de punta a punta |
 | `pnpm seed` | Carga datos de demo (sección 6) — nunca corre solo, siempre a pedido explícito. Llega en el Paso 1 con el dataset del lakehouse; la organización y los usuarios demo se suman en el Paso 4 |
+| `pnpm identity:reconcile` | Repara la identidad propia de la plataforma (`identity.*`, `09-auth-gobernanza.md` §6.4): agrega las personas y organizaciones que el proveedor de identidad conoce y la plataforma no. **Nunca borra**: lo que solo conoce la plataforma se lista para que lo decida una persona. `pnpm dev` solo detecta el desfase (paso `Identity`) |
 | `pnpm transform <comando>` | Corre SQLMesh (`plan`, `run`, `test`, `audit`, `lint`…) sobre el lakehouse — **la única forma soportada** (`02-transformacion.md` §6.5): verifica el lakehouse antes y le pasa los secretos solo a ese proceso. `test` y `lint` corren sin lakehouse ni secretos |
 | `pnpm reset:local` | **Destructivo, siempre explícito.** Pide escribir `atlasbi` para confirmar (o `--confirm=atlasbi` en uso no interactivo) y borra los volúmenes —incluidos los del object storage y de Cube Store— y la carpeta `.data/lakehouse`; `.env` no se toca, y las extensiones de DuckDB se conservan (son una caché, no datos). Nunca se esconde un borrado de datos dentro de `dev` — si `pnpm dev` alguna vez necesita limpiar algo, lo pide, no lo hace solo |
 
@@ -126,6 +127,10 @@ La línea del lakehouse nombra también el almacenamiento: `healthy — Catalog:
 - **`pnpm preflight` revisa el puerto 4100** (`ATLASBI_GATEWAY_PORT`) en los dos niveles. Si está ocupado, casi siempre es que `pnpm dev` ya está corriendo.
 - **`pnpm stack:up` sigue sin el gateway:** su imagen OCI llega en el Paso 6.
 - **El nivel portátil** levanta el gateway igual. Sin Cube, los procedimientos `semantic.*` responden `NOT_IMPLEMENTED`.
+
+**Después de `0.5.0`: el paso `Identity`.** Corre entre `Migrations` y el resto de la cadena, y compara el proveedor de identidad con la identidad propia de la plataforma (`09-auth-gobernanza.md` §6.4).
+- Si el proveedor conoce a alguien que la plataforma no, el paso falla con el remedio, `pnpm identity:reconcile`.
+- Si hay principales que el proveedor no conoce, solo lo informa: nada se borra solo.
 
 **Alcance real a partir del Paso 0 (0.1.0):** el resumen solo lista lo que existe — Postgres, Migrations, OTel Collector. Web, API y Cube se suman a la cadena en sus pasos (3, 5, 6); hasta que exista algo con *hot reload*, `pnpm dev` termina después del resumen y la infraestructura queda corriendo en segundo plano (`pnpm stack:down` la detiene).
 

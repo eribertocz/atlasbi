@@ -47,6 +47,23 @@ export async function migrateToLatest(options: MigrationOptions): Promise<Migrat
   });
 }
 
+/**
+ * Applies pending migrations up to and including `target` (a file name without `.sql`) — for tests
+ * that rebuild an earlier state to check what the next migration does to its data.
+ */
+export async function migrateTo(
+  options: MigrationOptions & { target: string },
+): Promise<MigrationRunSummary> {
+  return withMigrator(options, async (migrator) => {
+    const { error, results = [] } = await migrator.migrateTo(options.target);
+    if (error !== undefined) {
+      const failed = results.find((result) => result.status === 'Error');
+      throw new MigrationFailedError(failed?.migrationName, describeDriverError(error));
+    }
+    return { applied: results.map((result) => result.migrationName) };
+  });
+}
+
 export async function listPendingMigrations(options: MigrationOptions): Promise<string[]> {
   return withMigrator(options, async (migrator) => {
     const migrations = await migrator.getMigrations();

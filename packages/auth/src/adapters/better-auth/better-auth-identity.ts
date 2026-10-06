@@ -18,6 +18,7 @@ import {
   MIN_PASSWORD_LENGTH,
 } from './auth-options.ts';
 import { toIdentity } from './identity-claims.ts';
+import { createPlatformIdentity } from './platform-identity.ts';
 
 export interface BetterAuthIdentityOptions {
   /** The platform database (secret `database.url`); better-auth's tables live in its `auth` schema. */
@@ -43,6 +44,7 @@ const newUserSchema = z.object({
 export function createBetterAuthIdentity(options: BetterAuthIdentityOptions): IdentityPort {
   const pool = new pg.Pool({ connectionString: options.connectionString, max: 5 });
   const auth = betterAuth(createAuthOptions({ pool, secret: options.secret }));
+  const platformIdentity = createPlatformIdentity(pool);
   let keySet: ReturnType<typeof createLocalJWKSet> | undefined;
 
   async function sessionHeaders(sessionToken: string): Promise<Headers> {
@@ -103,6 +105,8 @@ export function createBetterAuthIdentity(options: BetterAuthIdentityOptions): Id
           accountId: created.id,
           password: await context.password.hash(password),
         });
+        // The platform's own record of the person (docs/09 §6.4); without it, no membership.
+        await platformIdentity.recordPrincipal(created.id);
       } catch (error) {
         await context.internalAdapter.deleteUser(created.id);
         throw error;
@@ -130,6 +134,18 @@ export function createBetterAuthIdentity(options: BetterAuthIdentityOptions): Id
         });
         if (!organization) {
           throw new AuthenticationError('invalid_request', 'The organization was not created.');
+        }
+        try {
+          await platformIdentity.recordOrganization(organization.id);
+        } catch (error) {
+          // Members go with it (ON DELETE CASCADE in better-auth's schema).
+          await (
+            await auth.$context
+          ).adapter.delete({
+            model: 'organization',
+            where: [{ field: 'id', value: organization.id }],
+          });
+          throw error;
         }
         return { organizationId: organization.id };
       } catch (error) {
@@ -217,6 +233,10 @@ export function createBetterAuthIdentity(options: BetterAuthIdentityOptions): Id
         throw new AuthenticationError('invalid_token', 'The identity token is not valid.');
       }
       return toIdentity(payload);
+    },
+
+    reconcile({ repair = false } = {}) {
+      return platformIdentity.reconcile(repair);
     },
 
     async close() {
