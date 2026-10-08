@@ -35,6 +35,7 @@ describe('the API gateway, end to end', () => {
   let identity: IdentityPort;
   let identityHttp: IdentityHttpHandler;
   let closeAccess: () => Promise<void>;
+  let closeReports: () => Promise<void>;
   let app: FastifyInstance;
   let baseUrl: string;
   let ana: Identity;
@@ -86,6 +87,7 @@ describe('the API gateway, end to end', () => {
     // Only now: instrumentation sees pg and Fastify load (main.ts does the same).
     const config = await import('@atlasbi/config');
     const auth = await import('@atlasbi/auth');
+    const { createReportRepository, seedDemoReports } = await import('@atlasbi/reports');
     const { createSemanticRuntime } = await import('@atlasbi/semantic');
     const { migrateToLatest } = await import('@atlasbi/database');
     const { createThrowawayDatabase } = await import('@atlasbi/database/testing');
@@ -110,6 +112,8 @@ describe('the API gateway, end to end', () => {
     });
     const access = auth.createAccessDirectory({ connectionString: database.connectionString });
     closeAccess = () => access.close();
+    const reports = createReportRepository({ connectionString: database.connectionString });
+    closeReports = () => reports.close();
     const runtime = await createSemanticRuntime({ config: platformConfig, secrets });
     if (runtime === undefined) {
       throw new Error('This test needs the semantic layer: the postgres tier.');
@@ -173,10 +177,18 @@ describe('the API gateway, end to end', () => {
       dimension: 'region',
       entitlement: { kind: 'all' },
     });
+    await seedDemoReports(reports, [{ workspaceId: finanzas, createdBy: anaId }]);
 
     app = await buildGatewayServer({
       publicUrl: PUBLIC_URL,
-      dependencies: { identity, identityHttp, access, semantic, ready: () => access.ping() },
+      dependencies: {
+        identity,
+        identityHttp,
+        access,
+        semantic,
+        reports,
+        ready: () => access.ping(),
+      },
     });
     await app.listen({ host: '127.0.0.1', port: 0 });
     baseUrl = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
@@ -188,6 +200,7 @@ describe('the API gateway, end to end', () => {
     await identityHttp?.close();
     await identity?.close();
     await closeAccess?.();
+    await closeReports?.();
     await dropDatabase?.();
     await telemetry?.shutdown();
   });
@@ -262,6 +275,34 @@ describe('the API gateway, end to end', () => {
     expect((await asAna.semantic.meta.query({ workspaceId: finanzas })).measures).toContainEqual(
       expect.objectContaining({ name: 'sales_orders.total_amount' }),
     );
+  });
+
+  it('opens the same report for two viewers, and each sees only their data through it (docs/16 §4)', async () => {
+    const asAna = client((await signedIn('ana@example.com')).token);
+    const asBruno = client((await signedIn('bruno@example.com')).token);
+
+    const [anaReports, brunoReports] = await Promise.all([
+      asAna.report.list.query({ workspaceId: finanzas }),
+      asBruno.report.list.query({ workspaceId: finanzas }),
+    ]);
+    expect(anaReports.map((report) => report.name)).toEqual(['Ventas']);
+    expect(brunoReports).toEqual(anaReports);
+    const reportId = anaReports[0]?.id ?? '';
+    const report = await asAna.report.get.query({ workspaceId: finanzas, reportId });
+    expect(await asBruno.report.get.query({ workspaceId: finanzas, reportId })).toEqual(report);
+
+    // What the bar asks for, as its spec says: the same question, two different answers.
+    const bar = report.pages[0]?.visuals.find((visual) => visual.spec.kind === 'bar');
+    const query = { measures: bar?.spec.measures ?? [], dimensions: bar?.spec.dimensions ?? [] };
+    const anaRows = (await asAna.semantic.query.query({ workspaceId: finanzas, query })).rows;
+    const brunoRows = (await asBruno.semantic.query.query({ workspaceId: finanzas, query })).rows;
+    expect(anaRows.map((row) => row[0])).toEqual([anaRegion]);
+    expect(brunoRows.length).toBeGreaterThan(1);
+
+    // Ana is no member of Comercial: not even the list of its reports.
+    await expect(asAna.report.list.query({ workspaceId: comercial })).rejects.toMatchObject({
+      data: { code: 'FORBIDDEN' },
+    });
   });
 
   it('refuses what the security context does not allow, with the same answers as without the engine', async () => {

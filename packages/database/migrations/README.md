@@ -23,3 +23,11 @@ The first tables arrive with build step 4 (Auth):
   `principal` and `provider_subject`, filled once from better-auth's tables; `access` now
   references them, never `auth.*` (`docs/09` §6.4). The last migration that reads the provider's
   tables. Tested over the `pnpm seed` scenario before release (`identity-migration.test.ts`).
+
+Build step 6 (frontend, Viewer mode):
+
+- `000004_report_document.sql` — the Report Document Model in the `reporting` schema: `report`,
+  `page` and `visual` (`docs/19` §8). Authors and editors reference `identity.principal`,
+  workspaces `access.workspace` — never `auth.*`. `visual_spec` admits only the platform's visual
+  grammar (kind, measures, dimensions, encoding), never a renderer's configuration
+  (`report-document-schema.test.ts` in `packages/reports`).

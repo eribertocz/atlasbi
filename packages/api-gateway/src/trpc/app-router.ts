@@ -1,5 +1,6 @@
 import type { AccessDirectory } from '@atlasbi/auth';
 import type { IdentityPort, SemanticQuery, SemanticRuntimePort } from '@atlasbi/contracts';
+import type { ReportRepository } from '@atlasbi/reports';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -11,6 +12,7 @@ export interface RouterServices {
   access: Pick<AccessDirectory, 'resolveSecurityContext' | 'listMemberships'>;
   /** Absent where the semantic layer does not run: Cube runs on the postgres tier only. */
   semantic: SemanticRuntimePort | undefined;
+  reports: Pick<ReportRepository, 'listReports' | 'getReport'>;
 }
 
 /** `Authorization: Bearer <identity token>` (decision G1); the scheme is case-insensitive. */
@@ -76,6 +78,23 @@ export function createAppRouter(services: RouterServices) {
       query: inWorkspace
         .input(z.object({ query: semanticQuery }))
         .query(({ ctx, input }) => semanticRuntime().query(input.query, ctx.securityContext)),
+    }),
+    report: router({
+      /** The reports of a workspace; any member may read them (docs/20 §3, Viewer mode). */
+      list: inWorkspace.query(({ ctx }) =>
+        services.reports.listReports(ctx.securityContext.workspaceId),
+      ),
+      /** A report whole — pages and visuals, never their data: each visual queries its own. */
+      get: inWorkspace.input(z.object({ reportId: z.uuid() })).query(async ({ ctx, input }) => {
+        const report = await services.reports.getReport(
+          ctx.securityContext.workspaceId,
+          input.reportId,
+        );
+        if (report === undefined) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Report not found.' });
+        }
+        return report;
+      }),
     }),
   });
 }

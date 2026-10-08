@@ -1,0 +1,28 @@
+{
+  "name": "@atlasbi/reports",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --dir test/unit",
+    "test:integration": "vitest run --dir test/integration --test-timeout 120000 --hook-timeout 120000"
+  },
+  "dependencies": {
+    "@atlasbi/contracts": "workspace:*",
+    "kysely": "catalog:",
+    "pg": "catalog:"
+  },
+  "devDependencies": {
+    "@atlasbi/config": "workspace:*",
+    "@atlasbi/database": "workspace:*",
+    "@types/node": "catalog:",
+    "@types/pg": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

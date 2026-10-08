@@ -94,6 +94,25 @@ export type {
   SemanticRuntimePort,
 } from './semantic/semantic-runtime-port.ts';
 export {
+  REPORT_GRID_COLUMNS,
+  REPORT_SCHEMA_VERSION,
+  visualPositionIssues,
+} from './report/report-document.ts';
+export type {
+  ReportDocument,
+  ReportPage,
+  ReportSummary,
+  ReportVisual,
+  VisualPosition,
+} from './report/report-document.ts';
+export {
+  InvalidVisualSpecError,
+  parseVisualSpec,
+  VISUAL_KINDS,
+  VISUAL_SPEC_VERSION,
+} from './report/visual-spec.ts';
+export type { VisualEncoding, VisualKind, VisualSpec } from './report/visual-spec.ts';
+export {
   DATA_CONTRACT_KINDS,
   InvalidDataContractError,
   LANDING_TECHNICAL_COLUMNS,

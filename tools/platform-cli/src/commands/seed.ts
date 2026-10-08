@@ -1,6 +1,8 @@
 import {
+  type AccessDirectory,
   createAccessDirectory,
   createBetterAuthIdentity,
+  DEMO_ACCESS,
   type DemoAccessRow,
   MIN_PASSWORD_LENGTH,
   seedDemoAccess,
@@ -13,8 +15,14 @@ import {
   requiredSecretKeys,
   SECRET_KEYS,
 } from '@atlasbi/config';
-import type { DataEntitlement } from '@atlasbi/contracts';
+import type { DataEntitlement, IdentityPort } from '@atlasbi/contracts';
 import { listPendingMigrations } from '@atlasbi/database';
+import {
+  createReportRepository,
+  DEMO_REPORT,
+  type ReportRepository,
+  seedDemoReports,
+} from '@atlasbi/reports';
 import {
   createAnalyticalQueryEngine,
   createLakehouseAdmin,
@@ -28,8 +36,9 @@ import { loadEnvFile } from '../local-environment.ts';
 import { WORKSPACE_ROOT } from '../workspace-paths.ts';
 
 /**
- * Development data only, never run implicitly (docs/19 §6): the lakehouse dataset (Step 1) and the
- * demo organization, workspaces and users of the MVP acceptance script (Step 4, docs/16 §4).
+ * Development data only, never run implicitly (docs/19 §6): the lakehouse dataset (Step 1), the
+ * demo organization, workspaces and users of the MVP acceptance script (Step 4, docs/16 §4), and
+ * the report they open (Step 6).
  */
 export async function runSeed(): Promise<void> {
   loadEnvFile();
@@ -64,6 +73,7 @@ export async function runSeed(): Promise<void> {
     secret: await secrets.get(SECRET_KEYS.authSecret),
   });
   const access = createAccessDirectory({ connectionString: databaseUrl });
+  const reports = createReportRepository({ connectionString: databaseUrl });
   try {
     await seedLakehouse(await resolveLakehouseSettings(config.lakehouse, secrets));
 
@@ -75,9 +85,42 @@ export async function runSeed(): Promise<void> {
     for (const row of demo.rows) {
       console.log(`  ${describeAccess(row)}`);
     }
+
+    await seedReports(identity, access, reports);
   } finally {
+    await reports.close();
     await access.close();
     await identity.close();
+  }
+}
+
+/** The demo report in every demo workspace, authored by the first demo user. */
+async function seedReports(
+  identity: IdentityPort,
+  access: AccessDirectory,
+  reports: ReportRepository,
+): Promise<void> {
+  const [author] = DEMO_ACCESS.users;
+  const organization = await identity.findOrganizationBySlug(DEMO_ACCESS.organization.slug);
+  const createdBy = (await identity.findUserByEmail(author.email))?.userId;
+  if (organization === undefined || createdBy === undefined) {
+    throw new Error('demo reports: the demo organization and users must exist first');
+  }
+  const targets = [];
+  for (const { slug } of DEMO_ACCESS.workspaces) {
+    const workspace = await access.findWorkspace(organization.organizationId, slug);
+    if (workspace === undefined) {
+      throw new Error(`demo reports: the demo workspace ${slug} must exist first`);
+    }
+    targets.push({ slug, workspaceId: workspace.workspaceId, createdBy });
+  }
+
+  const rows = await seedDemoReports(reports, targets);
+  console.log(`
+Demo report "${DEMO_REPORT.name}":`);
+  for (const [index, row] of rows.entries()) {
+    const slug = targets[index]?.slug ?? row.workspaceId;
+    console.log(`  ${slug.padEnd(10)} ${row.created ? 'created' : 'already there'}`);
   }
 }
 

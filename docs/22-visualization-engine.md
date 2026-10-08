@@ -419,6 +419,15 @@ renderers propios solo donde generen una ventaja competitiva real
 
 **No se implementa en el Paso 1 ni en el MVP:** Visualization Compiler, Visual Intelligence, Vega, deck.gl, D3, Custom Component Studio, Custom Visual SDK, el runtime HTML/CSS/JS y su sandbox, galerías/marketplace, ni frontend relacionado. El MVP sigue saliendo con 2–3 visuales ECharts en modo Viewer (`16` §1).
 
+**Construido en el Paso 6 (`0.6.0`): el primer corte del contrato `VisualSpec`, no del motor.**
+- **El contrato:** `VisualSpec` v1 (`19` §8.1), en `@atlasbi/contracts`, con `kind` `kpi`, `bar` o `line`, medidas, dimensiones y `encoding` (categoría y granularidad).
+- **Ninguna configuración de renderer se guarda:**
+  - el parser rechaza todo campo fuera de la gramática;
+  - la base tiene un CHECK con la misma regla;
+  - un test confirma que lo que arma el adaptador de ECharts no pasa como spec.
+- **El adaptador de ECharts** (`apps/web/src/lib/visualization/echarts/`) es el único código que importa ECharts, por una regla de ESLint. Arma sus opciones al dibujar, a partir de los datos del visual.
+- **Lo que todavía no existe:** el Visualization Compiler, el `VisualizationRendererPort` y el Design System.
+
 **Qué hay que diseñar antes de qué:**
 
 | Antes de… | Diseñar |

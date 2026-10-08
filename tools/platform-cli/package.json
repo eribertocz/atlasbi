@@ -13,6 +13,7 @@
     "@atlasbi/config": "workspace:*",
     "@atlasbi/contracts": "workspace:*",
     "@atlasbi/database": "workspace:*",
+    "@atlasbi/reports": "workspace:*",
     "@atlasbi/semantic": "workspace:*",
     "@atlasbi/transform": "workspace:*",
     "@atlasbi/warehouse": "workspace:*",

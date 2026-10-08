@@ -267,6 +267,11 @@ better-auth sigue haciendo lo que hace bien: autenticar y administrar la pertene
 
 La migración se probó antes sobre el escenario que deja `pnpm seed`: no quedan datos huérfanos y ninguna clave foránea de `access` apunta a `auth.*`.
 
+**Borrar a una persona que creó un reporte queda bloqueado (Paso 6, migración `000004`).**
+- `reporting.report.created_by` y `reporting.visual.updated_by` apuntan a `identity.principal`, y no en cascada: la base rechaza el borrado mientras esa persona figure como autora.
+- Antes de borrar a alguien hay que **reasignar** sus reportes a otra persona del workspace. Los reportes son del workspace, no de quien los creó, y borrarlos en cascada sería perder trabajo en silencio.
+- El flujo de baja de personas, cuando exista, tiene que ofrecer esa reasignación (`19-operabilidad-runtime.md` §8).
+
 ## 7. Contrato de esta capa (qué expone, qué consume)
 
 - **Consume**: credenciales del usuario (email/password, OAuth) para autenticar.

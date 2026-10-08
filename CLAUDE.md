@@ -66,6 +66,7 @@ bi-platform/
 │   ├── warehouse/           # DuckDB/DuckLake
 │   ├── semantic/            # Cube Core (YAML)
 │   ├── api-gateway/         # tRPC
+│   ├── reports/             # Report Document Model: report/page/visual (Kysely), `19-operabilidad-runtime.md` §8
 │   ├── orchestrator/        # DAGs de Airflow (Python)
 │   ├── auth/                # better-auth
 │   ├── realtime/            # ElectricSQL

@@ -14,6 +14,7 @@ import {
   type FakeDependencies,
   FINANZAS,
   MODEL,
+  REPORT,
   RESULT,
   trpcClient,
 } from './support/fake-dependencies.ts';
@@ -128,6 +129,47 @@ describe('the internal BFF (tRPC)', () => {
       expect(await failure(asAna().semantic.meta.query({ workspaceId: FINANZAS }))).toMatchObject({
         code: 'NOT_IMPLEMENTED',
         status: 501,
+      });
+    });
+  });
+
+  describe('reports (build step 6, Viewer mode)', () => {
+    it('lists the reports of a workspace and opens one whole', async () => {
+      const client = asAna();
+
+      expect(await client.report.list.query({ workspaceId: COMERCIAL })).toEqual([
+        { id: REPORT.id, name: 'Ventas' },
+      ]);
+      expect(
+        await client.report.get.query({ workspaceId: COMERCIAL, reportId: REPORT.id }),
+      ).toEqual(REPORT);
+      expect(await client.report.list.query({ workspaceId: FINANZAS })).toEqual([]);
+    });
+
+    it('answers "not found" for a report outside the workspace asked for', async () => {
+      expect(
+        await failure(asAna().report.get.query({ workspaceId: FINANZAS, reportId: REPORT.id })),
+      ).toMatchObject({ code: 'NOT_FOUND', status: 404, message: 'Report not found.' });
+    });
+
+    it('reads no report of a workspace the person may not enter', async () => {
+      for (const [, workspaceId] of DENIED) {
+        expect(await failure(asAna().report.list.query({ workspaceId }))).toMatchObject({
+          code: 'FORBIDDEN',
+          message: 'Access to this workspace is denied.',
+        });
+        expect(
+          await failure(asAna().report.get.query({ workspaceId, reportId: REPORT.id })),
+        ).toMatchObject({ code: 'FORBIDDEN' });
+      }
+    });
+
+    it('refuses a report id that is not one', async () => {
+      expect(
+        await failure(asAna().report.get.query({ workspaceId: COMERCIAL, reportId: '1 OR 1=1' })),
+      ).toMatchObject({
+        code: 'BAD_REQUEST',
+        issues: [{ path: 'reportId', code: 'invalid_format' }],
       });
     });
   });

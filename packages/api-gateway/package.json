@@ -18,6 +18,7 @@
     "@atlasbi/auth": "workspace:*",
     "@atlasbi/config": "workspace:*",
     "@atlasbi/contracts": "workspace:*",
+    "@atlasbi/reports": "workspace:*",
     "@atlasbi/semantic": "workspace:*",
     "@fastify/helmet": "catalog:",
     "@fastify/otel": "catalog:",

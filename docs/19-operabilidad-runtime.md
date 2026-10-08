@@ -211,6 +211,8 @@ Esto es lo que hace posible correr el script de la demo de aceptación (`16-mvp-
   - Si los usuarios demo ya existen con otra contraseña, lo dice y da el remedio.
 - **El reporte demo llega con el Report Document Model** (Paso 6 en adelante).
 
+**Implementado en el Paso 6 — el reporte demo:** `pnpm seed` crea el reporte "Ventas" en cada workspace demo, con una página y 4 visuales: el total de ventas y la cantidad de pedidos (KPI), las ventas por región (barras) y por mes (línea). Un click en una región filtra a los demás visuales (`14` parte 1). Como es el mismo reporte en Comercial y en Finanzas, Ana y Bruno ven números distintos en él. Es idempotente: si el workspace ya tiene un reporte con ese nombre, lo deja como está (`pnpm reset:local` vuelve a empezar).
+
 ---
 
 ## 7. Configuración — contrato, no solo `.env`
@@ -318,6 +320,26 @@ Svelte ──mutation { ..., expectedVersion }──► API Gateway
                                                         Todos los clientes conectados
 ```
 
+**Construido en el Paso 6 (`0.6.0`, migración `000004`).**
+
+- **El esquema `reporting`**, con `report`, `page` y `visual`. Solo `@atlasbi/reports` lee y escribe esas tablas: es un paquete nuevo, con Kysely, igual que `AccessDirectory` en `@atlasbi/auth`.
+- **El contrato de dominio** (`ReportDocument`, `VisualSpec`) vive en `@atlasbi/contracts` (`21` §9).
+- **La API:** el gateway expone `report.list` y `report.get`, de solo lectura (`06` §7).
+
+**Desvíos respecto del esquema de arriba, decididos en el Paso 6:**
+
+- **Claves UUID con clave foránea, no `TEXT`:**
+  - `workspace_id` apunta a `access.workspace`, en cascada: el reporte se va con su workspace.
+  - `created_by` y `updated_by` apuntan a `identity.principal`, nunca a `auth.*`. Un test sobre el catálogo de Postgres lo verifica.
+- **Borrar a una persona que creó un reporte queda bloqueado.** `created_by` no tiene cascada, así que primero hay que reasignar sus reportes. Los reportes son del workspace, no de quien los creó, y borrarlos en cascada sería perder trabajo en silencio (`09` §6.4).
+- **Sin la columna `visual.type`.** El tipo de visual vive solo en `visual_spec.kind`: dos lugares para el mismo dato serían dos fuentes de verdad.
+- **`page.ordinal` en vez de `"order"`**, que es palabra reservada de SQL. Es único dentro de cada reporte.
+- **Todavía no existen `formatting_spec` ni `filter_definition`.** Nacen con su primer consumidor: el Formatting Engine y los filtros que guarda el autor. `page` no tiene claves hacia personas.
+- **CHECK de forma sobre los JSONB:**
+  - `visual_spec` admite solo `version`, `kind`, `measures`, `dimensions` y `encoding`; dentro de `encoding`, solo `category` y `granularity`.
+  - `position` admite solo `x`, `y`, `width` y `height`, numéricos.
+  - Así, la configuración de un renderer no entra ni siquiera escribiendo por fuera del repositorio (§8.1).
+
 **Qué pasa con `dashboard_id`, que ya aparece en otros documentos (`user_measures.dashboard_id`, `InteractionState` por dashboard):** ver la corrección de terminología en la sección 8.2 — pasa a ser `report_id`, consistente con esta tabla.
 
 ### 8.1 Versionado de `VisualSpec`/`FormattingSpec`/`ThemeSpec` y migración del documento — antes del Builder, no del MVP
@@ -343,6 +365,18 @@ interface FormattingSpecV1 {
 ```
 
 **Corrección posterior de este ejemplo:** la primera versión persistía `adapter: 'echarts' | 'matrix'` — el nombre del renderer dentro del documento del reporte, justo lo que `21-engineering-standards.md` §3.1 prohíbe. `VisualSpec` declara **qué** se visualiza (el `kind` de la gramática de la plataforma, *data roles*, encoding); **cuál** renderer lo dibuja lo decide el Visualization Compiler en tiempo de render (`22-visualization-engine.md` §2). Así, cambiar o sumar renderers nunca obliga a migrar reportes guardados. Los valores de `kind` de arriba son ilustrativos.
+
+**Implementado en el Paso 6: `VisualSpec` v1, en `@atlasbi/contracts`.**
+
+- **Qué contiene:** `version: 1`, `kind` (`kpi`, `bar` o `line`), `measures`, `dimensions` y `encoding` (`category` y, opcional, `granularity`).
+  - Un KPI muestra una medida, sin dimensiones.
+  - Un gráfico de barras o de línea lee exactamente una dimensión, que es su categoría.
+- **`parseVisualSpec` es estricto en todos los niveles:** rechaza cualquier campo que la gramática no defina. Hay tests en tres lugares que prueban que las opciones de ECharts no entran:
+  - el contrato;
+  - la base, escribiendo por fuera del repositorio;
+  - la web, contra lo que arma el adaptador de ECharts.
+- **El documento:** `report.schema_version` vale 1. Todavía no hay funciones de migración.
+- **Consecuencia del CHECK de la base:** cuando `VisualSpec` cambie de versión (por ejemplo, con un campo nuevo), hará falta **también una migración de base** que actualice el CHECK de `visual_spec`; si no, la base rechaza el spec nuevo. Es a propósito: la forma de lo que se guarda solo cambia con una decisión explícita.
 
 **Segundo: `report.schema_version` ya existe en la tabla (sección 8), pero todavía no hay un mecanismo que lo use.** Sin esto, un `VisualSpec` que cambie de forma dentro de tres años deja huérfanos a los reportes creados hoy. La corrección: cada versión de `VisualSpec`/`FormattingSpec` trae su propia función de migración, aplicada de forma perezosa (al abrir el reporte, no en un *batch* masivo):
 

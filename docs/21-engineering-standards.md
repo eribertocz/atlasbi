@@ -295,6 +295,13 @@ persistence/report-repository.ts — el mapeo a la fila real de Postgres
 
 Cambiar una columna de la tabla `report` (`19-operabilidad-runtime.md` §8) nunca debería, por sí solo, romper el frontend — porque el frontend nunca vio la fila de Postgres directo, vio el contrato de dominio.
 
+**Aplicado en el Paso 6:**
+
+- **El contrato de dominio** (`ReportDocument`, `VisualSpec`) vive en `packages/contracts/src/report/`.
+- **El mapeo a las filas** vive en `packages/reports/src/report-repository.ts`. Las filas de `reporting.*` nunca salen de ese paquete: lo que sale es el documento.
+- **Un renombre de columna ya pasó sin tocar la web:** `page."order"` es `page.ordinal`.
+- **El BFF interno devuelve el contrato de dominio.** El DTO de la API pública llega con su primer consumidor externo, como el resto de `/api/v1`.
+
 ---
 
 ## 10. Qué es bloqueante ahora

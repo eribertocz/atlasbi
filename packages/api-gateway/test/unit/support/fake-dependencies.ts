@@ -5,6 +5,7 @@ import {
   type Identity,
   type IdentityHttpHandler,
   type IdentityHttpOperation,
+  type ReportDocument,
   type SecurityContext,
   type SemanticModel,
   type SemanticQuery,
@@ -48,6 +49,33 @@ export const RESULT: SemanticResult = {
   rows: [['North', '1234.50']],
   rowCount: 1,
   truncated: false,
+};
+
+/** The one report the fake repository holds, in Comercial. */
+export const REPORT: ReportDocument = {
+  id: '9b1e6c3a-2f4d-4e8a-9c7b-1a2b3c4d0001',
+  workspaceId: COMERCIAL,
+  name: 'Ventas',
+  schemaVersion: 1,
+  pages: [
+    {
+      id: '9b1e6c3a-2f4d-4e8a-9c7b-1a2b3c4d0002',
+      name: 'Resumen',
+      visuals: [
+        {
+          id: '9b1e6c3a-2f4d-4e8a-9c7b-1a2b3c4d0003',
+          position: { x: 0, y: 0, width: 4, height: 2 },
+          spec: {
+            version: 1,
+            kind: 'kpi',
+            measures: ['sales_orders.total_amount'],
+            dimensions: [],
+          },
+          version: 1,
+        },
+      ],
+    },
+  ],
 };
 
 export interface FakeDependencies extends GatewayDependencies {
@@ -149,6 +177,16 @@ export function fakeDependencies(): FakeDependencies {
         ]),
     },
     semantic,
+    reports: {
+      listReports: (workspaceId) =>
+        Promise.resolve(
+          workspaceId === REPORT.workspaceId ? [{ id: REPORT.id, name: REPORT.name }] : [],
+        ),
+      getReport: (workspaceId, reportId) =>
+        Promise.resolve(
+          workspaceId === REPORT.workspaceId && reportId === REPORT.id ? REPORT : undefined,
+        ),
+    },
     identityHttp,
     ready: () => Promise.resolve(),
   };

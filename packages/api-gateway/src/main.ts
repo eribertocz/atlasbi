@@ -20,10 +20,12 @@ const telemetry = startTelemetry({ otlpEndpoint: config.telemetry.otlpEndpoint }
 
 const [
   { createAccessDirectory, createBetterAuthHttp, createBetterAuthIdentity },
+  { createReportRepository },
   semantic,
   server,
 ] = await Promise.all([
   import('@atlasbi/auth'),
+  import('@atlasbi/reports'),
   import('@atlasbi/semantic'),
   import('./gateway-server.ts'),
 ]);
@@ -37,6 +39,7 @@ const identityHttp = createBetterAuthHttp({
   publicUrl: config.gateway.publicUrl,
 });
 const access = createAccessDirectory({ connectionString });
+const reports = createReportRepository({ connectionString });
 // Which engine, and whether there is one in this deployment, is the semantic package's business.
 const semanticRuntime = await semantic.createSemanticRuntime({ config, secrets });
 
@@ -47,7 +50,10 @@ const app = await server.buildGatewayServer({
     identityHttp,
     access,
     semantic: semanticRuntime,
-    ready: () => access.ping(),
+    reports,
+    ready: async () => {
+      await Promise.all([access.ping(), reports.ping()]);
+    },
   },
 });
 
@@ -55,7 +61,12 @@ let closing: Promise<void> | undefined;
 const close = () => {
   closing ??= (async () => {
     await app.close();
-    await Promise.allSettled([identityHttp.close(), identity.close(), access.close()]);
+    await Promise.allSettled([
+      identityHttp.close(),
+      identity.close(),
+      access.close(),
+      reports.close(),
+    ]);
     await telemetry.shutdown();
   })();
   return closing;
