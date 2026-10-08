@@ -4,6 +4,12 @@ Versionado del producto según [`docs/21-engineering-standards.md`](docs/21-engi
 §2: SemVer `0.MINOR.PATCH` hasta 1.0; los contratos (API, Report Schema, Config Schema, DB
 Migration…) versionan por separado y se listan en cada release.
 
+## Unreleased
+
+### Cambiado
+
+- **Vite 8.3.2 → 8.3.3**, en cuanto pasó la edad mínima de publicación. Es un parche de una dependencia (`launch-editor`); el Paso 6 había salido con la 8.3.2 por esa espera.
+
 ## 0.6.0 — frontend mínimo, modo Viewer (2026-10-07)
 
 Paso 6 del orden de construcción: el frontend, en modo Viewer.

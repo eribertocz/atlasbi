@@ -72,7 +72,7 @@ Todas en el `catalog` de `pnpm-workspace.yaml`, salvo Caddy y la imagen base de 
 | `@sveltejs/kit` | **2.70.3** (2026-08-18) | MIT. No 3.0.x: la 3.0.0 salió el 2026-10-01 y la 3.0.1 el mismo día de la medición. Es demasiado nueva para una mayor (regla 6) y no pasaba la edad mínima. **Migrar a SvelteKit 3 cuando tenga algunas semanas de parches** |
 | `@sveltejs/adapter-static` | **3.0.10** | La app es una SPA (decisión H1, `08` §9) |
 | `svelte` | **5.57.1** (2026-09-18) | MIT. Runes |
-| `vite` | **8.3.2** | MIT. **Subir a 8.3.3 cuando pase la edad mínima de publicación**: salió el día de la medición, como parche de una dependencia (`launch-editor`) |
+| `vite` | **8.3.3** (2026-10-06) | MIT. Parche de una dependencia (`launch-editor`). Fijada al pasar la edad mínima de publicación (Paso 7); el Paso 6 salió con la 8.3.2 |
 | `@sveltejs/vite-plugin-svelte` / `svelte-check` | **7.3.1** / **4.7.6** | `svelte-check` corre con `--fail-on-warnings` |
 | `tailwindcss` / `@tailwindcss/vite` | **4.3.3** | MIT, Tailwind Labs |
 | `bits-ui` | **2.19.5** | MIT. Un solo mantenedor con permiso de publicación (`huntabyte`), 126 contribuyentes. Riesgo aceptado con la regla 7: `08` §11.2 |
