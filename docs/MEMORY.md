@@ -320,3 +320,92 @@ Node fijado en **24.21.0** (antes 24.12.0). Al revisar el CVE-2026-58041 (`node:
 - Los planes, pendientes de decisión: contrato de datos del mart y de landing, la regla de lint contra `_dlt_*`, los verbos de plataforma de los jobs y las claves foráneas hacia better-auth.
 
 Después, el Paso 6: frontend mínimo, modo Viewer.
+
+### 0.6.0 — frontend mínimo, modo Viewer (Paso 6) — cerrado el 2026-10-07
+
+**Antes del Paso 6, la tanda propia de la auditoría de aislamiento** (c6f07a1…29017dd):
+- La fábrica `createSemanticRuntime` y la batería de contrato de identidad.
+- Los contratos de datos (Plan A) y la regla de lint `NoIngestionInternals`.
+- La identidad propia de la plataforma (migración `000003`, aplicada a la base de desarrollo con el OK del usuario).
+
+**Qué quedó construido y verificado en vivo** (SvelteKit 2.70.3, Svelte 5.57.1, ECharts 6.1.0, Caddy 2.11.7):
+
+- **El Report Document Model:**
+  - `ReportDocument` y `VisualSpec` v1 en `@atlasbi/contracts`.
+  - El esquema `reporting` (migración `000004`), con CHECK de forma sobre los JSONB y claves hacia `identity.*`, nunca hacia `auth.*`.
+  - `@atlasbi/reports`, un paquete nuevo.
+  - `report.list` y `report.get` en el BFF, y el reporte demo "Ventas" creado por `pnpm seed`.
+- **`apps/web`:**
+  - Una SPA con la sesión en memoria y el cliente tRPC con `httpLink`.
+  - El adaptador de ECharts, importado por partes.
+  - El primer corte del Interaction Engine: `InteractionState`, `QueryCoordinator` y cross-filter.
+  - La sidebar con su árbol propio, y la CSP con hash.
+- **Imágenes y proxy:** el gateway sin TypeScript, Vite ni Vitest (`pnpm test:image`), y la web servida por Caddy como origen único. Una red interna `edge`, con el proxy en una dirección fija que es la única en la que confía el gateway.
+- **`pnpm dev` levanta la web** (paso `Web`). `pnpm stack:up` construye y corre las imágenes.
+- **Tests:**
+  - 376 unitarios: web 28, api-gateway 33, CLI 69, contracts 15, contracts-testing 2, reports 3, config 26, auth 11, database 5, warehouse 73, transform 16, semantic 95.
+  - 217 de integración: api-gateway 9, reports 13, auth 45, database 11, warehouse 74, transform 14, semantic 51.
+- **En vivo:**
+  - **En un navegador real** (Edge sin interfaz, por el protocolo DevTools), sobre `pnpm dev` y sobre `pnpm stack:up`: inicio de sesión, sidebar, el reporte con sus 4 visuales y un cross-filter que cambia los KPIs y vuelve.
+  - **El token** no aparece en el almacenamiento del navegador.
+  - **El corte de tipos de punta a punta:** renombrar `report.get` rompe el *typecheck* de la web.
+  - **`trustProxy` con un `X-Forwarded-For` falsificado:**
+    - A través del proxy, el límite corta con la IP real.
+    - Otro cliente real tiene su propio cupo.
+    - Un contenedor que va directo al gateway corta a los 10 intentos.
+
+**Contratos:**
+- Config Schema v6 → v7 (`ATLASBI_GATEWAY_HOST`, `ATLASBI_TRUSTED_PROXIES`, `ATLASBI_WEB_PORT`; `ATLASBI_PUBLIC_URL` por defecto es el origen de la web).
+- Report Document `schemaVersion` 1 y `VisualSpec` v1.
+- DB Migration `000003` y `000004`.
+- `IdentityPort` 1.1.
+
+**Decisiones del usuario:**
+- **H1–H6:**
+  - Una SPA sin SSR, que se revisa si algún día hace falta.
+  - `trustProxy` limitado a nuestro proxy.
+  - `visual_spec` nunca guarda opciones de ECharts, con un test que lo verifica.
+  - Las claves hacia personas apuntan a `identity.*`.
+  - El estado de interacción es el primer corte del diseño de `14`.
+- **A1–A9:**
+  - SvelteKit 2.70.3, no 3.x.
+  - Vite 8.3.3 cuando pase la edad mínima.
+  - El riesgo de Bits UI, documentado.
+  - El origen de la web como `PUBLIC_URL`.
+  - `httpLink` y `QueryCoordinator` sin caché hasta el Paso 9.
+  - Las baterías de test en su propio paquete.
+  - Caddy como proxy.
+- **Condiciones:**
+  - Probar `trustProxy` en vivo, desde otra IP.
+  - Un test de que la imagen del gateway no contiene TypeScript, Vite ni Vitest.
+- **El paquete nuevo `packages/reports`** es dueño del repositorio de reportes.
+- **En `docs`:**
+  - El CHECK de `visual_spec` obliga a una migración de base cuando cambie la versión de `VisualSpec` (`19` §8.1).
+  - Borrar a quien creó un reporte queda bloqueado: hay que reasignar primero (`09` §6.4, `19` §8).
+- **`.pnpmfile.mjs`:** aprobado, con un comentario y una nota en `versions.md` para revisarlo al actualizar `better-auth` o `@trpc/server`.
+- **La contraseña de la base no tiene que ser apta para URL:** el CLI la codifica al armar la URL del gateway en contenedor.
+- **Commits separados por tema** (web, modelo de reporte y release). El tag se pide aparte.
+
+**Desvíos respecto del plan, informados en cada punto de control:**
+- **No `pnpm deploy`:** Node no quita los tipos de un `.ts` bajo `node_modules`. La imagen deja los paquetes enlazados como en desarrollo.
+- **Del esquema de `19` §8:** sin `visual.type`, con `page.ordinal`, y sin `formatting_spec` ni `filter_definition`.
+- **Nombres:** `ReportFilter` y `sourceVisualId`, en `lib/report/`; las rutas dicen "reporte".
+- **El reporte demo tiene un KPI más** (la cantidad de pedidos) que H4.
+- **La *cookie* de estado de la sidebar** se quitó del código copiado; el estado va en `localStorage`.
+- **Sumados:** el favicon, los títulos de pestaña y la CSP de la página (`kit.csp`).
+
+**Lecciones de la verificación:**
+- **pnpm resuelve los *peers* opcionales contra cualquier paquete del workspace**, así que un despliegue de producción se lleva el toolchain que tenga al lado.
+- **Node 24 no quita tipos bajo `node_modules`.**
+- **En un CHECK de Postgres, una expresión NULL pasa:** una clave ausente tiene que fallar explícitamente (`?&` y `CASE`). Además, `-` liga más fuerte que `->`.
+- **Caddy con `admin off`** no acepta subopciones y guarda igual su configuración al arrancar.
+- **El CLI de shadcn-svelte** pregunta antes de pisar archivos: se respalda, se usa `--overwrite` y se compara.
+- **Git Bash reescribe las rutas** que se le pasan a `podman`; se evita con `MSYS_NO_PATHCONV=1`.
+- **La ventana del límite por IP se cruza entre pruebas en vivo seguidas:** el navegador recibió 429 justo después de la prueba de spoofing, como corresponde.
+- **El `.env.example` de `0.5.0` fijaba `ATLASBI_PUBLIC_URL` en el puerto del gateway:** al actualizar hay que cambiarlo (README).
+
+**Siguiente:**
+- El tag `v0.6.0`, cuando el usuario lo pida.
+- Después, el Paso 7, con la primera fuente externa real, y antes del Paso 8 el Plan C de la auditoría (verbos de los jobs).
+- Los documentos de ingesta (`03`, `02` §6.1.1, `13`, `01`) se editan después de la Fase 0 del Paso 7.
+- **Versiones del frontend:** subir Vite a 8.3.3 cuando pase la edad mínima, y migrar a SvelteKit 3 cuando tenga algunas semanas de parches.

@@ -4,22 +4,80 @@ Versionado del producto según [`docs/21-engineering-standards.md`](docs/21-engi
 §2: SemVer `0.MINOR.PATCH` hasta 1.0; los contratos (API, Report Schema, Config Schema, DB
 Migration…) versionan por separado y se listan en cada release.
 
-## Unreleased
+## 0.6.0 — frontend mínimo, modo Viewer (2026-10-07)
 
-Primera tanda de la auditoría de aislamiento entre capas (2026-10-04): reemplazar una herramienta
-no debería tocar a sus vecinos.
+Paso 6 del orden de construcción: el frontend, en modo Viewer.
 
-### Cambiado
+- Ana inicia sesión en un navegador, navega sus workspaces por la sidebar, abre el reporte demo y filtra con un click: los demás visuales cambian, y el que filtró resalta lo elegido.
+- Bruno ve números distintos en el mismo reporte de Finanzas.
+- Todo corre también en contenedores (`pnpm stack:up`), detrás de un único origen.
+- El reporte se guarda en el Report Document Model, y nunca guarda la configuración de un renderer.
 
+La versión incluye también la primera tanda de la auditoría de aislamiento entre capas (2026-10-04), al final.
+
+### Agregado — el Report Document Model (migración `000004`, `@atlasbi/reports`)
+
+- **El contrato, en `@atlasbi/contracts`:**
+  - `ReportDocument`: reporte, páginas y visuales; `schemaVersion` 1.
+  - `VisualSpec` v1: `kind` (`kpi`, `bar` o `line`), medidas, dimensiones y `encoding`.
+  - **`parseVisualSpec` rechaza en todos los niveles cualquier campo fuera de la gramática.** Ninguna opción de ECharts ni de otro renderer entra en un reporte; lo prueban tests en el contrato, en la base y en la web.
+- **El esquema `reporting`**, con `report`, `page` y `visual`:
+  - Las claves hacia personas apuntan a `identity.principal`, nunca a `auth.*`; las de workspace, a `access.workspace`.
+  - **Borrar a una persona que creó un reporte queda bloqueado:** primero hay que reasignar sus reportes.
+  - `visual_spec` y `position` tienen un CHECK de forma.
+  - Desvíos del esquema de `docs/19` §8: sin `visual.type`, con `page.ordinal`, y sin `formatting_spec` ni `filter_definition` hasta que tengan un consumidor.
+- **`@atlasbi/reports`, un paquete nuevo:** el repositorio (Kysely) que lista, lee y crea reportes; la creación es una sola transacción. Las filas nunca salen del paquete; lo que sale es el documento (`docs/21` §9).
+- **La API:** `report.list` y `report.get` en el BFF, de solo lectura, para cualquier miembro del workspace. Un reporte de otro workspace responde `NOT_FOUND`.
+- **`pnpm seed`** crea el reporte "Ventas" en cada workspace demo: dos KPIs, barras por región y línea por mes.
+
+### Agregado — `apps/web` (SvelteKit 2.70.3, Svelte 5.57.1, ECharts 6.1.0)
+
+- **Una SPA, sin renderizado en servidor.** El token de identidad vive solo en memoria y se renueva al 80 % de su vida, y una vez más ante un 401. Si algún día hace falta SSR, esa decisión se revisa primero.
+- **El cliente tRPC usa `httpLink`, una petición por llamada,** para que cada visual pueda cancelar la suya.
+- **El adaptador de ECharts** es el único código que importa ECharts (regla de ESLint) y lo importa por partes: 202 kB gzip contra 392 kB.
+- **El primer corte del Interaction Engine** (`docs/14` §1.3.1):
+  - `ReportFilter` sobre el Filter AST del puerto semántico.
+  - `InteractionState`, con un filtro por miembro y sin aplicarle a cada visual sus propios filtros.
+  - `QueryCoordinator`, con espera de 150 ms y cancelación por visual. Todavía sin caché.
+- **Navegación por sidebar:** la de shadcn-svelte, colapsable a íconos, con un árbol propio de workspaces y reportes. Rutas `/login`, `/workspaces/[workspace]` y `/workspaces/[workspace]/reports/[report]`.
+- **Política de contenido:** la página declara su CSP con el hash del script de arranque. Los estilos inline quedan permitidos, como residual documentado en `docs/08` §9.
+- **Componentes base de shadcn-svelte copiados al repositorio,** con `@lucide/svelte` 1.52.0 para los íconos. ESLint y Prettier cubren también los archivos `.svelte`.
+
+### Agregado — imágenes y proxy (`pnpm stack:up`)
+
+- **Imágenes propias** en `infra/images/`: el gateway y la web. El contexto de build es una lista de inclusión, sin `.env`, `.data` ni tests.
+  - **La del gateway no trae TypeScript, Vite ni Vitest.** El build falla si alguno aparece, y `pnpm test:image` lo comprueba.
+  - **Para eso, `.pnpmfile.mjs` quita cuatro _peers_ que la plataforma no usa en tiempo de ejecución:** `vitest`, `svelte` y `@sveltejs/kit` de `better-auth`, y `typescript` de `@trpc/server`. Se revisa al actualizar esas dos dependencias.
+  - **No usa `pnpm deploy`,** porque Node no ejecuta archivos `.ts` que estén bajo `node_modules`. Los paquetes quedan enlazados como en desarrollo.
+- **Caddy 2.11.7, el proxy del origen único,** elegido con la regla 7 frente a nginx y Traefik (`docs/11` §4.4.1). Sirve la app y reenvía `/api` y `/auth`. Los _probes_ del gateway no se exponen.
+- **Una red interna `edge` con subred fija.** El proxy tiene una dirección fija, y es el único cuyo `X-Forwarded-For` acepta el gateway.
+- **La URL de la base del gateway en contenedor** la arma el CLI con cada parte codificada, así que cualquier contraseña funciona.
+- **`pnpm stack:up`** construye las imágenes desde el checkout y levanta todo. El paso `API Gateway` pregunta `/ready` dentro del contenedor; el paso `Web`, a través del proxy.
+
+### Agregado — `pnpm dev`
+
+- **El paso `Web`:** el servidor de Vite con _hot reload_, en `127.0.0.1:3000`, como origen único también en desarrollo. Su salida sigue al resumen, etiquetada `web │`.
+- **`pnpm preflight` revisa el puerto 3000.** El puerto de un proceso local tiene que estar libre aunque lo ocupe un contenedor del propio stack.
+
+### Cambiado — la Gateway
+
+- **Escucha en `ATLASBI_GATEWAY_HOST`:** `127.0.0.1` por defecto, `0.0.0.0` dentro de su contenedor.
+- **`trustProxy` nombra solo las IP de `ATLASBI_TRUSTED_PROXIES`.** Vacía, no confía en nadie.
+
+### Auditoría de aislamiento entre capas (2026-10-04)
+
+Reemplazar una herramienta no debería tocar a sus vecinos.
+
+- **Las baterías de contrato pasan a su propio paquete, `@atlasbi/contracts-testing`.**
+  `@atlasbi/contracts` ya no declara `vitest` como dependencia, así que un despliegue de producción
+  no arrastra el toolchain de test. Todos los paquetes la usan solo como dependencia de desarrollo.
 - **`createSemanticRuntime({ config, secrets })`**, la fábrica pública de `@atlasbi/semantic`.
   Decide el motor y si hay capa semántica en el despliegue. La Gateway ya no nombra a Cube ni
   conoce la regla de niveles, y `createCubeSemanticRuntime` deja de exportarse.
 - **`config.semantic.enabled`:** la regla "la capa semántica corre solo en el nivel equipo
   local" vive ahora en un solo lugar (`semanticLayerRuns`). La usan también `semanticSecretKeys`.
 
-### Agregado
-
-- **Baterías de contrato de identidad** en `@atlasbi/contracts/testing`:
+- **Baterías de contrato de identidad** en `@atlasbi/contracts-testing`:
   - `describeIdentityPortContract`: usuarios, organizaciones, inicio de sesión, el token de
     identidad (solo `sub` y `org`, como mucho 15 minutos, rechazo de uno adulterado, sin firma o
     de otro despliegue) y el cierre de sesión.
@@ -54,12 +112,36 @@ no debería tocar a sus vecinos.
   - La migración se probó sobre el escenario de `pnpm seed`: sin datos huérfanos, con las
     claves foráneas apuntando a `identity.*`.
 
+### Verificado en vivo
+
+- **En un navegador real** (Edge sin interfaz, controlado por el protocolo DevTools), sobre `pnpm dev` y sobre `pnpm stack:up`:
+  - Ana inicia sesión y llega a Comercial; la sidebar lista los dos workspaces con "Ventas".
+  - El click en East deja los KPIs en 1.049.744 y 4.000, y al quitar el filtro vuelven a 5.243.402 y 20.000.
+  - El token no aparece en `localStorage` ni en `sessionStorage`, y no hay violaciones de CSP.
+- **El corte de tipos de punta a punta:** renombrar `report.get` en el gateway rompe el _typecheck_ de la web en la página del reporte.
+- **`trustProxy`, con un `X-Forwarded-For` falsificado y distinto en cada intento:**
+  - A través del proxy, el límite por IP corta con la IP real.
+  - Otro cliente real a través del proxy tiene su propio cupo.
+  - Un contenedor que va directo al gateway, sin pasar por el proxy, recibe 429 después de 10 intentos.
+- **La migración `000004` en la base de desarrollo** solo creó un esquema, tablas e índices: las filas existentes quedaron iguales.
+
 ### Contratos
 
+- **Config Schema v6 → v7:** `ATLASBI_GATEWAY_HOST`, `ATLASBI_TRUSTED_PROXIES` y `ATLASBI_WEB_PORT`, con valores por defecto.
+  - **`ATLASBI_PUBLIC_URL` pasa a valer por defecto el origen de la web, `http://127.0.0.1:3000`.** Un `.env` copiado del de `0.5.0`, con `http://127.0.0.1:4100`, tiene que cambiarse: si no, el gateway rechaza el inicio de sesión desde la web (README).
+- **Nuevos:** Report Document `schemaVersion` 1 y `VisualSpec` v1.
+- **DB Migration:** `000003` (el esquema `identity`) y `000004` (el esquema `reporting`).
+- **El BFF suma `report.list` y `report.get`.** Sigue siendo interno: la API pública no cambia y `/api/v1` sigue reservado.
 - **Contratos de datos nuevos:** `mart.sales_orders` 1.0 y `source.development_sales_orders` 1.0.
 - **`IdentityPort` 1.0 → 1.1:** agrega `reconcile`. Sus consumidores no cambian; cada adaptador
   tiene que implementarlo.
-- **DB Migration `000003`:** el esquema `identity`.
+
+### Corrección
+
+- **`docs/08` §11.2 decía "sin riesgo de gobernanza".** Bits UI sigue siendo una dependencia viva con un solo mantenedor que publica; el riesgo está evaluado con la regla 7.
+- **`docs/06` anunciaba `httpBatchLink`** para el frontend: es `httpLink`, medido en la Fase 0.
+- **`docs/19` §10 dejaba el proxy sin decidir:** es Caddy.
+- **`docs/13`, paso 7:** el frontend real lee el reporte guardado y usa el adaptador de ECharts. Las rutas dicen "reporte", no "dashboard".
 
 ## 0.5.0 — API Gateway (2026-10-05)
 
