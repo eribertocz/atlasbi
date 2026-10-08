@@ -1,5 +1,5 @@
 import { LakehouseError } from '@atlasbi/contracts';
-import { expectLakehouseError } from '@atlasbi/contracts/testing';
+import { expectLakehouseError } from '@atlasbi/contracts-testing';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { describe, expect, it } from 'vitest';
 

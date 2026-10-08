@@ -1,5 +1,5 @@
 import { SecretNotFoundError } from '@atlasbi/contracts';
-import { describeSecretProviderContract } from '@atlasbi/contracts/testing';
+import { describeSecretProviderContract } from '@atlasbi/contracts-testing';
 import { describe, expect, it } from 'vitest';
 
 import { EnvSecretProvider, toEnvironmentVariableName } from '../../src/index.ts';

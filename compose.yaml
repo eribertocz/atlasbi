@@ -7,6 +7,10 @@
 # neither the object storage nor Cube: the platform CLI names the services it starts.
 name: atlasbi
 
+# The fixed address of the platform's proxy (the `web` service) on the edge network: the only
+# client whose X-Forwarded-For the API gateway trusts (ATLASBI_TRUSTED_PROXIES, docs/06 §6.3).
+x-web-address: &web-address 10.89.250.10
+
 services:
   postgres:
     image: docker.io/library/postgres:17.11-trixie
@@ -34,6 +38,8 @@ services:
     command: ['--config=/etc/otelcol/config.yaml']
     volumes:
       - ./infra/local/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    # The platform's own services report here from the internal network.
+    networks: [default, semantic]
     ports:
       - 127.0.0.1:${ATLASBI_OTEL_GRPC_PORT:-4317}:4317
       - 127.0.0.1:${ATLASBI_OTEL_HTTP_PORT:-4318}:4318
@@ -122,12 +128,82 @@ services:
       - 127.0.0.1:${ATLASBI_CUBE_SQL_PORT:-15432}:15432
     restart: unless-stopped
 
+  api-gateway:
+    # The platform's API (docs/06), from its own image (infra/images/api-gateway.Containerfile).
+    # `pnpm dev` runs it as a local process with hot reload instead; `pnpm stack:up` builds and
+    # runs this container (docs/19 §2). It publishes no port: the browser reaches it through `web`.
+    image: localhost/atlasbi/api-gateway:dev
+    build:
+      context: .
+      dockerfile: infra/images/api-gateway.Containerfile
+    environment:
+      ATLASBI_ENV: ${ATLASBI_ENV:-development}
+      ATLASBI_LAKEHOUSE_CATALOG_TYPE: ${ATLASBI_LAKEHOUSE_CATALOG_TYPE:-postgres}
+      # Only what the gateway uses (gatewaySecretKeys): the platform database, the identity secret
+      # and the one it signs Cube's query tokens with. The database URL — the address inside the
+      # stack, every part percent-encoded — is built by the platform CLI for each compose command
+      # it runs (stackDatabaseUrl); compose run by hand leaves it empty, and the gateway stops at
+      # startup saying the database URL is missing.
+      ATLASBI_DATABASE_URL: ${ATLASBI_STACK_DATABASE_URL:-}
+      ATLASBI_AUTH_SECRET: ${ATLASBI_AUTH_SECRET:-}
+      ATLASBI_SEMANTIC_API_SECRET: ${ATLASBI_SEMANTIC_API_SECRET:-}
+      ATLASBI_SEMANTIC_URL: http://cube:4000
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      ATLASBI_GATEWAY_HOST: 0.0.0.0
+      ATLASBI_GATEWAY_PORT: '4100'
+      ATLASBI_PUBLIC_URL: ${ATLASBI_PUBLIC_URL:-http://127.0.0.1:3000}
+      ATLASBI_TRUSTED_PROXIES: *web-address
+    # Internal networks only: the gateway needs nothing from the Internet.
+    networks: [semantic, edge]
+    read_only: true
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:4100/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  web:
+    # The single HTTP entry point (docs/19 §10): the web app's static build and the proxy to the
+    # gateway, from its own image (infra/images/web.Containerfile, Caddy). `pnpm dev` runs Vite's
+    # development server in its place.
+    image: localhost/atlasbi/web:dev
+    build:
+      context: .
+      dockerfile: infra/images/web.Containerfile
+    depends_on:
+      - api-gateway
+    environment:
+      ATLASBI_GATEWAY_UPSTREAM: api-gateway:4100
+    networks:
+      edge:
+        ipv4_address: *web-address
+    ports:
+      - 127.0.0.1:${ATLASBI_WEB_PORT:-3000}:8080
+    read_only: true
+    # Where Caddy keeps its state; nothing of it outlives the container.
+    tmpfs:
+      - /config
+      - /data
+    restart: unless-stopped
+
 networks:
   default:
   # Internal: its containers reach each other and publish ports on 127.0.0.1, but have no route to
   # the Internet. Cube and Cube Store live only here; Postgres and the object storage join it.
   semantic:
     internal: true
+  # Internal too: the proxy publishes its port on 127.0.0.1 and talks to the gateway; neither has
+  # a route out. A fixed subnet, so the proxy's address — the one the gateway trusts — never moves.
+  edge:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.89.250.0/24
 
 volumes:
   postgres-data:

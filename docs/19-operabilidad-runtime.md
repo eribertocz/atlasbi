@@ -55,9 +55,10 @@ pnpm dev          # ver sección 3
 | Comando | Qué hace |
 | --- | --- |
 | `pnpm dev` | Infraestructura en contenedores (Postgres, Cube, etc.) + API/Web como procesos locales con *hot reload* — la experiencia de desarrollo día a día |
-| `pnpm stack:up` / `stack:down` / `stack:logs` | Todo containerizado (formato OCI) — para probar cómo se comportaría una instalación real, y para los tests E2E de `15-testing-cicd.md` |
+| `pnpm stack:up` / `stack:down` / `stack:logs` | Todo containerizado (formato OCI) — para probar cómo se comportaría una instalación real, y para los tests E2E de `15-testing-cicd.md`. Desde el Paso 6 construye las imágenes de la plataforma desde el checkout (§3) |
 | `pnpm preflight` | Verifica que la máquina tiene lo necesario (Node, pnpm, uv, Podman, compose provider, puertos libres) antes de arrancar nada — solo verifica, nunca instala ni cambia nada |
 | `pnpm test` / `pnpm test:integration` / `pnpm test:e2e` | La pirámide de testing de `15-testing-cicd.md` — `test` son unit tests sin infraestructura; `test:integration` necesita `pnpm dev` corriendo (Postgres real); `test:e2e` llega con el primer recorrido de punta a punta |
+| `pnpm test:image` | Tests sobre la imagen del gateway ya construida (`pnpm stack:up` la construye): no trae TypeScript, Vite ni Vitest, carga su código fuente y corre sin privilegios, sin `.env` — Paso 6 |
 | `pnpm seed` | Carga datos de demo (sección 6) — nunca corre solo, siempre a pedido explícito. Llega en el Paso 1 con el dataset del lakehouse; la organización y los usuarios demo se suman en el Paso 4 |
 | `pnpm identity:reconcile` | Repara la identidad propia de la plataforma (`identity.*`, `09-auth-gobernanza.md` §6.4): agrega las personas y organizaciones que el proveedor de identidad conoce y la plataforma no. **Nunca borra**: lo que solo conoce la plataforma se lista para que lo decida una persona. `pnpm dev` solo detecta el desfase (paso `Identity`) |
 | `pnpm transform <comando>` | Corre SQLMesh (`plan`, `run`, `test`, `audit`, `lint`…) sobre el lakehouse — **la única forma soportada** (`02-transformacion.md` §6.5): verifica el lakehouse antes y le pasa los secretos solo a ese proceso. `test` y `lint` corren sin lakehouse ni secretos |
@@ -125,12 +126,26 @@ La línea del lakehouse nombra también el almacenamiento: `healthy — Catalog:
   - En `cmd.exe` aparece antes el aviso "¿Desea terminar el trabajo por lotes (S/N)?". Viene del acceso `.cmd` de pnpm, no de la plataforma: se responde S.
   - Verificado en Windows: la siguiente corrida de `pnpm dev` encuentra el puerto 4100 libre.
 - **`pnpm preflight` revisa el puerto 4100** (`ATLASBI_GATEWAY_PORT`) en los dos niveles. Si está ocupado, casi siempre es que `pnpm dev` ya está corriendo.
-- **`pnpm stack:up` sigue sin el gateway:** su imagen OCI llega en el Paso 6.
+- **`pnpm stack:up` sigue sin el gateway:** su imagen OCI llega en el Paso 6 (cumplido: ver abajo).
 - **El nivel portátil** levanta el gateway igual. Sin Cube, los procedimientos `semantic.*` responden `NOT_IMPLEMENTED`.
 
 **Después de `0.5.0`: el paso `Identity`.** Corre entre `Migrations` y el resto de la cadena, y compara el proveedor de identidad con la identidad propia de la plataforma (`09-auth-gobernanza.md` §6.4).
 - Si el proveedor conoce a alguien que la plataforma no, el paso falla con el remedio, `pnpm identity:reconcile`.
 - Si hay principales que el proveedor no conoce, solo lo informa: nada se borra solo.
+
+**Alcance real a partir del Paso 6 (`0.6.0`): la web, y el stack entero en contenedores.**
+
+- **`pnpm dev` levanta también la web.**
+  - Es el servidor de Vite de `apps/web`, con *hot reload*, en `127.0.0.1:3000` (`ATLASBI_WEB_PORT`).
+  - Es el origen único del navegador también en desarrollo: reenvía `/api` y `/auth` al gateway (§10).
+  - **El paso `Web` de la cadena** depende de `API Gateway`. Está listo cuando sirve la app y llega al gateway por `/auth`, que responde 401 sin sesión. El resumen muestra `Web healthy — http://127.0.0.1:3000`.
+  - La salida de los dos procesos sigue al resumen, con las etiquetas `api-gateway │` y `web │`. Ctrl+C detiene a los dos.
+- **`pnpm preflight` revisa también el puerto 3000.** El puerto de un proceso local tiene que estar libre aunque lo ocupe un contenedor del propio stack. `pnpm dev` y `pnpm stack:up` no corren a la vez: usan los mismos puertos, y `pnpm stack:down` detiene el segundo.
+- **`pnpm stack:up` construye las imágenes de la plataforma desde el checkout** (`localhost/atlasbi/api-gateway:dev` y `localhost/atlasbi/web:dev`, `11` §4.4.1) y levanta todo en contenedores, sin *hot reload*.
+  - **El paso `API Gateway`** pregunta `/ready` dentro de su contenedor, porque el gateway no publica ningún puerto. El resumen muestra `healthy — in its container, reached through Web`.
+  - **El paso `Web`** prueba a través del proxy (Caddy) en `127.0.0.1:3000`.
+  - El comando termina cuando la web responde, y el stack sigue corriendo.
+- **`pnpm test:image`** corre los tests de la imagen del gateway ya construida.
 
 **Alcance real a partir del Paso 0 (0.1.0):** el resumen solo lista lo que existe — Postgres, Migrations, OTel Collector. Web, API y Cube se suman a la cadena en sus pasos (3, 5, 6); hasta que exista algo con *hot reload*, `pnpm dev` termina después del resumen y la infraestructura queda corriendo en segundo plano (`pnpm stack:down` la detiene).
 
@@ -444,6 +459,11 @@ https://bi.empresa.com  (o http://localhost:3000 en local)
 ```
 
 Cube, Postgres, Cube Store, Electric, Airflow, OpenMetadata quedan en la red interna, nunca expuestos directo — es la misma regla que ya rige en `06-api-gateway.md` ("Cube Core nunca se expone directo al frontend"), aplicada ahora a nivel de red, no solo de código. **Pendiente de decidir al momento de desplegar producción, no bloqueante para escribir el primer modelo:** el proxy/*ingress* concreto (Caddy o Nginx son los candidatos razonables) — resolverlo ahora sería adelantarse a una decisión que no cambia nada del código de las 12 capas. Esto también evita, de entrada, problemas de CORS y cookies entre dominios que aparecerían si el navegador tuviera que hablar con varios *hosts* distintos.
+
+**Decidido en el Paso 6: Caddy** (`11-infraestructura.md` §4.4.1, evaluado con la regla 7).
+- En `pnpm dev`, el origen es el servidor de Vite, que reenvía `/api` y `/auth`.
+- En `pnpm stack:up`, el origen es Caddy, en su propia imagen.
+- Las rutas `/health` y `/ready` del gateway no se exponen por el origen público.
 
 ---
 

@@ -5,20 +5,11 @@
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./testing": "./src/testing/index.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run --dir test/unit"
-  },
-  "peerDependencies": {
-    "vitest": "catalog:"
-  },
-  "peerDependenciesMeta": {
-    "vitest": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@types/node": "catalog:",

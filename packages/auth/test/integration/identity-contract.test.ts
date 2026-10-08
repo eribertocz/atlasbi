@@ -1,7 +1,7 @@
 import {
   describeIdentityHttpContract,
   describeIdentityPortContract,
-} from '@atlasbi/contracts/testing';
+} from '@atlasbi/contracts-testing';
 
 import { createBetterAuthHttp, createBetterAuthIdentity } from '../../src/index.ts';
 import { createAuthDatabase, testSecret } from './support/auth-database.ts';

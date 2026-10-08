@@ -10,6 +10,8 @@ catalog:
   '@fastify/helmet': 13.1.1
   '@fastify/otel': 0.21.0
   '@fastify/rate-limit': 11.2.0
+  '@internationalized/date': 3.12.4
+  '@lucide/svelte': 1.52.0
   '@opentelemetry/api': 1.9.1
   '@opentelemetry/exporter-trace-otlp-http': 0.222.0
   '@opentelemetry/instrumentation': 0.222.0
@@ -19,15 +21,28 @@ catalog:
   '@opentelemetry/sdk-trace-base': 2.11.0
   '@opentelemetry/sdk-trace-node': 2.11.0
   '@opentelemetry/semantic-conventions': 1.43.0
+  '@sveltejs/adapter-static': 3.0.10
+  '@sveltejs/kit': 2.70.3
+  '@sveltejs/vite-plugin-svelte': 7.3.1
+  '@tailwindcss/vite': 4.3.3
   '@trpc/client': 11.19.0
   '@trpc/server': 11.19.0
   '@types/node': 24.13.6
   '@types/pg': 8.23.1
   better-auth: 1.7.6
+  bits-ui: 2.19.5
+  clsx: 2.1.1
+  echarts: 6.1.0
   fastify: 5.12.5
   jose: 6.2.12
   kysely: 0.29.6
   pg: 8.23.0
+  svelte: 5.57.1
+  svelte-check: 4.7.6
+  tailwind-merge: 3.7.0
+  tailwind-variants: 3.3.1
+  tailwindcss: 4.3.3
   typescript: 6.0.3
+  vite: 8.3.2
   vitest: 4.1.11
   zod: 4.6.5

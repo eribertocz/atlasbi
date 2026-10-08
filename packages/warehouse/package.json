@@ -21,6 +21,7 @@
   },
   "devDependencies": {
     "@atlasbi/config": "workspace:*",
+    "@atlasbi/contracts-testing": "workspace:*",
     "@atlasbi/database": "workspace:*",
     "@types/node": "catalog:",
     "typescript": "catalog:",

@@ -192,8 +192,11 @@ export function fakeDependencies(): FakeDependencies {
   };
 }
 
-export function buildTestGateway(dependencies: GatewayDependencies): Promise<FastifyInstance> {
-  return buildGatewayServer({ publicUrl: PUBLIC_URL, dependencies });
+export function buildTestGateway(
+  dependencies: GatewayDependencies,
+  options: { trustedProxies?: readonly string[] } = {},
+): Promise<FastifyInstance> {
+  return buildGatewayServer({ publicUrl: PUBLIC_URL, dependencies, ...options });
 }
 
 /** The client the frontend will use, with queries by POST, talking to the gateway in memory. */

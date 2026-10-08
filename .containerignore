@@ -1,0 +1,34 @@
+# The build context of the platform's images (infra/images/*.Containerfile), as an allow-list:
+# whatever is not named here — .env, .data, node_modules, docs — never reaches a build.
+*
+
+# Every manifest of the workspace, so pnpm reads the same workspace the lockfile describes…
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!.pnpmfile.mjs
+!tsconfig.base.json
+!apps/*/package.json
+!packages/*/package.json
+!tools/*/package.json
+
+# …and the sources of the packages an image is built from.
+!apps/web
+!packages/api-gateway
+!packages/auth
+!packages/config
+!packages/contracts
+!packages/reports
+!packages/semantic
+!infra/images
+
+# Never in an image: dependencies (installed inside the build), tests, caches, local builds, and
+# the semantic layer's own Cube project (Cube runs from its image, not from the gateway's).
+**/node_modules
+**/test
+**/.svelte-kit
+**/.turbo
+**/build
+**/.env
+**/.env.*
+packages/semantic/cube

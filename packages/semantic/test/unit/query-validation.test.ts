@@ -1,5 +1,5 @@
 import { SEMANTIC_QUERY_MAX_ROWS, type SemanticModel } from '@atlasbi/contracts';
-import { expectSemanticRuntimeError } from '@atlasbi/contracts/testing';
+import { expectSemanticRuntimeError } from '@atlasbi/contracts-testing';
 import { describe, expect, it } from 'vitest';
 
 import { UNKNOWN_MEMBER_MESSAGE } from '../../src/adapters/cube/error-mapping.ts';

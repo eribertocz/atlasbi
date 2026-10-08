@@ -34,7 +34,23 @@ export interface WatchedProcess {
  * readiness summary stays readable.
  */
 export function startWatchedProcess(script: string, options: { cwd: string }): WatchedProcess {
-  const child = spawn(process.execPath, ['--watch', script], {
+  return startNodeProcess(['--watch', script], options);
+}
+
+/**
+ * A development server that reloads on its own (Vite, build step 6): a plain Node process, its
+ * output kept the same way. It failed to start when it exits before it is ready.
+ */
+export function startDevServer(
+  script: string,
+  args: readonly string[],
+  options: { cwd: string },
+): WatchedProcess {
+  return startNodeProcess([script, ...args], options);
+}
+
+function startNodeProcess(args: readonly string[], options: { cwd: string }): WatchedProcess {
+  const child = spawn(process.execPath, args, {
     cwd: options.cwd,
     env: process.env,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -46,7 +62,11 @@ export function startWatchedProcess(script: string, options: { cwd: string }): W
   let kept = '';
   let label: string | undefined;
   let failedAt: number | undefined;
-  const exited = once(child, 'exit').then(([code]) => code as number | null);
+  const exited = once(child, 'exit').then(([code]) => {
+    // Gone before anyone stopped it: whatever it printed says why.
+    failedAt ??= Date.now();
+    return code as number | null;
+  });
 
   for (const stream of [child.stdout, child.stderr]) {
     stream.setEncoding('utf8').on('data', (chunk: string) => {

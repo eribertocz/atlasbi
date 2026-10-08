@@ -1,7 +1,7 @@
 import {
   describeAnalyticalQueryPortContract,
   describeLakehouseAdminPortContract,
-} from '@atlasbi/contracts/testing';
+} from '@atlasbi/contracts-testing';
 
 import { createAnalyticalQueryEngine, createLakehouseAdmin } from '../../src/index.ts';
 import {

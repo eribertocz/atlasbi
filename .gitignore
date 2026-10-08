@@ -37,3 +37,7 @@ Thumbs.db
 
 # Archives, including the local backup of the original docs (binary, never versioned)
 *.zip
+
+# SvelteKit (apps/web): generated types and the static build.
+**/.svelte-kit/
+apps/web/build/

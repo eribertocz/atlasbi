@@ -1,4 +1,4 @@
-import type { PlatformIdentityView } from '@atlasbi/contracts/testing';
+import type { PlatformIdentityView } from '@atlasbi/contracts-testing';
 import pg from 'pg';
 
 /**

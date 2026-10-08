@@ -56,6 +56,7 @@ describe('readLocalInfraPorts', () => {
       cube: 4000,
       cubeSql: 15432,
       gateway: 4100,
+      web: 3000,
     });
   });
 

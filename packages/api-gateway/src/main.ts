@@ -45,6 +45,7 @@ const semanticRuntime = await semantic.createSemanticRuntime({ config, secrets }
 
 const app = await server.buildGatewayServer({
   publicUrl: config.gateway.publicUrl,
+  trustedProxies: config.gateway.trustedProxies,
   dependencies: {
     identity,
     identityHttp,
@@ -75,6 +76,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => void close());
 }
 
-// 127.0.0.1 only (decision G9): the proxy of build step 6 is what faces the network.
-await app.listen({ host: '127.0.0.1', port: config.gateway.port });
-console.log(`API gateway listening on http://127.0.0.1:${config.gateway.port}`);
+// 127.0.0.1 under `pnpm dev` (decision G9); in its container, its internal network only: the proxy
+// is what faces the network (build step 6).
+await app.listen({ host: config.gateway.host, port: config.gateway.port });
+console.log(`API gateway listening on http://${config.gateway.host}:${config.gateway.port}`);

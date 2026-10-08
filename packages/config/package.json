@@ -16,6 +16,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@atlasbi/contracts-testing": "workspace:*",
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

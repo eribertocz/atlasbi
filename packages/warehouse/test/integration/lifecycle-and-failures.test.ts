@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { DuckDBInstance } from '@duckdb/node-api';
-import { expectLakehouseError } from '@atlasbi/contracts/testing';
+import { expectLakehouseError } from '@atlasbi/contracts-testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { instanceOptions } from '../../src/adapters/duckdb/instance-initializer.ts';

@@ -139,6 +139,24 @@ flowchart LR
 5. Armar un dashboard mínimo con 2-3 charts reales.
 6. Recién con ese dashboard mínimo funcionando, evaluar la estrategia concreta de caché offline.
 
+**Construido en el Paso 6 (`0.6.0`): el frontend mínimo, en modo Viewer.**
+
+- **Una SPA, sin renderizado en servidor (decisión H1).** SvelteKit 2 con `adapter-static` y `ssr = false`. El token de identidad vive solo en la memoria de la pestaña, así que no hay nada que renderizar en un servidor. **Si algún día hace falta SSR** (enlaces públicos, SEO), esta decisión se revisa antes que nada.
+- **La sesión.** El token se renueva al 80 % de su vida y una vez más ante un 401. Nunca se guarda en `localStorage` ni en `sessionStorage`; se verificó en el navegador.
+- **El cliente tRPC usa `httpLink`, no `httpBatchLink`.** Una petición HTTP por llamada: cada visual cancela la suya, y dos peticiones en paralelo responden antes que un lote. Medido en la Fase 0: p50 de 57 ms contra 66 ms, y abortar una operación de un lote no la cancela.
+- **ECharts, importado por partes** (barras, líneas, grilla, *tooltip*, canvas): 202 kB gzip contra 392 kB del paquete completo.
+  - Solo `src/lib/visualization/echarts/` puede importarlo; lo impone una regla de ESLint.
+  - Un reporte guarda su `VisualSpec`; las opciones de ECharts se arman al dibujar y nunca se guardan (`22` §2).
+- **Rutas:** `/login`, `/workspaces/[workspace]` y `/workspaces/[workspace]/reports/[report]` (§12, corregido).
+- **La sidebar (§11.3).** Es la de shadcn-svelte, colapsable a íconos, con un árbol propio (`TreeExplorer`, recursivo): workspaces y sus reportes.
+  - Muestra solo los módulos que existen.
+  - El estado abierto o cerrado se guarda en `localStorage`. El componente original lo guardaba en una *cookie* que solo lee el renderizado en servidor y que viajaría al gateway en cada petición; se quitó del código copiado.
+- **El cross-filter** es el primer corte del Interaction Engine (`14` parte 1, ver ahí).
+- **La política de contenido (CSP).** La página la declara con el hash del script de arranque de SvelteKit (`kit.csp`, modo hash): ningún otro script inline corre. `frame-ancestors` lo agrega el proxy, porque un `<meta>` no puede declararlo.
+  - **Residual aceptado: los estilos inline están permitidos** (`style-src 'self' 'unsafe-inline'`). Svelte y los componentes copiados los usan.
+  - Un estilo inyectado puede alterar la presentación, no ejecutar código.
+  - Se revisa si la plataforma llega a mostrar HTML de terceros: los Custom Components de `22` §9 corren siempre aislados, en su propio origen.
+
 ---
 
 ## 10. Ideas rescatadas de otros líderes de BI
@@ -234,9 +252,26 @@ BI FRONTEND
 
 **Decisión: GridStack.js, con el riesgo residual documentado explícitamente** — el mismo tratamiento que ya se aplicó a dlt (ingesta) y Cube (semántico) cuando no existe alternativa de fundación en la categoría. La severidad se mitiga porque es una pieza de UI encapsulada detrás de un wrapper propio (igual que ECharts): si quedara abandonada, es forkeable por su tamaño acotado, y existen alternativas funcionalmente equivalentes (react-grid-layout, o construir sobre Muuri con más esfuerzo) a las que migrar sin tocar el resto del stack.
 
-### 11.2 Componentes base — shadcn-svelte + Tailwind v4, sin riesgo de gobernanza
+### 11.2 Componentes base — shadcn-svelte + Tailwind v4, con un riesgo residual: Bits UI
 
 **Corrección de arquitectura, no solo de librería.** El componente de UI base (botones, diálogos, sidebar, controles de filtro) se resuelve con **shadcn-svelte** — que por debajo usa la lógica headless de Bits UI (mantenida por un individuo, `huntabyte`), pero **no se instala como dependencia viva**: su CLI copia el código fuente directo al repo del proyecto (`pnpm dlx shadcn-svelte@latest add <componente>`). Esto cambia la naturaleza del riesgo de gobernanza por completo — el código ya es nuestro, versionado en Git, y sigue funcionando exactamente igual aunque el proyecto original desaparezca mañana. Es la misma lógica de la regla 4 del proyecto ("todo en texto plano versionable en Git"), aplicada a componentes de interfaz.
+
+**Corrección (Paso 6, medido en su Fase 0): "sin riesgo de gobernanza" era inexacto.** El CLI copia los componentes, pero esos componentes importan **Bits UI** (`bits-ui`) como dependencia viva de npm: es la lógica *headless* (foco, teclado, portales, accesibilidad) que el código copiado no reimplementa. Bits UI tiene un solo mantenedor con permiso de publicación en npm (`huntabyte`), aunque 126 personas contribuyeron a su repositorio. Lo mismo pasa con `tailwind-variants` y `tailwind-merge`, un mantenedor cada una.
+
+Evaluado con la regla 7:
+
+- **Licencia:** MIT.
+- **Criticidad:** baja. Es interfaz, sin lógica de negocio ni de datos.
+- **Radio de impacto:** acotado a los componentes base.
+- **Forkabilidad:** realista, el código es chico.
+
+Es el perfil en el que la regla 7 acepta a un mantenedor individual. El riesgo existe igual, y se gestiona así:
+
+- Versiones exactas en el catálogo de pnpm, con la edad mínima de publicación.
+- Actualización deliberada, nunca por arrastre.
+- Si el proyecto se abandona, se forkea o se reemplaza la pieza *headless* sin tocar el resto.
+
+Los íconos (`@lucide/svelte`, ISC) son de la organización Lucide, con más de 400 contribuyentes.
 
 **Estilos: Tailwind CSS v4** (no v3) — proyecto de una empresa real (Tailwind Labs Inc.), gobernanza sin objeciones. La configuración vive en un bloque `@theme` dentro del CSS, generando variables CSS nativas — el mismo mecanismo que ya se usa para el modo oscuro/claro, no dos sistemas de theming distintos:
 
@@ -353,6 +388,8 @@ Sidebar (colapsable a íconos)
 ├── 📚 Catálogo            → /catalogo (**corrección: nunca embebido/iframe** — deep-link + consumo de API propia, ver `20-product-ui-ux.md` sección 1 y 5)
 └── ⚙️ Configuración       → /configuracion (auth, capa 9)
 ```
+
+**Corrección (Paso 6):** las rutas dicen "reporte", no "dashboard" (`19` §8.2), y van dentro de su workspace: el Viewer es `/workspaces/[workspace]/reports/[report]`. La ruta del Builder llega con el Authoring Engine, con el mismo criterio.
 
 **Por qué el modo Viewer y el modo Builder son rutas separadas, no un toggle en la misma pantalla:** cargar GridStack.js (el motor de canvas) tiene un costo — de JavaScript, de complejidad de estado — que no tiene sentido pagar cuando alguien solo quiere *ver* un dashboard ya armado. `/dashboards/[id]` es de solo lectura, liviana; `/dashboards/[id]/editar` es la única ruta que monta el canvas editable, con la paleta de charts disponibles (ECharts) para arrastrar.
 

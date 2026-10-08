@@ -115,6 +115,26 @@ export class QueryCoordinator {
 
 Cada widget consulta a través del `QueryCoordinator`, nunca directo al cliente de la Capa 6 — así el debounce, la cancelación y el caché quedan en un solo lugar, no reimplementados por cada componente de gráfico. **No hace falta que sea sofisticado en v1** (el ejemplo de arriba alcanza), pero tiene que existir como pieza propia desde el principio — agregarlo después significa tocar cada widget uno por uno.
 
+### 1.3.1 Primer corte, construido en el Paso 6 (`0.6.0`)
+
+El modo Viewer ya tiene cross-filter, con las piezas de 1.1 a 1.3 y no con un diseño paralelo. El Paso 9 las extiende.
+
+- **Nombres, con la terminología de `19` §8.2.** Las piezas viven en `apps/web/src/lib/report/`, no en `lib/dashboard/`. `DashboardFilter` se llama `ReportFilter`, y `sourceWidgetId`, `sourceVisualId`: un visual es una fila de `visual`.
+- **`ReportFilter`** es el `SemanticFilter` del puerto semántico más `sourceVisualId`. Llega a la consulta sin traducción, y sus valores son siempre *strings*, como en el puerto.
+- **`InteractionState`** tiene `activeFilters` y estas operaciones:
+  - `applyFilter`: un filtro por miembro.
+  - `clearFilter`.
+  - `filtersFor(visualId)`: todos los filtros activos menos los que puso ese visual.
+  - `toggleSelection`: un segundo click en la misma categoría quita el filtro.
+  - El `drillPath` (§1.4) todavía no existe.
+- **`QueryCoordinator`.** Cada visual consulta a través de él:
+  - Espera 150 ms antes de preguntar.
+  - Una consulta nueva de un visual cancela la anterior también en la red, porque el cliente hace una petición HTTP por llamada (`08` §9).
+  - Un visual que sale de la página cancela la suya.
+  - **Todavía no hay caché.** Su clave necesita la huella del contexto de seguridad, y el navegador no la tiene. El Paso 9 la agrega con una huella que da el gateway, junto con la invalidación por refresco.
+- **Un visual vuelve a consultar solo si cambia su pregunta.** El click que filtra a los demás no lo vuelve a consultar, porque sus propios filtros no le aplican.
+- **Lo que filtra hoy:** una categoría que no es de tiempo (la región). Seleccionar un mes en la línea queda para el Paso 9, como rango de fechas.
+
 ### 1.4 Drill-down: conserva el camino recorrido, no solo el nivel
 
 **Corrección: el diseño original solo incrementaba un número (`drillLevel[widgetId]++`) — eso pierde el filtro del nivel anterior.** Si el usuario hace drill-down desde "Región = Norte" hacia ciudad, sin conservar `region = Norte` como filtro, el siguiente nivel muestra **todas** las ciudades de **todas** las regiones, no solo las del Norte.

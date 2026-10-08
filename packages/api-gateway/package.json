@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --dir test/unit",
     "test:integration": "vitest run --dir test/integration --test-timeout 120000 --hook-timeout 120000",
+    "test:image": "vitest run --dir test/image --test-timeout 120000 --hook-timeout 120000",
     "start": "node --env-file-if-exists=../../.env src/main.ts",
     "dev": "node --env-file-if-exists=../../.env --watch src/main.ts"
   },

@@ -1,3 +1,4 @@
+import { STACK_DATABASE_URL_VARIABLE, stackDatabaseUrl } from '../local-environment.ts';
 import { runCommand, type CommandResult } from '../system/run-command.ts';
 import { WORKSPACE_FILES, WORKSPACE_ROOT } from '../workspace-paths.ts';
 import { composeProcessEnvironment, resolveComposeProvider } from './compose-provider.ts';
@@ -126,6 +127,25 @@ export async function runOneOffContainer(container: OneOffContainer): Promise<Co
   ]);
 }
 
+/** Builds one of the platform's images, with the repository root as its (allow-listed) context. */
+export async function buildImage(image: { tag: string; containerfile: string }): Promise<void> {
+  expectSuccess(
+    await runCommand('podman', ['build', '--file', image.containerfile, '--tag', image.tag, '.'], {
+      cwd: WORKSPACE_ROOT,
+      stdio: 'inherit',
+    }),
+    `podman build ${image.tag}`,
+  );
+}
+
+/** Runs a command inside a running service's container; its exit code is the answer. */
+export async function execInService(
+  service: string,
+  args: readonly string[],
+): Promise<CommandResult> {
+  return compose(['exec', '-T', service, ...args], 'pipe');
+}
+
 export async function composeDown(options: { removeVolumes: boolean }): Promise<void> {
   const args = options.removeVolumes ? ['down', '--volumes'] : ['down'];
   expectSuccess(await compose(args, 'inherit'), 'podman compose down');
@@ -169,7 +189,11 @@ async function compose(args: readonly string[], stdio: 'pipe' | 'inherit'): Prom
 }
 
 async function composeEnvironment(options: { quiet: boolean }): Promise<NodeJS.ProcessEnv> {
-  const environment = composeProcessEnvironment((await resolveComposeProvider()).path);
+  const environment = {
+    ...composeProcessEnvironment((await resolveComposeProvider()).path),
+    // Computed for compose only, never written anywhere: it holds the database password.
+    [STACK_DATABASE_URL_VARIABLE]: stackDatabaseUrl() ?? '',
+  };
   return options.quiet ? { ...environment, PODMAN_COMPOSE_WARNING_LOGS: 'false' } : environment;
 }
 

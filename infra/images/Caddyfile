@@ -1,0 +1,40 @@
+# The platform's single HTTP entry point (docs/19 §10): the web app's static files, and /api and
+# /auth to the API gateway. The browser never learns the internal topology.
+{
+	# No admin API and no automatic HTTPS in the local tier: TLS ends in front of this server in a
+	# real deployment (docs/11).
+	admin off
+	auto_https off
+}
+
+:{$ATLASBI_WEB_LISTEN_PORT:8080} {
+	encode zstd gzip
+
+	# Only these reach the gateway; its probes (/health, /ready) stay inside the stack network.
+	# Caddy writes X-Forwarded-For itself, with the address the request came from: a value the
+	# client sends is never passed on. The gateway trusts this proxy, and only it
+	# (ATLASBI_TRUSTED_PROXIES).
+	@gateway path /api/* /auth/*
+	handle @gateway {
+		reverse_proxy {$ATLASBI_GATEWAY_UPSTREAM}
+	}
+
+	handle {
+		root * /srv
+		header {
+			X-Content-Type-Options nosniff
+			Referrer-Policy no-referrer
+			# The app is never framed; the rest of its policy comes with the page (kit.csp).
+			Content-Security-Policy "frame-ancestors 'none'"
+			-Server
+		}
+		# Hashed file names never change: cached for good. Everything else, always revalidated.
+		@immutable path /_app/immutable/*
+		@revalidated not path /_app/immutable/*
+		header @immutable Cache-Control "public, max-age=31536000, immutable"
+		header @revalidated Cache-Control no-cache
+		# A single-page app: any path that is not a file is one of the app's own routes.
+		try_files {path} /index.html
+		file_server
+	}
+}

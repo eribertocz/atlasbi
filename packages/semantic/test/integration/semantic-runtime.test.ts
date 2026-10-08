@@ -1,5 +1,5 @@
 import type { AnalyticalQueryPort, SecurityContext, SemanticRuntimePort } from '@atlasbi/contracts';
-import { describeSemanticRuntimePortContract, normalizeDecimal } from '@atlasbi/contracts/testing';
+import { describeSemanticRuntimePortContract, normalizeDecimal } from '@atlasbi/contracts-testing';
 import { createAnalyticalQueryEngine } from '@atlasbi/warehouse';
 import { createTestLakehouse, type TestLakehouse } from '@atlasbi/warehouse/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';

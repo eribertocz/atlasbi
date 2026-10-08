@@ -117,6 +117,52 @@ La diferencia estuvo en las **credenciales de solo lectura** que exige todo lect
 
 **Regla de diseño que se desprende de esto:** ninguna capa de este proyecto puede importar el SDK propietario de un proveedor específico (por ejemplo, el SDK de AWS) directo en su código de aplicación — siempre a través del protocolo estándar (cliente S3 genérico, driver de Postgres estándar). El único lugar donde el nombre de un proveedor concreto aparece es en la configuración de OpenTofu de ese despliegue puntual, nunca en el código de las capas 1 a 10.
 
+### 4.4.1 Las imágenes propias y el proxy del origen único (Paso 6)
+
+**Las imágenes de la plataforma** viven en `infra/images/` y se construyen desde la raíz del repositorio: `pnpm stack:up` las construye y las corre (`19-operabilidad-runtime.md` §2).
+
+- **El contexto de build es una lista de inclusión** (`.containerignore`): los manifiestos del workspace y el código de los paquetes que hacen falta. Nunca entran `.env`, `.data`, `node_modules` ni los tests.
+- **La imagen base de Node** es la misma versión de `.node-version`, fijada por digest (`versions.md`).
+- **`api-gateway.Containerfile`:**
+  - Instala solo las dependencias de producción del gateway y de los paquetes del workspace que importa (`pnpm install --prod --filter '@atlasbi/api-gateway...'`).
+  - Deja esos paquetes en `packages/*`, enlazados como en desarrollo. **No usa `pnpm deploy`:** ese comando los copia dentro de `node_modules`, y Node 24 no quita los tipos de un `.ts` que esté bajo `node_modules`, así que el gateway no arrancaría. Se mantiene la regla de no tener paso de build (`CLAUDE.md`, estructura del monorepo).
+  - Corre como el usuario `node`, sobre un sistema de archivos de solo lectura.
+  - **No contiene TypeScript, Vite ni Vitest.** Un paso del build falla si alguno aparece, y `pnpm test:image` lo comprueba sobre la imagen construida. Probado al revés: el test falla contra una imagen que sí tiene Vite.
+- **`.pnpmfile.mjs`:** sin él, la imagen traía esas herramientas. `better-auth` declara como *peers* opcionales `vitest`, `svelte` y `@sveltejs/kit`, y `@trpc/server` declara `typescript`; pnpm los enlazaba con los del workspace. Un hook `readPackage` quita esos cuatro *peers* al leer los manifiestos, porque la plataforma no los usa en tiempo de ejecución. **Se revisa al actualizar `better-auth` o `@trpc/server`** (`versions.md`).
+- **`web.Containerfile`:** el build estático de la app (Vite) servido por Caddy, que corre como `nobody`, en un sistema de archivos de solo lectura.
+
+**El proxy del origen único: Caddy, elegido con la regla 7** (`19` §10 lo dejaba abierto entre Caddy y Nginx). Medido en la Fase 0 del Paso 6:
+
+| | Caddy | nginx | Traefik |
+| --- | --- | --- | --- |
+| Licencia | Apache-2.0 | BSD-2 | MIT |
+| Quién lo gobierna | organización `caddyserver` | F5 (empresa) | Traefik Labs (empresa) |
+| Contribuyentes | 449 | 137 | 1131 |
+| Última versión al medir | 2.11.7 (2026-10-03) | 1.31.6 (2026-09-15) | — |
+
+**Por qué Caddy:**
+
+- **Criticidad y radio de impacto.** El proxy no calcula nada: sirve archivos estáticos y reenvía `/api` y `/auth`. Si fallara, el navegador no llega a la plataforma, pero reemplazarlo es reescribir un archivo de configuración de unas 40 líneas, sin tocar código.
+- **Seguro por defecto en lo que importa acá.** Escribe `X-Forwarded-For` con la dirección de quien le habló e ignora el valor que mande el cliente, salvo que se configure lo contrario. Es justo lo que necesita el límite de intentos por IP (`06` §6.3), y se verificó en vivo.
+- **El más chico de configurar.** HTTPS automático está disponible para producción y apagado en el nivel local.
+- **Traefik queda descartado para este uso:** su punto fuerte es descubrir servicios leyendo el socket del motor de contenedores, que la plataforma no necesita y que sería superficie de ataque. Además tiene 76 *advisories* publicados en su repositorio.
+- **nginx no tiene objeción de licencia.** Es la alternativa directa si Caddy dejara de convenir.
+
+**Riesgo residual:**
+
+- Las *advisories* de Caddy de 2026 (junio y julio) están corregidas en la versión fijada.
+- Sin API de administración, Caddy igual guarda su configuración al arrancar; lo hace en un `tmpfs`, porque el contenedor es de solo lectura.
+
+**Cómo corre (`compose.yaml`):**
+
+- **Imagen:** `caddy:2.11.7-alpine`, fijada por el digest de su índice multiplataforma.
+- **Red interna `edge`, con subred fija (10.89.250.0/24):**
+  - El proxy tiene la dirección fija 10.89.250.10, que es la única que el gateway acepta como proxy (`ATLASBI_TRUSTED_PROXIES`).
+  - El gateway está en `edge` y en `semantic`, las dos internas: no tiene salida a Internet.
+  - El colector de OpenTelemetry se suma a `semantic` para recibir sus trazas.
+- **Puerto:** el proxy publica solo `127.0.0.1:3000`. El gateway no publica ninguno, y sus *probes* (`/health`, `/ready`) no se exponen por el origen público.
+- **La URL de la base del gateway** apunta a `postgres:5432` dentro del stack. La arma el CLI de la plataforma para cada comando de compose que corre, a partir de las variables `ATLASBI_POSTGRES_*` y con cada parte codificada, así que cualquier contraseña funciona. Nunca se escribe en disco.
+
 ### 4.5 Un solo Postgres para cinco consumidores — corrección de un riesgo real
 
 **Hallazgo de una revisión externa, y es justo: "esquemas separados" no es aislamiento real.** El diseño original de este proyecto reutiliza el mismo servidor Postgres como catálogo de DuckLake (capa 1), estado de SQLMesh (capa 2), metadata de Airflow (capa 7), base de usuarios de better-auth (capa 9) y persistencia de `dashboard_state` para ElectricSQL (capa 10) — cinco consumidores, un solo proceso. Separar por esquema evita que uno lea las tablas del otro (responsabilidad única a nivel de datos), pero **no evita que uno tire abajo a los demás**: si ese Postgres se cae, se caen las cinco funciones a la vez, y si uno de los cinco genera una carga pesada (Airflow escribe metadata constantemente; Electric mantiene un slot de replicación lógica activo), los otros cuatro sienten la degradación aunque no tengan nada que ver — el clásico problema del "vecino ruidoso".

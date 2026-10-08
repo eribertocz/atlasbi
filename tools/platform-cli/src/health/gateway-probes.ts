@@ -74,3 +74,37 @@ export async function probeGateway(url: string, gateway: WatchedProcess): Promis
     );
   }
 }
+
+/** Asks the gateway's own `/ready` from inside its container, where it listens. */
+export const GATEWAY_CONTAINER_PROBE = [
+  'node',
+  '-e',
+  "fetch('http://127.0.0.1:4100/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+] as const;
+
+/**
+ * The gateway's container under `pnpm stack:up`: it publishes no port — the browser reaches it
+ * through Web — so its readiness is asked inside the container, the same `/ready` as the process's.
+ */
+export function gatewayContainerReadinessStep(options: {
+  dependsOn: readonly string[];
+  /** True once `/ready` answers 200 inside the container. */
+  isReady: () => Promise<boolean>;
+  timing?: Pick<RetryPolicy, 'timeoutMs' | 'intervalMs'>;
+}): ReadinessStep {
+  return {
+    name: GATEWAY_STEP,
+    dependsOn: options.dependsOn,
+    ensureReady: async () => {
+      await retryUntil(
+        async () => {
+          if (!(await options.isReady())) {
+            throw new Error('/ready does not answer 200 inside its container');
+          }
+        },
+        { timeoutMs: 60_000, intervalMs: 500, ...options.timing },
+      );
+      return 'healthy — in its container, reached through Web';
+    },
+  };
+}

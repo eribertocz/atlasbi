@@ -4,11 +4,17 @@ import type { AddressInfo } from 'node:net';
 import { loadConfig } from '@atlasbi/config';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { GATEWAY_STEP, gatewayReadinessStep } from '../../src/health/gateway-probes.ts';
 import {
-  LOCAL_PROCESSES,
+  GATEWAY_STEP,
+  gatewayContainerReadinessStep,
+  gatewayReadinessStep,
+} from '../../src/health/gateway-probes.ts';
+import {
+  localProcessPorts,
+  PLATFORM_SERVICES,
   portsByService,
   readLocalInfraPorts,
+  stackDatabaseUrl,
 } from '../../src/local-environment.ts';
 import type { WatchedProcess } from '../../src/system/watched-process.ts';
 
@@ -100,17 +106,82 @@ describe('the API gateway readiness step', () => {
   });
 });
 
-describe("the API gateway's port", () => {
-  it('is checked by preflight on every tier, with the Config Schema default', () => {
-    const ports = readLocalInfraPorts({});
+describe('the API gateway in its container (pnpm stack:up)', () => {
+  it('waits until /ready answers inside the container', async () => {
+    let asked = 0;
+    const step = gatewayContainerReadinessStep({
+      dependsOn: ['Migrations', 'Cube'],
+      isReady: () => Promise.resolve((asked += 1) > 2),
+      timing: FAST,
+    });
 
-    expect(LOCAL_PROCESSES).toEqual(['api-gateway']);
-    expect(portsByService(ports)['api-gateway']).toEqual([4100]);
-    expect(
-      portsByService(readLocalInfraPorts({ ATLASBI_GATEWAY_PORT: '4200' }))['api-gateway'],
-    ).toEqual([4200]);
-    expect(ports.gateway).toBe(
-      loadConfig({ OTEL_EXPORTER_OTLP_ENDPOINT: 'http://127.0.0.1:4318' }).gateway.port,
+    await expect(step.ensureReady()).resolves.toBe(
+      'healthy — in its container, reached through Web',
     );
+    expect([step.name, step.dependsOn]).toEqual([GATEWAY_STEP, ['Migrations', 'Cube']]);
+    expect(asked).toBe(3);
+  });
+
+  it('says where it looked when /ready never answers', async () => {
+    const step = gatewayContainerReadinessStep({
+      dependsOn: [],
+      isReady: () => Promise.resolve(false),
+      timing: { timeoutMs: 100, intervalMs: 20 },
+    });
+
+    await expect(step.ensureReady()).rejects.toThrow(
+      '/ready does not answer 200 inside its container',
+    );
+  });
+});
+
+describe("the database URL of the gateway's container", () => {
+  it('takes any password: every part is percent-encoded and reads back unchanged', () => {
+    const password = 'p@ss:w/rd #?%&é';
+    const url = new URL(
+      stackDatabaseUrl({
+        ATLASBI_POSTGRES_USER: 'atlas bi',
+        ATLASBI_POSTGRES_PASSWORD: password,
+        ATLASBI_POSTGRES_DB: 'atlasbi',
+      }) ?? '',
+    );
+
+    expect([url.protocol, url.hostname, url.port, url.pathname]).toEqual([
+      'postgres:',
+      'postgres',
+      '5432',
+      '/atlasbi',
+    ]);
+    expect(decodeURIComponent(url.username)).toBe('atlas bi');
+    expect(decodeURIComponent(url.password)).toBe(password);
+  });
+
+  it('is not built while a part is missing', () => {
+    expect(
+      stackDatabaseUrl({ ATLASBI_POSTGRES_USER: 'atlasbi', ATLASBI_POSTGRES_DB: 'atlasbi' }),
+    ).toBeUndefined();
+  });
+});
+
+describe("the platform services' ports", () => {
+  it('as local processes, are checked by preflight on every tier, with the Config Schema defaults', () => {
+    const ports = readLocalInfraPorts({});
+    const config = loadConfig({ OTEL_EXPORTER_OTLP_ENDPOINT: 'http://127.0.0.1:4318' });
+
+    expect(PLATFORM_SERVICES).toEqual(['api-gateway', 'web']);
+    expect(localProcessPorts(ports)).toEqual({ 'api-gateway': [4100], web: [3000] });
+    expect(
+      localProcessPorts(
+        readLocalInfraPorts({ ATLASBI_GATEWAY_PORT: '4200', ATLASBI_WEB_PORT: '3100' }),
+      ),
+    ).toEqual({ 'api-gateway': [4200], web: [3100] });
+    expect([ports.gateway, ports.web]).toEqual([config.gateway.port, config.web.port]);
+  });
+
+  it('as containers, publish only the web origin: the gateway is reached through it', () => {
+    expect(portsByService(readLocalInfraPorts({}), PLATFORM_SERVICES)).toEqual({
+      'api-gateway': [],
+      web: [3000],
+    });
   });
 });

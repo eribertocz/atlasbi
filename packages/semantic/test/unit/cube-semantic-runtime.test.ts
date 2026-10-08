@@ -1,5 +1,5 @@
 import type { SecurityContext, SemanticQuery } from '@atlasbi/contracts';
-import { expectSemanticRuntimeError } from '@atlasbi/contracts/testing';
+import { expectSemanticRuntimeError } from '@atlasbi/contracts-testing';
 import { describe, expect, it } from 'vitest';
 
 import { createCubeSemanticRuntime } from '../../src/adapters/cube/cube-semantic-runtime.ts';

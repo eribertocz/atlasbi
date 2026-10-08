@@ -55,6 +55,7 @@ const localInfraSchema = z.object({
   ATLASBI_CUBE_SQL_PORT: portSchema.default(15432),
   // Same default as the Config Schema's (a unit test keeps both in step).
   ATLASBI_GATEWAY_PORT: portSchema.default(4100),
+  ATLASBI_WEB_PORT: portSchema.default(3000),
 });
 
 export interface LocalInfraPorts {
@@ -66,8 +67,10 @@ export interface LocalInfraPorts {
   objectStorageAdmin: number;
   cube: number;
   cubeSql: number;
-  /** The API gateway: a local process under `pnpm dev`, not a container (decision G7). */
+  /** The API gateway, when `pnpm dev` runs it as a local process (decision G7). */
   gateway: number;
+  /** The browser's single origin: Vite under `pnpm dev`, the proxy's container under `stack:up`. */
+  web: number;
 }
 
 /**
@@ -88,6 +91,7 @@ export function readLocalInfraPorts(env: EnvironmentVariables = process.env): Lo
     cube: values.ATLASBI_CUBE_PORT,
     cubeSql: values.ATLASBI_CUBE_SQL_PORT,
     gateway: values.ATLASBI_GATEWAY_PORT,
+    web: values.ATLASBI_WEB_PORT,
   };
 }
 
@@ -104,10 +108,40 @@ export const LOCAL_TIER_SERVICES = [
 export const PORTABLE_TIER_SERVICES = ['postgres', 'otel-collector'] as const;
 
 /**
- * Platform services `pnpm dev` runs as local processes with hot reload (docs/19 §2), on every
- * tier. Their container images arrive with build step 6.
+ * The platform's own services (docs/19 §2): local processes with hot reload under `pnpm dev`, on
+ * every tier; containers from their own images under `pnpm stack:up`.
  */
-export const LOCAL_PROCESSES = ['api-gateway'] as const;
+export const PLATFORM_SERVICES = ['api-gateway', 'web'] as const;
+
+export type PlatformService = (typeof PLATFORM_SERVICES)[number];
+
+/** The variable compose.yaml reads the gateway container's database URL from. */
+export const STACK_DATABASE_URL_VARIABLE = 'ATLASBI_STACK_DATABASE_URL';
+
+/**
+ * The platform database as the gateway's container reaches it — `postgres:5432` on the stack
+ * network — from the variables the Postgres container is created with. Every part is
+ * percent-encoded, so any password works. Undefined while one of them is missing.
+ */
+export function stackDatabaseUrl(env: EnvironmentVariables = process.env): string | undefined {
+  const user = env.ATLASBI_POSTGRES_USER;
+  const password = env.ATLASBI_POSTGRES_PASSWORD;
+  const database = env.ATLASBI_POSTGRES_DB;
+  if (!user || !password || !database) {
+    return undefined;
+  }
+  const encode = encodeURIComponent;
+  return `postgres://${encode(user)}:${encode(password)}@postgres:5432/${encode(database)}`;
+}
+
+/** The images of the platform's services (infra/images), with the tags compose.yaml runs. */
+export const PLATFORM_IMAGES: Record<PlatformService, { tag: string; containerfile: string }> = {
+  'api-gateway': {
+    tag: 'localhost/atlasbi/api-gateway:dev',
+    containerfile: 'infra/images/api-gateway.Containerfile',
+  },
+  web: { tag: 'localhost/atlasbi/web:dev', containerfile: 'infra/images/web.Containerfile' },
+};
 
 /**
  * The services the stack starts for the catalog type in `env` — read without validating the rest
@@ -119,10 +153,10 @@ export function stackServices(env: EnvironmentVariables = process.env): readonly
     : LOCAL_TIER_SERVICES;
 }
 
-/** Host ports of the given services (every one by default): containers and local processes. */
+/** Host ports compose publishes for the given services (every one by default). */
 export function portsByService(
   ports: LocalInfraPorts,
-  services: readonly string[] = [...LOCAL_TIER_SERVICES, ...LOCAL_PROCESSES],
+  services: readonly string[] = [...LOCAL_TIER_SERVICES, ...PLATFORM_SERVICES],
 ): Record<string, number[]> {
   const all: Record<string, number[]> = {
     postgres: [ports.postgres],
@@ -131,7 +165,14 @@ export function portsByService(
     // Cube Store publishes nothing: only Cube talks to it, inside the stack network.
     'cube-store': [],
     cube: [ports.cube, ports.cubeSql],
-    'api-gateway': [ports.gateway],
+    // The gateway's container publishes nothing either: the browser reaches it through `web`.
+    'api-gateway': [],
+    web: [ports.web],
   };
   return Object.fromEntries(Object.entries(all).filter(([service]) => services.includes(service)));
+}
+
+/** Host ports of the platform's services when `pnpm dev` runs them as local processes. */
+export function localProcessPorts(ports: LocalInfraPorts): Record<string, number[]> {
+  return { 'api-gateway': [ports.gateway], web: [ports.web] };
 }

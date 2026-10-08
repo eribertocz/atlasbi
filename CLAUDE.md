@@ -43,10 +43,10 @@ Una plataforma de BI moderna y 100% open source diseñada para reemplazar y supe
 | API gateway | `packages/api-gateway` | **Fastify** (OpenJS Foundation) como host HTTP + **tRPC** como BFF interno (frontend, capa 8) + **contrato OpenAPI 3.x** como API pública para consumidores externos — cómo se genera OpenAPI (`@trpc/openapi` cuando salga de alpha, un adaptador propio, o un router REST específico) es una decisión de implementación, nunca una obligación del contrato (nunca `trpc-openapi`, archivado sin mantenedores desde nov. 2024) |
 | Base de datos/migraciones | `packages/database` | **`pg`** (driver) + **Kysely** (query builder tipado, MIT, sin dependencias runtime) + **Kysely Migrator** como único mecanismo de migración — nunca un ORM pesado (Prisma) ni `CREATE TABLE` disperso entre TypeScript y Markdown |
 | Orquestación | `packages/orchestrator` | **Apache Airflow** (DAGs en Python) |
-| Frontend | `apps/web` | SvelteKit + Svelte 5 (runes) + **Apache ECharts** (charts) + **GridStack.js** (canvas del authoring, riesgo de gobernanza documentado) + **shadcn-svelte + Tailwind v4** (componentes base, copiados al repo, no dependencia viva) |
+| Frontend | `apps/web` | SvelteKit + Svelte 5 (runes) + **Apache ECharts** (charts) + **GridStack.js** (canvas del authoring, riesgo de gobernanza documentado) + **shadcn-svelte + Tailwind v4** (componentes base copiados al repo; Bits UI, su lógica *headless*, sí es dependencia viva — riesgo residual en `08-frontend.md` §11.2) |
 | Auth | `packages/auth` | **better-auth** (Vercel) — Keycloak (CNCF) si hay que federar identidad corporativa existente |
 | Colaboración en tiempo real | `packages/realtime` | **ElectricSQL** (Databricks) distribuye el estado ya confirmado (Postgres resuelve la escritura); Yjs no se usa para este caso de uso (razón arquitectónica + gobernanza débil), pero queda evaluable con la regla 7 para una función acotada futura (texto colaborativo) |
-| Infraestructura | `infra/` | **OpenTofu** (nunca Terraform — BSL, IBM) + **Podman** (nunca Docker como producto) + **Garage** (object storage S3-compatible del modo local, AGPL-3.0 corriendo sin modificar como servicio aparte — nunca MinIO, archivado; `11-infraestructura.md` §4.4) + **Edge Connector Agent propio** (ejecuta conectores dentro de la red del cliente, credenciales locales, conexión saliente únicamente — WireGuard o mTLS como transporte, no como la solución completa) + **OpenTelemetry** (observabilidad transversal, CNCF Graduated, desde el bootstrap — no una capa que se agrega después) + **OpenBao** (secretos en producción self-hosteada, Linux Foundation + OpenSSF, vía interfaz `SecretProvider` — `.env` en desarrollo, gestor nativo de nube en despliegues cloud) |
+| Infraestructura | `infra/` | **OpenTofu** (nunca Terraform — BSL, IBM) + **Podman** (nunca Docker como producto) + **Caddy** (proxy del origen único, Apache-2.0, elegido con la regla 7 — `11-infraestructura.md` §4.4.1) + **Garage** (object storage S3-compatible del modo local, AGPL-3.0 corriendo sin modificar como servicio aparte — nunca MinIO, archivado; `11-infraestructura.md` §4.4) + **Edge Connector Agent propio** (ejecuta conectores dentro de la red del cliente, credenciales locales, conexión saliente únicamente — WireGuard o mTLS como transporte, no como la solución completa) + **OpenTelemetry** (observabilidad transversal, CNCF Graduated, desde el bootstrap — no una capa que se agrega después) + **OpenBao** (secretos en producción self-hosteada, Linux Foundation + OpenSSF, vía interfaz `SecretProvider` — `.env` en desarrollo, gestor nativo de nube en despliegues cloud) |
 | Metadata, catálogo y lineage | `packages/metadata` | **OpenMetadata** (Collate Inc.; sin fundación real en esta categoría, riesgo residual documentado como dlt/Cube) — alimentado por ingesta programada desde las capas 2, 3, 4, 7 y 9, nunca escribe en ellas |
 
 **Lenguajes:** SQL + Python en las capas de datos; TypeScript en las capas de aplicación (frontend, API, auth, IA, realtime); HCL para infraestructura; Rust solo si se extiende el motor o se escribe un conector propio — nunca para lógica de negocio cotidiana. **Nunca FastAPI ni ningún otro framework Python para servir requests al frontend** — ese trabajo lo hace la API Gateway en TypeScript; Python queda para las capas de datos.
@@ -58,7 +58,8 @@ bi-platform/
 ├── compose.yaml             # infraestructura local (Compose Spec, vía `podman compose`)
 ├── apps/web/                # SvelteKit + Svelte 5
 ├── packages/
-│   ├── contracts/           # puertos y tipos compartidos (SecretProvider, ...) + sus contract tests
+│   ├── contracts/           # puertos y tipos compartidos (SecretProvider, ReportDocument, VisualSpec, ...)
+│   ├── contracts-testing/   # baterías de contract tests de esos puertos (solo dependencia de desarrollo)
 │   ├── config/              # configuración validada (zod) + adaptadores de SecretProvider
 │   ├── database/            # pg + Kysely + Kysely Migrator (migraciones .sql, forward-only)
 │   ├── ingestion/           # dlt (Python, entorno propio)
@@ -73,7 +74,7 @@ bi-platform/
 │   ├── metadata/            # OpenMetadata (ingesta programada desde 2, 3, 4, 7, 9)
 │   └── ai-copilot/          # Servidor MCP propio + LLMProvider (Claude por defecto)
 ├── tools/platform-cli/      # pnpm bootstrap/preflight/dev/stack:*/reset:local — herramienta de desarrollo, no una capa
-├── infra/                   # OpenTofu, por proveedor; infra/local/ = config de la infraestructura del compose
+├── infra/                   # OpenTofu, por proveedor; infra/local/ = config de la infraestructura del compose; infra/images/ = imágenes propias + Caddyfile
 └── docs/                    # Esta documentación
 ```
 

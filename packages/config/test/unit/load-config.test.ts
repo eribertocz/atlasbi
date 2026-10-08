@@ -35,7 +35,13 @@ describe('loadConfig', () => {
       environment: 'development',
       secretProvider: 'env',
       telemetry: { otlpEndpoint: 'http://127.0.0.1:4318' },
-      gateway: { port: 4100, publicUrl: 'http://127.0.0.1:4100' },
+      gateway: {
+        host: '127.0.0.1',
+        port: 4100,
+        publicUrl: 'http://127.0.0.1:3000',
+        trustedProxies: [],
+      },
+      web: { port: 3000 },
       semantic: { enabled: true, url: 'http://127.0.0.1:4000' },
       lakehouse: {
         catalogType: 'postgres',
@@ -85,7 +91,12 @@ describe('gateway configuration (Config Schema v6)', () => {
       ATLASBI_SEMANTIC_URL: 'http://127.0.0.1:4001',
     });
 
-    expect(config.gateway).toEqual({ port: 4200, publicUrl: 'https://bi.example.com' });
+    expect(config.gateway).toEqual({
+      host: '127.0.0.1',
+      port: 4200,
+      publicUrl: 'https://bi.example.com',
+      trustedProxies: [],
+    });
     expect(config.semantic).toEqual({ enabled: true, url: 'http://127.0.0.1:4001' });
     // The portable tier keeps its data where no container reaches: no semantic layer there.
     expect(
@@ -117,6 +128,35 @@ describe('gateway configuration (Config Schema v6)', () => {
     expect(
       gatewaySecretKeys(loadLakehouseConfig({ ATLASBI_LAKEHOUSE_CATALOG_TYPE: 'sqlite' })),
     ).toEqual(['database.url', 'auth.secret']);
+  });
+});
+
+describe('gateway behind a proxy (Config Schema v7)', () => {
+  it('takes the listen address and exactly the trusted proxies, as IPs', () => {
+    const config = loadConfig({
+      ...validEnvironment,
+      ATLASBI_GATEWAY_HOST: '0.0.0.0',
+      ATLASBI_TRUSTED_PROXIES: ' 10.89.7.2 , fd00::2 ',
+      ATLASBI_WEB_PORT: '3100',
+    });
+
+    expect(config.gateway).toMatchObject({
+      host: '0.0.0.0',
+      trustedProxies: ['10.89.7.2', 'fd00::2'],
+    });
+    expect(config.web).toEqual({ port: 3100 });
+  });
+
+  it('refuses anything that is not an IP: a host name, a CIDR, `true`', () => {
+    for (const [name, value] of [
+      ['ATLASBI_TRUSTED_PROXIES', 'proxy.internal'],
+      ['ATLASBI_TRUSTED_PROXIES', '10.0.0.0/8'],
+      ['ATLASBI_TRUSTED_PROXIES', 'true'],
+      ['ATLASBI_GATEWAY_HOST', 'localhost'],
+    ] as const) {
+      const error = captureError(() => loadConfig({ ...validEnvironment, [name]: value }));
+      expect(error, `${name}=${value}`).toBeInstanceOf(ConfigurationError);
+    }
   });
 });
 

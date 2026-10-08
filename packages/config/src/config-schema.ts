@@ -4,7 +4,7 @@ import { LAKEHOUSE_CATALOG_TYPES, type LakehouseCatalogType } from '@atlasbi/con
 import { z } from 'zod';
 
 /** Config Schema contract version (docs/21 §2) — bump when a variable changes meaning or is removed. */
-export const CONFIG_SCHEMA_VERSION = 6;
+export const CONFIG_SCHEMA_VERSION = 7;
 
 const DUCKDB_CATALOG_REJECTION =
   'a DuckDB-file catalog allows a single client only and is not supported — use postgres (default) or sqlite (docs/01 §6.6)';
@@ -100,19 +100,43 @@ const originUrl = z
     message: 'must be scheme://host[:port] only — no path, query or fragment',
   });
 
+const port = z.coerce.number().int().min(1).max(65535);
+const ipAddress = z.union([z.ipv4(), z.ipv6()]);
+
 /** Wire format: the non-secret environment variables a platform process reads. */
 export const environmentSchema = z
   .object({
     ATLASBI_ENV: z.enum(['development', 'test', 'production']).default('development'),
     ATLASBI_SECRET_PROVIDER: z.enum(['env']).default('env'),
     OTEL_EXPORTER_OTLP_ENDPOINT: z.url(),
-    /** The API gateway listens on 127.0.0.1 only (build step 5, decision G9). */
-    ATLASBI_GATEWAY_PORT: z.coerce.number().int().min(1).max(65535).default(4100),
+    ATLASBI_GATEWAY_PORT: port.default(4100),
     /**
-     * The address the browser uses: the only trusted Origin of the identity layer, and https there
-     * makes the session cookie Secure. In build step 6 it becomes the single domain (docs/19 §10).
+     * Where the gateway listens. 127.0.0.1 for `pnpm dev` (decision G9); its container listens on its
+     * internal network, never published (build step 6).
      */
-    ATLASBI_PUBLIC_URL: originUrl.default('http://127.0.0.1:4100'),
+    ATLASBI_GATEWAY_HOST: ipAddress.default('127.0.0.1'),
+    /**
+     * The proxies the gateway trusts for the client's address (X-Forwarded-For), comma-separated
+     * IPs — exactly the platform's own proxy, never `true`: anyone else could spoof the per-IP
+     * sign-in limit (build step 6, Phase 0). Empty: the connection's address is the client's.
+     */
+    ATLASBI_TRUSTED_PROXIES: z
+      .string()
+      .default('')
+      .transform((value) =>
+        value
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean),
+      )
+      .pipe(z.array(ipAddress)),
+    /** The web app's development server (`pnpm dev`), which proxies /api and /auth to the gateway. */
+    ATLASBI_WEB_PORT: port.default(3000),
+    /**
+     * The address the browser uses — the web app's origin, which proxies the gateway: the only
+     * trusted Origin of the identity layer, and https there makes the session cookie Secure.
+     */
+    ATLASBI_PUBLIC_URL: originUrl.default('http://127.0.0.1:3000'),
     /** Cube's REST API as the gateway reaches it. Follows ATLASBI_CUBE_PORT (compose). */
     ATLASBI_SEMANTIC_URL: originUrl.default('http://127.0.0.1:4000'),
     ...lakehouseVariables,
@@ -156,9 +180,15 @@ export interface PlatformConfig {
     otlpEndpoint: string;
   };
   gateway: {
+    host: string;
     port: number;
     /** An origin: scheme, host and port, without a trailing slash. */
     publicUrl: string;
+    /** IPs whose X-Forwarded-For the gateway believes; empty when nothing sits in front of it. */
+    trustedProxies: string[];
+  };
+  web: {
+    port: number;
   };
   semantic: {
     /** Whether the semantic layer runs in this deployment (see {@link semanticLayerRuns}). */
@@ -187,8 +217,13 @@ export function toPlatformConfig(environment: Environment, baseDirectory: string
       otlpEndpoint: environment.OTEL_EXPORTER_OTLP_ENDPOINT,
     },
     gateway: {
+      host: environment.ATLASBI_GATEWAY_HOST,
       port: environment.ATLASBI_GATEWAY_PORT,
       publicUrl: new URL(environment.ATLASBI_PUBLIC_URL).origin,
+      trustedProxies: environment.ATLASBI_TRUSTED_PROXIES,
+    },
+    web: {
+      port: environment.ATLASBI_WEB_PORT,
     },
     semantic: {
       enabled: semanticLayerRuns(lakehouse),

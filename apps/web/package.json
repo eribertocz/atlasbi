@@ -1,0 +1,38 @@
+{
+  "name": "@atlasbi/web",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "test": "vitest run --dir test/unit"
+  },
+  "devDependencies": {
+    "@atlasbi/api-gateway": "workspace:*",
+    "@atlasbi/config": "workspace:*",
+    "@atlasbi/contracts": "workspace:*",
+    "@internationalized/date": "catalog:",
+    "@lucide/svelte": "catalog:",
+    "@sveltejs/adapter-static": "catalog:",
+    "@sveltejs/kit": "catalog:",
+    "@sveltejs/vite-plugin-svelte": "catalog:",
+    "@tailwindcss/vite": "catalog:",
+    "@trpc/client": "catalog:",
+    "@types/node": "catalog:",
+    "bits-ui": "catalog:",
+    "clsx": "catalog:",
+    "echarts": "catalog:",
+    "svelte": "catalog:",
+    "svelte-check": "catalog:",
+    "tailwind-merge": "catalog:",
+    "tailwind-variants": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  }
+}

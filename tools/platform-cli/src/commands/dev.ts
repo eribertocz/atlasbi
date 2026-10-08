@@ -1,4 +1,5 @@
 import { mkdir } from 'node:fs/promises';
+import path from 'node:path';
 
 import {
   assertSecretsAvailable,
@@ -15,8 +16,24 @@ import {
 import type { SecretProvider } from '@atlasbi/contracts';
 
 import { checkComposeProvider } from '../checks/container-checks.ts';
-import { composeUp, ensureEngineRunning } from '../container-runtime/podman.ts';
-import { GATEWAY_SCRIPT, gatewayReadinessStep } from '../health/gateway-probes.ts';
+import {
+  devPortScope,
+  infrastructurePortScope,
+  stackPortScope,
+} from '../checks/environment-checks.ts';
+import {
+  buildImage,
+  composeUp,
+  ensureEngineRunning,
+  execInService,
+} from '../container-runtime/podman.ts';
+import {
+  GATEWAY_CONTAINER_PROBE,
+  GATEWAY_SCRIPT,
+  GATEWAY_STEP,
+  gatewayContainerReadinessStep,
+  gatewayReadinessStep,
+} from '../health/gateway-probes.ts';
 import { identityReadinessStep } from '../health/identity-probes.ts';
 import { lakehouseReadinessSteps, type LakehouseStartMode } from '../health/lakehouse-probes.ts';
 import { localStackReadinessSteps, MIGRATIONS_STEP } from '../health/local-stack-probes.ts';
@@ -27,16 +44,23 @@ import {
 import { runReadinessChain } from '../health/readiness-chain.ts';
 import { CUBE_STEP, semanticReadinessSteps } from '../health/semantic-probes.ts';
 import { transformBootstrapSteps } from '../health/transform-probes.ts';
+import { WEB_DEV_SERVER, webReadinessStep } from '../health/web-probes.ts';
 import { resolveLakehouseSettings } from '../lakehouse-environment.ts';
 import {
   loadEnvFile,
   LOCAL_TIER_SERVICES,
+  PLATFORM_IMAGES,
+  PLATFORM_SERVICES,
   PORTABLE_TIER_SERVICES,
   readLocalInfraPorts,
   type LocalInfraPorts,
 } from '../local-environment.ts';
 import { printChecks, printReadiness } from '../output/console-report.ts';
-import { startWatchedProcess, type WatchedProcess } from '../system/watched-process.ts';
+import {
+  startDevServer,
+  startWatchedProcess,
+  type WatchedProcess,
+} from '../system/watched-process.ts';
 import { WORKSPACE_ROOT } from '../workspace-paths.ts';
 import { PreflightFailedError, runPreflight } from './preflight.ts';
 
@@ -47,24 +71,36 @@ export class StackNotReadyError extends Error {
   }
 }
 
+/**
+ * Where the platform's own services run (docs/19 §2): not at all (`bootstrap`), as local processes
+ * with hot reload (`pnpm dev`), or as containers from their images (`pnpm stack:up`).
+ */
+export type PlatformServicesMode = 'none' | 'processes' | 'containers';
+
 export interface StartedStack {
-  /** The API gateway, when it was asked for and became ready. */
-  gateway: WatchedProcess | undefined;
+  /** The services run as local processes, once ready, each with the label of its output. */
+  processes: readonly { label: string; process: WatchedProcess }[];
 }
 
 /**
  * Preflight → configuration (fail fast) → containers → migrations → object storage → lakehouse →
- * Cube → API gateway → readiness (docs/19 §3). Only `bootstrap` installs extensions (the host's
- * and Cube's), sets up the object storage's bucket and keys, provisions the lakehouse with its
- * reader role, and prepares the transform environment (uv) and SQLMesh's state database; `dev`
+ * Cube → API gateway → Web → readiness (docs/19 §3, §9). Only `bootstrap` installs extensions (the
+ * host's and Cube's), sets up the object storage's bucket and keys, provisions the lakehouse with
+ * its reader role, and prepares the transform environment (uv) and SQLMesh's state database; `dev`
  * only verifies. The portable tier (sqlite catalog) starts neither the object storage nor Cube.
- * The API gateway runs as a local process (`withGateway`, `pnpm dev` only); Web joins in step 6.
  */
 export async function startLocalStack(
   mode: LakehouseStartMode = 'dev',
-  options: { withGateway?: boolean } = {},
+  options: { platform?: PlatformServicesMode } = {},
 ): Promise<StartedStack> {
-  await runPreflight();
+  const platform = options.platform ?? 'none';
+  await runPreflight(
+    platform === 'processes'
+      ? devPortScope()
+      : platform === 'containers'
+        ? stackPortScope()
+        : infrastructurePortScope(),
+  );
   loadEnvFile();
 
   const config = loadConfig(process.env, { baseDirectory: WORKSPACE_ROOT });
@@ -95,19 +131,46 @@ export async function startLocalStack(
     throw new PreflightFailedError();
   }
 
+  if (platform === 'containers') {
+    console.log('\nBuilding the platform images...');
+    for (const service of PLATFORM_SERVICES) {
+      await buildImage(PLATFORM_IMAGES[service]);
+    }
+  }
+
   console.log('\nStarting containers...');
   // A bind mount of a missing folder fails; bootstrap fills this one before Cube reads it.
   await mkdir(config.lakehouse.extensionDirectory, { recursive: true });
-  await composeUp(postgresTier ? LOCAL_TIER_SERVICES : PORTABLE_TIER_SERVICES);
+  await composeUp([
+    ...(postgresTier ? LOCAL_TIER_SERVICES : PORTABLE_TIER_SERVICES),
+    ...(platform === 'containers' ? PLATFORM_SERVICES : []),
+  ]);
 
-  const gateway = options.withGateway
-    ? gatewayReadinessStep({
-        port: config.gateway.port,
-        // docs/19 §9: Postgres → migrations → Cube → API Gateway.
-        dependsOn: [MIGRATIONS_STEP, ...(postgresTier ? [CUBE_STEP] : [])],
-        start: () => startWatchedProcess(GATEWAY_SCRIPT, { cwd: WORKSPACE_ROOT }),
-      })
-    : undefined;
+  // docs/19 §9: Postgres → migrations → Cube → API Gateway → Web.
+  const gatewayDependsOn = [MIGRATIONS_STEP, ...(postgresTier ? [CUBE_STEP] : [])];
+  const gateway =
+    platform === 'processes'
+      ? gatewayReadinessStep({
+          port: config.gateway.port,
+          dependsOn: gatewayDependsOn,
+          start: () => startWatchedProcess(GATEWAY_SCRIPT, { cwd: WORKSPACE_ROOT }),
+        })
+      : undefined;
+  const web =
+    platform === 'none'
+      ? undefined
+      : webReadinessStep({
+          port: config.web.port,
+          dependsOn: [GATEWAY_STEP],
+          ...(platform === 'processes'
+            ? {
+                start: () =>
+                  startDevServer(WEB_DEV_SERVER.script, ['dev'], {
+                    cwd: path.join(WORKSPACE_ROOT, WEB_DEV_SERVER.cwd),
+                  }),
+              }
+            : {}),
+        });
 
   const report = await runReadinessChain([
     ...localStackReadinessSteps(databaseUrl, ports),
@@ -146,46 +209,61 @@ export async function startLocalStack(
         })
       : []),
     ...(gateway === undefined ? [] : [gateway.step]),
+    ...(platform === 'containers'
+      ? [
+          gatewayContainerReadinessStep({
+            dependsOn: gatewayDependsOn,
+            isReady: async () =>
+              (await execInService('api-gateway', GATEWAY_CONTAINER_PROBE)).exitCode === 0,
+          }),
+        ]
+      : []),
+    ...(web === undefined ? [] : [web.step]),
   ]);
+  const processes = [
+    { label: 'api-gateway │', process: gateway?.started() },
+    { label: 'web │', process: web?.started() },
+  ].flatMap(({ label, process: service }) =>
+    service === undefined ? [] : [{ label, process: service }],
+  );
   printReadiness(report);
   if (!report.ready) {
-    await gateway?.started()?.stop();
+    await Promise.all(processes.map(({ process: service }) => service.stop()));
     throw new StackNotReadyError();
   }
-  return { gateway: gateway?.started() };
+  return { processes };
 }
 
-export class GatewayStoppedError extends Error {
-  constructor() {
-    super('The API gateway stopped on its own — its output above says why.');
-    this.name = 'GatewayStoppedError';
+export class ServiceStoppedError extends Error {
+  constructor(label: string) {
+    super(`${label.replace(/ │$/, '')} stopped on its own — its output above says why.`);
+    this.name = 'ServiceStoppedError';
   }
 }
 
 /**
- * The infrastructure, then the API gateway with hot reload, in the foreground: its output follows
- * the summary until Ctrl+C. The infrastructure keeps running after it.
+ * The infrastructure, then the API gateway and the web app with hot reload, in the foreground:
+ * their output follows the summary until Ctrl+C. The infrastructure keeps running after it.
  */
 export async function runDev(): Promise<void> {
-  const { gateway } = await startLocalStack('dev', { withGateway: true });
-  if (gateway === undefined) {
-    return;
-  }
+  const { processes } = await startLocalStack('dev', { platform: 'processes' });
   console.log(
-    '\nThe API gateway reloads on every change. Ctrl+C stops it; the infrastructure keeps running in the background (`pnpm stack:down` stops it).\n',
+    '\nThe API gateway and the web app reload on every change. Ctrl+C stops them; the infrastructure keeps running in the background (`pnpm stack:down` stops it).\n',
   );
-  gateway.forwardOutput('api-gateway │');
+  for (const { label, process: service } of processes) {
+    service.forwardOutput(label);
+  }
   const outcome = await Promise.race([
     new Promise<'interrupted'>((resolve) => {
       for (const signal of ['SIGINT', 'SIGTERM'] as const) {
         process.once(signal, () => resolve('interrupted'));
       }
     }),
-    gateway.exited.then(() => 'exited' as const),
+    ...processes.map(({ label, process: service }) => service.exited.then(() => label)),
   ]);
-  await gateway.stop();
-  if (outcome === 'exited') {
-    throw new GatewayStoppedError();
+  await Promise.all(processes.map(({ process: service }) => service.stop()));
+  if (outcome !== 'interrupted') {
+    throw new ServiceStoppedError(outcome);
   }
 }
 

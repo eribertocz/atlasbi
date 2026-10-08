@@ -289,7 +289,7 @@ La migración se probó antes sobre el escenario que deja `pnpm seed`: no quedan
 
 **Estado (Paso 4, `0.4.0`):**
 - **Hechos:** 1, 2, 3 y 5. El login y el logout se verifican por la API del servidor.
-- **El 4 llega con la API Gateway (Paso 5),** y el login con pantalla, con el frontend (Paso 6).
+- **El 4 llega con la API Gateway (Paso 5),** y el login con pantalla, con el frontend (Paso 6). *(Hecho en el Paso 6: la pantalla de inicio de sesión de `apps/web`, verificada en un navegador real.)*
 - **`pnpm seed`** deja el escenario de la demo de aceptación (`16-mvp-definicion-terminado.md` §4) y lo prueba iniciando sesión con cada usuario.
 
 1. `pnpm add better-auth` dentro de `packages/auth`.

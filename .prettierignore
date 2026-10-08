@@ -8,3 +8,5 @@ coverage/
 # Architecture docs are hand-written prose; formatting them would rewrite tables and history.
 docs/
 CLAUDE.md
+**/.svelte-kit/
+apps/web/build/

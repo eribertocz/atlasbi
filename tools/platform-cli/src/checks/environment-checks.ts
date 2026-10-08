@@ -4,7 +4,8 @@ import { ComposeProviderNotFoundError } from '../container-runtime/compose-provi
 import { runningServices } from '../container-runtime/podman.ts';
 import {
   hasEnvFile,
-  LOCAL_PROCESSES,
+  localProcessPorts,
+  PLATFORM_SERVICES,
   portsByService,
   stackServices,
   type LocalInfraPorts,
@@ -18,20 +19,43 @@ export function checkEnvFile(): CheckResult {
     : { name: '.env', status: 'warn', detail: 'not created yet — `pnpm bootstrap` creates it' };
 }
 
+/** What a command starts: compose services, and platform services run as local processes. */
+export interface PortScope {
+  /** Their ports are no conflict while this project's own container of that service runs. */
+  containers: readonly string[];
+  /** Their ports must be free, whatever holds them — the stack's own containers included. */
+  processes: readonly string[];
+}
+
+/** What `pnpm dev` starts: the tier's infrastructure, and the platform's services as processes. */
+export function devPortScope(): PortScope {
+  return { containers: stackServices(), processes: PLATFORM_SERVICES };
+}
+
+/** What `pnpm bootstrap` starts: the tier's infrastructure only. */
+export function infrastructurePortScope(): PortScope {
+  return { containers: stackServices(), processes: [] };
+}
+
+/** What `pnpm stack:up` starts: everything in containers. */
+export function stackPortScope(): PortScope {
+  return { containers: [...stackServices(), ...PLATFORM_SERVICES], processes: [] };
+}
+
 /**
- * Only the ports of the services this tier starts, and of the local processes `pnpm dev` runs;
- * ports already held by this project's own running containers are not conflicts. A port of a
- * local process in use usually means `pnpm dev` is running already.
+ * Only the ports of what this command starts. A port held by this project's running container of
+ * the same service is no conflict; a local process's port in use usually means `pnpm dev` — or
+ * the containerized stack — is running already.
  */
 export async function checkPorts(
   ports: LocalInfraPorts,
-  services: readonly string[] = [...stackServices(), ...LOCAL_PROCESSES],
+  scope: PortScope = devPortScope(),
 ): Promise<CheckResult> {
   const running = await runningServicesOrNone();
   const conflicts: string[] = [];
   const available: number[] = [];
   const heldByStack: number[] = [];
-  for (const [service, servicePorts] of Object.entries(portsByService(ports, services))) {
+  for (const [service, servicePorts] of Object.entries(portsByService(ports, scope.containers))) {
     if (running.has(service)) {
       heldByStack.push(...servicePorts);
       continue;
@@ -44,13 +68,25 @@ export async function checkPorts(
       }
     }
   }
+  const processPorts = localProcessPorts(ports);
+  for (const service of scope.processes) {
+    for (const port of processPorts[service] ?? []) {
+      if (await isPortFree(port)) {
+        available.push(port);
+      } else {
+        conflicts.push(
+          `${port} (${service}${running.has(service) ? ' — its container is running' : ''})`,
+        );
+      }
+    }
+  }
   if (conflicts.length > 0) {
     return {
       name: 'Ports',
       status: 'fail',
       detail: `in use by another process: ${conflicts.join(', ')}`,
       remedy:
-        'Stop that process, or change the ATLASBI_*_PORT values in .env (keep ATLASBI_DATABASE_URL in sync).',
+        'Stop that process — `pnpm stack:down` stops the containerized stack — or change the ATLASBI_*_PORT values in .env (keep ATLASBI_DATABASE_URL in sync).',
     };
   }
   const parts = [

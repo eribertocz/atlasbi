@@ -238,6 +238,42 @@ describe('the identity routes (decision G4)', () => {
       );
     });
 
+    it('counts each real client behind the trusted proxy, and a spoofed address from elsewhere as its sender', async () => {
+      const PROXY = '10.89.7.2';
+      await app.close();
+      app = await buildTestGateway(dependencies, { trustedProxies: [PROXY] });
+      // A different account every time: only the per-IP limit can stop these.
+      let account = 0;
+      const attempt = (remoteAddress: string, forwardedFor?: string) =>
+        app.inject({
+          method: 'POST',
+          url: '/auth/sign-in/email',
+          remoteAddress,
+          headers: {
+            ...JSON_FROM_PLATFORM,
+            ...(forwardedFor === undefined ? {} : { 'x-forwarded-for': forwardedFor }),
+          },
+          payload: { email: `person${account++}@example.com`, password: WRONG },
+        });
+
+      // Through the proxy, as the proxy appends the client's address: one budget per client.
+      const first: number[] = [];
+      for (let index = 0; index <= SIGN_IN_LIMITS.perIp.max; index++) {
+        first.push((await attempt(PROXY, '203.0.113.7')).statusCode);
+      }
+      const another = await attempt(PROXY, '198.51.100.9');
+      // Straight to the gateway from another machine, claiming to be a fresh client every time.
+      const spoofed: number[] = [];
+      for (let index = 0; index <= SIGN_IN_LIMITS.perIp.max; index++) {
+        spoofed.push((await attempt('10.89.7.50', `192.0.2.${index}`)).statusCode);
+      }
+
+      expect(first.at(-1)).toBe(429);
+      expect(another.statusCode).toBe(401);
+      expect(spoofed.slice(0, SIGN_IN_LIMITS.perIp.max)).not.toContain(429);
+      expect(spoofed.at(-1)).toBe(429);
+    });
+
     it('keeps the token renewal and the sign-out outside the limits', async () => {
       for (let attempt = 1; attempt <= SIGN_IN_LIMITS.perIp.max + 1; attempt++) {
         await signIn({ email: 'ana@example.com', password: WRONG }, { ip: '10.0.6.6' });

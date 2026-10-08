@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises';
 
-import { expectLakehouseError } from '@atlasbi/contracts/testing';
+import { expectLakehouseError } from '@atlasbi/contracts-testing';
 import { describe, expect, it } from 'vitest';
 
 import {

@@ -11,7 +11,7 @@ import { runTransform } from './commands/transform.ts';
 import { describeFailure } from './lakehouse-environment.ts';
 
 const COMMANDS: Record<string, (args: readonly string[]) => Promise<void>> = {
-  preflight: runPreflight,
+  preflight: () => runPreflight(),
   bootstrap: runBootstrap,
   dev: runDev,
   seed: runSeed,

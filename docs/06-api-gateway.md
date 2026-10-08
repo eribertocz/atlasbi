@@ -38,9 +38,9 @@ Fastify
 **Implementado en el Paso 5 (`0.5.0`), con dos correcciones al diagrama de arriba.** better-auth no se monta como plugin: el gateway expone tres rutas propias y las reenvía al puerto `IdentityHttpHandler` (§6.4). Y los adaptadores hacia Cube no viven acá: el gateway solo conoce `SemanticRuntimePort`, y el adaptador de Cube está en `@atlasbi/semantic` (`21-engineering-standards.md` §3).
 
 ```
-Fastify — escucha solo en 127.0.0.1:4100 (ATLASBI_GATEWAY_PORT); el proxy del Paso 6 da la cara a la red
+Fastify — escucha en ATLASBI_GATEWAY_HOST:ATLASBI_GATEWAY_PORT: 127.0.0.1:4100 bajo pnpm dev; en su contenedor, detrás de Caddy (Paso 6), que da la cara a la red
  ├── /auth/sign-in/email · /auth/sign-out · /auth/token  → IdentityHttpHandler (capa 9, §6.4)
- ├── /api/trpc   → tRPC: session.me · semantic.meta · semantic.query (§7)
+ ├── /api/trpc   → tRPC: session.me · semantic.meta · semantic.query · report.list · report.get (§7)
  ├── /api/v1     → reservado: 404 hasta que exista un consumidor externo real (§4.1)
  ├── /health · /ready (19-operabilidad-runtime.md §9)
  └── OpenTelemetry en el proceso (§6.5)
@@ -182,6 +182,14 @@ En `POST /auth/sign-in/email` corren dos límites, combinados en un solo `preHan
 - Se implementan con `createRateLimit()`, no con dos `rateLimit()`. En `@fastify/rate-limit` 11.2.0, el segundo `rateLimit()` de una misma ruta nunca corre (medido).
 - La IP sale de `request.ip`. Detrás del proxy del Paso 6, `trustProxy` nombra solo ese proxy; si no, el límite por IP se esquiva falseando `X-Forwarded-For`, el patrón de varios *advisories* de Fastify.
 
+**Detrás del proxy (Paso 6): `trustProxy` nombra solo su dirección.** La variable `ATLASBI_TRUSTED_PROXIES` (Config Schema v7) lista IP exactas; vacía, que es el *default*, no confía en nadie y la conexión es el cliente.
+- **Por qué ni `false` ni `true`.** Con `false`, todos los clientes llegan con la IP del proxy y comparten un balde. Con `true`, cualquiera elige su propia IP con `X-Forwarded-For`.
+- **Cómo se fija la dirección.** En `pnpm stack:up` el proxy (Caddy, `19` §10) tiene una dirección fija en la red interna `edge` (10.89.250.10), y esa es la única que recibe el gateway. Caddy escribe `X-Forwarded-For` con la dirección de quien le habló e ignora el valor que mande el cliente.
+- **Verificado en vivo**, con un `X-Forwarded-For` falsificado y distinto en cada intento:
+  - Desde el host, a través del proxy: 429 al agotar los 10 intentos por minuto de la IP real.
+  - Otro cliente real a través del proxy, justo después: 401. Tiene su propio cupo, así que el gateway distingue a los clientes reales detrás del proxy.
+  - Un contenedor que va directo al gateway, salteando el proxy: 401 diez veces y después 429. El header de quien no es el proxy se ignora.
+
 **Trade-off aceptado: el límite por cuenta también bloquea a su dueño.** Después de 5 contraseñas fallidas sobre una cuenta, esa cuenta no puede iniciar sesión durante el resto de la ventana de 15 minutos. Eso vale **aunque quien lo intente sea el dueño legítimo, con la contraseña correcta y desde otra IP**.
 - **Por qué es inherente:** el límite no puede distinguir al dueño del atacante sin verificar la contraseña, y verificarla es justamente lo que el límite frena.
 - **Lo que habilita:** quien conozca el email de alguien puede dejar esa cuenta sin poder iniciar sesión por 15 minutos con 5 intentos, y repetirlo.
@@ -295,11 +303,15 @@ Medido contra `pnpm dev`: 300 llamadas secuenciales por caso, después de un cal
   - Salud y cabeceras.
 - **De integración, por HTTP real:** better-auth sobre una base descartable, el Cube de desarrollo, los spans capturados en memoria, y Ana y Bruno viendo datos distintos en el mismo workspace.
 
-Lo que sigue, en el Paso 6:
+**Construido en el Paso 6 (`0.6.0`):**
 
-1. El frontend consume `AppRouter` con `httpBatchLink` y `methodOverride: 'POST'`.
-2. El token de identidad se guarda solo en memoria y se renueva con `GET /auth/token` antes de que venza.
-3. El gateway se empaqueta como imagen OCI y queda detrás del proxy del dominio único (`19-operabilidad-runtime.md` §10). Ahí `trustProxy` nombra solo ese proxy (§6.3).
+1. **El frontend consume `AppRouter` con `httpLink` y `methodOverride: 'POST'`.** No usa `httpBatchLink`, como decía antes este punto: un lote no deja cancelar una sola consulta y responde más tarde que dos peticiones en paralelo (Fase 0 del Paso 6; `08` §9).
+   - El tipado de punta a punta se verificó: renombrar `report.get` en el gateway rompe el *typecheck* de la web en la página del reporte.
+2. **El token de identidad** vive solo en memoria y se renueva con `GET /auth/token` al 80 % de su vida, y una vez más ante un 401.
+3. **Procedimientos de reportes, de solo lectura:** `report.list` y `report.get`, detrás de `inWorkspace`. Cualquier miembro del workspace los lee; un reporte de otro workspace responde `NOT_FOUND`. Los lee `@atlasbi/reports` (`19` §8).
+4. **La imagen OCI del gateway** (`infra/images/api-gateway.Containerfile`) queda detrás del proxy del origen único (`19` §10), con `trustProxy` limitado a ese proxy (§6.3).
+   - No trae TypeScript, Vite ni Vitest. Lo comprueba `pnpm test:image`, y el build falla si alguno aparece.
+   - Escucha en `ATLASBI_GATEWAY_HOST`: `127.0.0.1` bajo `pnpm dev`, `0.0.0.0` dentro de su contenedor.
 
 ---
 

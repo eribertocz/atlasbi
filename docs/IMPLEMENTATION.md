@@ -15,10 +15,10 @@
 | 5 | IA/copiloto | `packages/ai-copilot` | `LLMProvider` (Claude por defecto) + MCP propio | TypeScript |
 | 6 | API Gateway | `packages/api-gateway` | Fastify + tRPC (BFF, **implementado en el Paso 5**) + OpenAPI 3.x (público, reservado en `/api/v1`) | TypeScript |
 | 7 | Orquestación | `packages/orchestrator` | Apache Airflow | Python |
-| 8 | Frontend | `apps/web` | SvelteKit + Svelte 5 + ECharts + GridStack + shadcn-svelte + Tailwind v4 | TypeScript |
+| 8 | Frontend | `apps/web` | SvelteKit + Svelte 5 + ECharts + GridStack + shadcn-svelte + Tailwind v4 (**modo Viewer implementado en el Paso 6**: SPA, cross-filter, sidebar) | TypeScript |
 | 9 | Auth | `packages/auth` | better-auth + `workspace_membership` propia | TypeScript |
 | 10 | Realtime | `packages/realtime` | ElectricSQL (broadcast) + Postgres (resuelve escritura) | TypeScript |
-| 11 | Infraestructura | `infra/` | OpenTofu + Podman + **Garage** (object storage S3-compatible del nivel "equipo local") + Edge Connector Agent + **OpenTelemetry** (observabilidad transversal) + **OpenBao** (secretos en producción, vía `SecretProvider`) | HCL |
+| 11 | Infraestructura | `infra/` | OpenTofu + Podman + **Garage** (object storage S3-compatible del nivel "equipo local") + **Caddy** (proxy del origen único, desde el Paso 6) + imágenes propias en `infra/images/` + Edge Connector Agent + **OpenTelemetry** (observabilidad transversal) + **OpenBao** (secretos en producción, vía `SecretProvider`) | HCL |
 | 12 | Metadata | `packages/metadata` | OpenMetadata | — |
 
 ---
@@ -107,6 +107,7 @@ Realtime (10) ──sync/broadcast── visual, filter_definition (Postgres)
 - **Pendiente antes del lanzamiento público — auditoría de licencias de las dependencias embebidas** (`21-engineering-standards.md` §11): revisar todas las librerías npm y Python que corren dentro de los procesos de AtlasBI contra la regla de compatibilidad con Apache-2.0 (permisivas sin restricción, copyleft débil caso por caso, GPL/AGPL nunca embebidas). Primer caso conocido: `psycopg2` (LGPL-3.0), que entra por `sqlmesh[postgres]` en `packages/transform`. Tarea aparte; no bloquea los pasos de construcción.
 - ~~Decisión pendiente antes del Paso 3: la pieza S3-compatible local, con `minio/minio` archivado~~ — **resuelta en el Paso 3: Garage**, elegido con la regla 7 frente a versitygw; el nivel "equipo local" guarda sus datos en S3 (`11-infraestructura.md` §4.4).
 - **Hueco conocido de Cube Store 1.7.45, a retomar si aparece antes del Paso 11:** un filtro sobre una medida decimal, con orden, falla cuando lo responde una pre-agregación. Documentado con su test de alerta en `17-self-service-calculations.md` §3.2.2; el Visual Builder es quien puede generar ese patrón.
+- **Versiones del frontend a revisar** (`versions.md`, "Frontend y proxy (Paso 6)"): subir Vite a 8.3.3 cuando pase la edad mínima de publicación, y migrar a SvelteKit 3 cuando tenga algunas semanas de parches.
 - **Nunca confundir una capacidad arquitectónica con la herramienta que la implementa hoy** (Semantic Model ≠ Cube, Matrix Engine ≠ TanStack Table, Visualization Engine ≠ ECharts) — **resuelto en `18-first-class-citizens.md`**, lectura obligatoria antes de tocar código de la Capa 8.
 
 ---

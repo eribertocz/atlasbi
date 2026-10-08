@@ -17,6 +17,7 @@
     "@atlasbi/contracts": "workspace:*"
   },
   "devDependencies": {
+    "@atlasbi/contracts-testing": "workspace:*",
     "@atlasbi/database": "workspace:*",
     "@atlasbi/warehouse": "workspace:*",
     "@types/node": "catalog:",

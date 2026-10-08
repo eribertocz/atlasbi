@@ -13,6 +13,7 @@ import {
 } from '../../src/health/semantic-probes.ts';
 import {
   LOCAL_TIER_SERVICES,
+  PLATFORM_SERVICES,
   PORTABLE_TIER_SERVICES,
   portsByService,
   readLocalInfraPorts,
@@ -96,7 +97,7 @@ describe('stack services per tier', () => {
     const servicesBlock = /^services:\n([\s\S]*?)^\S/m.exec(compose)?.[1] ?? '';
     const services = [...servicesBlock.matchAll(/^ {2}([a-z-]+):$/gm)].map((match) => match[1]);
 
-    expect(services).toEqual([...LOCAL_TIER_SERVICES]);
+    expect(services).toEqual([...LOCAL_TIER_SERVICES, ...PLATFORM_SERVICES]);
     expect(compose).toContain(`image: ${CUBE_IMAGE}\n`);
     expect(compose).toContain(`image: ${CUBE_STORE_IMAGE}\n`);
   });

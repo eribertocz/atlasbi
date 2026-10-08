@@ -349,6 +349,14 @@ with DAG("pipeline_ventas", schedule="@daily") as dag:
 
 **Resultado concreto:** con el tipo generado del paso 4, `'ventas.total_ventas' satisfies Metric` sí falla en la compilación si esa métrica se renombra en el YAML — la promesa original del documento, ahora cierta.
 
+**Corrección, implementado en el Paso 6 (`0.6.0`).** El frontend real difiere de este ejemplo en cinco puntos:
+
+1. **La ruta** es `apps/web/src/routes/workspaces/[workspace]/reports/[report]/+page.svelte` ("reporte", no "dashboard": `19` §8.2).
+2. **El gráfico sale del reporte guardado, no de una consulta escrita en la página.** La página abre el reporte con `report.get`. Cada visual arma su consulta desde su `VisualSpec` y la hace con `semantic.query`, a través del `QueryCoordinator` (`14` §1.3.1), con el cliente de `$lib/api`.
+3. **El wrapper es el adaptador de ECharts** de `$lib/visualization/echarts/`, el único lugar que importa ECharts. Recibe datos de la plataforma, no opciones armadas en la página.
+4. **Sin tipos generados desde `/meta`**, como ya decía la corrección del paso 4. Lo que el compilador verifica de punta a punta es el contrato del BFF (`AppRouter`): renombrar un procedimiento o un campo en el gateway rompe el *typecheck* de la web (`16`, casilla de la Capa 6). Los nombres de miembros los valida el puerto semántico en tiempo de ejecución, contra lo que cada persona puede ver.
+5. **El procedimiento no se llama `getMetric`.** En la lista de archivos del principio, el adaptador está en `packages/semantic` y los procedimientos están en `packages/api-gateway/src/trpc/app-router.ts`.
+
 ---
 
 ## Paso 8 (opcional) — Metadata (Capa 12): de dónde salió este número

@@ -16,6 +16,11 @@ export interface GatewayDependencies extends RouterServices {
 export interface GatewayServerOptions {
   /** The address the browser uses (ATLASBI_PUBLIC_URL), as an origin. */
   publicUrl: string;
+  /**
+   * The proxies whose X-Forwarded-For names the client (ATLASBI_TRUSTED_PROXIES): exactly the
+   * platform's own proxy. Empty — the default — trusts nobody: the connection is the client.
+   */
+  trustedProxies?: readonly string[];
   dependencies: GatewayDependencies;
 }
 
@@ -39,6 +44,11 @@ export async function buildGatewayServer(options: GatewayServerOptions): Promise
     logger: false,
     bodyLimit: BODY_LIMIT,
     return503OnClosing: true,
+    // Never `true`: any client could then pick its own address and dodge the per-IP sign-in limit.
+    trustProxy:
+      options.trustedProxies === undefined || options.trustedProxies.length === 0
+        ? false
+        : [...options.trustedProxies],
     // tRPC carries a batch's procedure names in one path parameter, comma-separated: Fastify's
     // default of 100 characters answers 414 to ten calls of `session.me`.
     routerOptions: { maxParamLength: MAX_BATCH_SIZE * MAX_PROCEDURE_PATH_LENGTH },

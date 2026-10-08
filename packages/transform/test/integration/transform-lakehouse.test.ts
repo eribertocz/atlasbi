@@ -3,7 +3,7 @@ import { rm } from 'node:fs/promises';
 
 import { EnvSecretProvider, SECRET_KEYS } from '@atlasbi/config';
 import { getDataContract, LakehouseError, type LakehouseCatalogType } from '@atlasbi/contracts';
-import { findDataContractViolations } from '@atlasbi/contracts/testing';
+import { findDataContractViolations } from '@atlasbi/contracts-testing';
 import { createThrowawayDatabase, type ThrowawayDatabase } from '@atlasbi/database/testing';
 import {
   createAnalyticalQueryEngine,

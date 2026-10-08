@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { expectLakehouseError } from '@atlasbi/contracts/testing';
+import { expectLakehouseError } from '@atlasbi/contracts-testing';
 import { createThrowawayDatabase } from '@atlasbi/database/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 

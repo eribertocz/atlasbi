@@ -1,6 +1,7 @@
 import eslint from '@eslint/js';
 import prettierConfig from 'eslint-config-prettier';
 import { defineConfig } from 'eslint/config';
+import svelte from 'eslint-plugin-svelte';
 import tseslint from 'typescript-eslint';
 
 const INTERNALS_PATTERN = {
@@ -18,6 +19,10 @@ const DUCKDB_CLIENT = {
   message:
     'DuckDB types never cross the adapter boundary (docs/21 §3.2): use the lakehouse ports from @atlasbi/contracts and @atlasbi/warehouse.',
 };
+const ECHARTS_MESSAGE =
+  'ECharts types never cross the adapter boundary (docs/22): only apps/web/src/lib/visualization/echarts/ may import it.';
+const ECHARTS = { name: 'echarts', message: ECHARTS_MESSAGE };
+const ECHARTS_SUBPATHS = { group: ['echarts/*'], message: ECHARTS_MESSAGE };
 const BETTER_AUTH_MESSAGE =
   'better-auth types never cross the adapter boundary (docs/21 §3.2): use IdentityPort from @atlasbi/contracts and @atlasbi/auth.';
 const BETTER_AUTH = { name: 'better-auth', message: BETTER_AUTH_MESSAGE };
@@ -38,6 +43,8 @@ export default defineConfig(
       '**/dist/**',
       '**/.turbo/**',
       '**/coverage/**',
+      '**/.svelte-kit/**',
+      'apps/web/build/**',
       'docs/**',
     ],
   },
@@ -73,8 +80,8 @@ export default defineConfig(
       'no-restricted-imports': [
         'error',
         {
-          paths: [DUCKDB_CLIENT, BETTER_AUTH, INCUBATING_SEMCONV],
-          patterns: [INTERNALS_PATTERN, BETTER_AUTH_SUBPATHS],
+          paths: [DUCKDB_CLIENT, BETTER_AUTH, INCUBATING_SEMCONV, ECHARTS],
+          patterns: [INTERNALS_PATTERN, BETTER_AUTH_SUBPATHS, ECHARTS_SUBPATHS],
         },
       ],
     },
@@ -117,6 +124,51 @@ export default defineConfig(
           format: null,
         },
         { selector: 'import', format: null },
+      ],
+    },
+  },
+  // Svelte components (apps/web): the same TypeScript rules inside <script lang="ts">.
+  ...svelte.configs.recommended,
+  {
+    files: ['**/*.svelte', '**/*.svelte.ts'],
+    languageOptions: {
+      parserOptions: {
+        parser: tseslint.parser,
+        extraFileExtensions: ['.svelte'],
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      // Types — unused names included — are svelte-check's job; DOM names are not variables
+      // ESLint could resolve.
+      'no-undef': 'off',
+      'no-unused-vars': 'off',
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [DUCKDB_CLIENT, BETTER_AUTH, INCUBATING_SEMCONV, ECHARTS],
+          patterns: [INTERNALS_PATTERN, BETTER_AUTH_SUBPATHS, ECHARTS_SUBPATHS],
+        },
+      ],
+    },
+  },
+  {
+    // Components copied from shadcn-svelte (docs/08 §11.2): `href` arrives as a prop, already
+    // resolved by whoever passes it.
+    files: ['apps/web/src/lib/components/ui/**'],
+    rules: { 'svelte/no-navigation-without-resolve': 'off' },
+  },
+  {
+    // The ECharts adapter — and its tests — are the only code that may see ECharts (docs/22).
+    files: ['apps/web/src/lib/visualization/echarts/**', 'apps/web/test/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [DUCKDB_CLIENT, BETTER_AUTH, INCUBATING_SEMCONV],
+          patterns: [INTERNALS_PATTERN, BETTER_AUTH_SUBPATHS],
+        },
       ],
     },
   },

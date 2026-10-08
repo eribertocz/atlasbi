@@ -1,0 +1,22 @@
+{
+  "name": "@atlasbi/contracts-testing",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --dir test/unit"
+  },
+  "dependencies": {
+    "@atlasbi/contracts": "workspace:*",
+    "vitest": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}

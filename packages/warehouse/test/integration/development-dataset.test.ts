@@ -1,5 +1,5 @@
 import { getDataContract } from '@atlasbi/contracts';
-import { findDataContractViolations } from '@atlasbi/contracts/testing';
+import { findDataContractViolations } from '@atlasbi/contracts-testing';
 import { describe, expect, it } from 'vitest';
 
 import {

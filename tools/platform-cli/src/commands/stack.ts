@@ -2,10 +2,13 @@ import { composeDown, composeLogs } from '../container-runtime/podman.ts';
 import { hasEnvFile, loadEnvFile } from '../local-environment.ts';
 import { startLocalStack } from './dev.ts';
 
-// Until the platform's own services have container images (build step 6), the fully containerized
-// stack is the infrastructure `pnpm dev` starts, without the API gateway it runs as a process.
+/**
+ * Everything in containers (docs/19 §2): the infrastructure and the platform's own images, built
+ * from this checkout — the way an installation runs, without hot reload. It returns once the web
+ * origin answers; the stack keeps running (`pnpm stack:down` stops it).
+ */
 export async function runStackUp(): Promise<void> {
-  await startLocalStack();
+  await startLocalStack('dev', { platform: 'containers' });
 }
 
 export async function runStackDown(): Promise<void> {
