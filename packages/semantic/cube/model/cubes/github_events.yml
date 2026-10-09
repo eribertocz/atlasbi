@@ -1,0 +1,46 @@
+# GitHub repository activity (marts.mart_github_repo_events, build step 7): one row per event of
+# the repositories the platform ingests. Cube only reads marts (docs/04 §7), always fully qualified.
+cubes:
+  - name: github_events
+    sql_table: lake.marts.mart_github_repo_events
+    measures:
+      - name: event_count
+        type: count
+      - name: contributor_count
+        sql: actor
+        type: count_distinct
+      - name: push_count
+        type: count
+        filters:
+          - sql: "{CUBE}.event_type = 'PushEvent'"
+    dimensions:
+      - name: event_id
+        sql: event_id
+        type: string
+        primary_key: true
+      - name: event_type
+        sql: event_type
+        type: string
+      - name: repository
+        sql: repository
+        type: string
+      - name: actor
+        sql: actor
+        type: string
+      - name: created_at
+        sql: created_at
+        type: time
+    # Row-level security on `repository` — the only dimension this cube protects (decision D1, build
+    # step 7): a cube is never protected by two dimensions, because Cube combines the policies of
+    # different groups with OR (docs/09 §6.1) and `repository:all` would lift a region filter in the
+    # same cube. A unit test keeps it so. No grant, no group — and no policy matches: denied.
+    access_policy:
+      - group: 'repository:listed'
+        row_level:
+          filters:
+            - member: repository
+              operator: equals
+              values: '{ securityContext.entitlements.repository }'
+      - group: 'repository:all'
+        row_level:
+          allow_all: true

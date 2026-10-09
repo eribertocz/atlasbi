@@ -4,7 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { probeSemanticLayer } from '../../src/index.ts';
 import { startCubeStack, type CubeStack } from './support/cube-stack.ts';
-import { writeSalesMart } from './support/sales-mart.ts';
+import { writeMarts } from './support/marts.ts';
 
 // What Cube tells clients about any lakehouse failure (cube/lakehouse-connection.cjs).
 const CLIENT_MESSAGE =
@@ -18,7 +18,7 @@ let cube: CubeStack | undefined;
 
 beforeAll(async () => {
   lakehouse = await createTestLakehouse('postgres');
-  await writeSalesMart(lakehouse.settings);
+  await writeMarts(lakehouse.settings);
 });
 
 afterEach(async () => {

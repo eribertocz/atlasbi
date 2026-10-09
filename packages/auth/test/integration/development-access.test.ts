@@ -12,6 +12,7 @@ import {
 import { createAuthDatabase, testSecret } from './support/auth-database.ts';
 
 const PASSWORD = 'a-demo-password-for-tests';
+const REPOSITORIES = ['acme/widgets', 'acme/gadgets'];
 
 describe('the demo access of `pnpm seed` (docs/16 §4, docs/19 §6)', () => {
   let database: ThrowawayDatabase;
@@ -34,7 +35,7 @@ describe('the demo access of `pnpm seed` (docs/16 §4, docs/19 §6)', () => {
   });
 
   it('leaves the acceptance scenario, proven through sign in, identity token and security context', async () => {
-    const seeded = await seedDemoAccess(identity, access, PASSWORD);
+    const seeded = await seedDemoAccess(identity, access, PASSWORD, REPOSITORIES);
 
     expect(seeded).toEqual({
       organizationSlug: 'demo',
@@ -44,26 +45,29 @@ describe('the demo access of `pnpm seed` (docs/16 §4, docs/19 §6)', () => {
           workspace: 'comercial',
           role: 'admin',
           region: { kind: 'all' },
+          repository: { kind: 'all' },
         },
         {
           email: 'ana@example.com',
           workspace: 'finanzas',
           role: 'viewer',
           region: { kind: 'listed', values: ['North'] },
+          repository: { kind: 'listed', values: ['acme/widgets'] },
         },
         {
           email: 'bruno@example.com',
           workspace: 'finanzas',
           role: 'viewer',
           region: { kind: 'listed', values: ['South'] },
+          repository: { kind: 'listed', values: ['acme/gadgets'] },
         },
       ],
     });
   });
 
   it('is idempotent: a second run changes nothing', async () => {
-    const first = await seedDemoAccess(identity, access, PASSWORD);
-    const second = await seedDemoAccess(identity, access, PASSWORD);
+    const first = await seedDemoAccess(identity, access, PASSWORD, REPOSITORIES);
+    const second = await seedDemoAccess(identity, access, PASSWORD, REPOSITORIES);
 
     expect(second).toEqual(first);
   });

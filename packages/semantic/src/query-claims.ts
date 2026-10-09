@@ -2,13 +2,14 @@ import type { SecurityContext } from '@atlasbi/contracts';
 
 /**
  * The dimensions the Cube model protects with access policies (cube/model/cubes/*.yml — a unit
- * test keeps both in step). One today.
+ * test keeps both in step).
  *
- * ⚠ Before adding a second one, read docs/09 §6.1: Cube combines policies of different groups with
- * OR, so one group per dimension would let `region:all` lift every other restriction. The mapping
- * below refuses more than one dimension until it is redesigned.
+ * ⚠ One protected dimension per cube (decision D1, build step 7). Cube combines the policies of
+ * different groups with OR (docs/09 §6.1): in a cube protected by two dimensions, `region:all`
+ * would lift the `repository` filter. Each group below only ever meets the policies of its own
+ * dimension, and a unit test refuses a cube whose policies name two.
  */
-export const PROTECTED_DIMENSIONS: readonly string[] = ['region'];
+export const PROTECTED_DIMENSIONS: readonly string[] = ['region', 'repository'];
 
 /** What Cube receives: its access policies read `groups` and `entitlements`, nothing else. */
 export interface QueryClaims {
@@ -29,11 +30,6 @@ export const READINESS_CLAIMS = { sub: 'platform-readiness', groups: ['readiness
  * workspace role never decides rows (docs/09 §6.1), so it does not travel.
  */
 export function toQueryClaims(context: SecurityContext): QueryClaims {
-  if (PROTECTED_DIMENSIONS.length !== 1) {
-    throw new Error(
-      'More than one protected dimension needs a redesigned mapping first (docs/09 §6.1).',
-    );
-  }
   const groups: string[] = [];
   const entitlements: Record<string, string[]> = {};
   for (const dimension of PROTECTED_DIMENSIONS) {

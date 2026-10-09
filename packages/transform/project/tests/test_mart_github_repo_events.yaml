@@ -1,0 +1,36 @@
+test_mart_github_repo_events_keeps_every_event:
+  model: marts.mart_github_repo_events
+  inputs:
+    staging.stg_github_repo_events:
+      rows:
+        - {
+            event_id: 'acme/widgets#1',
+            event_type: PushEvent,
+            repository: acme/widgets,
+            actor: ana,
+            created_at: '2026-10-01 09:00:00+00:00',
+          }
+        - {
+            event_id: 'acme/gadgets#1',
+            event_type: WatchEvent,
+            repository: acme/gadgets,
+            actor: null,
+            created_at: '2026-10-01 12:00:00+00:00',
+          }
+  outputs:
+    query:
+      rows:
+        - {
+            event_id: 'acme/widgets#1',
+            event_type: PushEvent,
+            repository: acme/widgets,
+            actor: ana,
+            created_at: '2026-10-01 09:00:00+00:00',
+          }
+        - {
+            event_id: 'acme/gadgets#1',
+            event_type: WatchEvent,
+            repository: acme/gadgets,
+            actor: null,
+            created_at: '2026-10-01 12:00:00+00:00',
+          }

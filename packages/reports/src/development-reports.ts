@@ -56,14 +56,85 @@ export const DEMO_REPORT = {
   ],
 } as const satisfies Omit<NewReport, 'workspaceId' | 'createdBy'>;
 
+/**
+ * Build step 7: the activity of the GitHub repositories this machine ingests — two KPIs and three
+ * charts, where a click on an event type or a repository filters the rest. Who sees which
+ * repository is the `repository` grant, as `region` is for sales.
+ */
+export const DEMO_GITHUB_REPORT = {
+  name: 'Actividad en GitHub',
+  pages: [
+    {
+      name: 'Resumen',
+      visuals: [
+        {
+          position: { x: 0, y: 0, width: 4, height: 2 },
+          spec: {
+            version: 1,
+            kind: 'kpi',
+            measures: ['github_events.event_count'],
+            dimensions: [],
+          },
+        },
+        {
+          position: { x: 4, y: 0, width: 8, height: 4 },
+          spec: {
+            version: 1,
+            kind: 'bar',
+            measures: ['github_events.event_count'],
+            dimensions: ['github_events.event_type'],
+            encoding: { category: 'github_events.event_type' },
+          },
+        },
+        {
+          position: { x: 0, y: 2, width: 4, height: 2 },
+          spec: {
+            version: 1,
+            kind: 'kpi',
+            measures: ['github_events.contributor_count'],
+            dimensions: [],
+          },
+        },
+        {
+          position: { x: 0, y: 4, width: 5, height: 4 },
+          spec: {
+            version: 1,
+            kind: 'bar',
+            measures: ['github_events.event_count'],
+            dimensions: ['github_events.repository'],
+            encoding: { category: 'github_events.repository' },
+          },
+        },
+        {
+          position: { x: 5, y: 4, width: 7, height: 4 },
+          spec: {
+            version: 1,
+            kind: 'line',
+            measures: ['github_events.event_count'],
+            dimensions: ['github_events.created_at'],
+            encoding: { category: 'github_events.created_at', granularity: 'day' },
+          },
+        },
+      ],
+    },
+  ],
+} as const satisfies Omit<NewReport, 'workspaceId' | 'createdBy'>;
+
+/** Every demo report, in every demo workspace. */
+export const DEMO_REPORTS: readonly Omit<NewReport, 'workspaceId' | 'createdBy'>[] = [
+  DEMO_REPORT,
+  DEMO_GITHUB_REPORT,
+];
+
 export interface DemoReportRow {
   workspaceId: string;
+  name: string;
   reportId: string;
   created: boolean;
 }
 
 /**
- * Idempotent: creates the demo report where a workspace has none by that name, and leaves an
+ * Idempotent: creates each demo report where a workspace has none by that name, and leaves an
  * existing one as it is — `pnpm reset:local` starts over.
  */
 export async function seedDemoReports(
@@ -72,15 +143,16 @@ export async function seedDemoReports(
 ): Promise<DemoReportRow[]> {
   const rows: DemoReportRow[] = [];
   for (const { workspaceId, createdBy } of targets) {
-    const existing = (await reports.listReports(workspaceId)).find(
-      (report) => report.name === DEMO_REPORT.name,
-    );
-    if (existing !== undefined) {
-      rows.push({ workspaceId, reportId: existing.id, created: false });
-      continue;
+    const listed = await reports.listReports(workspaceId);
+    for (const demo of DEMO_REPORTS) {
+      const existing = listed.find((report) => report.name === demo.name);
+      if (existing !== undefined) {
+        rows.push({ workspaceId, name: demo.name, reportId: existing.id, created: false });
+        continue;
+      }
+      const { reportId } = await reports.createReport({ ...demo, workspaceId, createdBy });
+      rows.push({ workspaceId, name: demo.name, reportId, created: true });
     }
-    const { reportId } = await reports.createReport({ ...DEMO_REPORT, workspaceId, createdBy });
-    rows.push({ workspaceId, reportId, created: true });
   }
   return rows;
 }

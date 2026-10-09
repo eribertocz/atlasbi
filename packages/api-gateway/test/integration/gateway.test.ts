@@ -285,9 +285,9 @@ describe('the API gateway, end to end', () => {
       asAna.report.list.query({ workspaceId: finanzas }),
       asBruno.report.list.query({ workspaceId: finanzas }),
     ]);
-    expect(anaReports.map((report) => report.name)).toEqual(['Ventas']);
+    expect(anaReports.map((report) => report.name)).toEqual(['Actividad en GitHub', 'Ventas']);
     expect(brunoReports).toEqual(anaReports);
-    const reportId = anaReports[0]?.id ?? '';
+    const reportId = anaReports.find((report) => report.name === 'Ventas')?.id ?? '';
     const report = await asAna.report.get.query({ workspaceId: finanzas, reportId });
     expect(await asBruno.report.get.query({ workspaceId: finanzas, reportId })).toEqual(report);
 

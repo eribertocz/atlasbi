@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { probeSemanticLayer } from '../../src/index.ts';
 import { ALL_REGIONS, startCubeStack, type CubeStack } from './support/cube-stack.ts';
-import { withoutTrailingZeros, writeSalesMart } from './support/sales-mart.ts';
+import { withoutTrailingZeros, writeMarts } from './support/marts.ts';
 
 const MART = 'lake.marts.mart_sales_orders';
 const FIRST_HALF = ['2025-01-01', '2025-06-30'];
@@ -17,7 +17,7 @@ let cube: CubeStack;
 
 beforeAll(async () => {
   lakehouse = await createTestLakehouse('postgres');
-  await writeSalesMart(lakehouse.settings);
+  await writeMarts(lakehouse.settings);
   platform = await createAnalyticalQueryEngine(lakehouse.readerSettings);
   cube = await startCubeStack(lakehouse.readerSettings);
   await probeSemanticLayer({ url: cube.restUrl, apiSecret: cube.apiSecret });

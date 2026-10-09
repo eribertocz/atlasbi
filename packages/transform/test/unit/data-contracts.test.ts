@@ -1,7 +1,8 @@
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { type DataContractType, getDataContract } from '@atlasbi/contracts';
+import { getDataContract } from '@atlasbi/contracts';
+import { lakehouseSqlType } from '@atlasbi/warehouse/testing';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -9,24 +10,6 @@ import {
   PRODUCED_DATA_CONTRACTS,
   SQLMESH_PROJECT_DIRECTORY,
 } from '../../src/index.ts';
-
-/** How this project's SQL (DuckDB) spells a contract type — the contract itself never says it. */
-function duckDbType(type: DataContractType): string {
-  switch (type.kind) {
-    case 'int32':
-      return 'INTEGER';
-    case 'int64':
-      return 'BIGINT';
-    case 'varchar':
-      return 'VARCHAR';
-    case 'date':
-      return 'DATE';
-    case 'decimal':
-      return `DECIMAL(${type.precision}, ${type.scale})`;
-    default:
-      throw new Error(`No DuckDB spelling for ${type.kind} yet: add it with its first contract.`);
-  }
-}
 
 /** The columns `external_models.yaml` declares for one external model, as `name → type`. */
 function declaredColumns(yaml: string, model: string): Record<string, string> {
@@ -85,7 +68,7 @@ describe('data contracts in the SQLMesh project', () => {
 
       expect(declaredColumns(yaml, model), `${id}@${major} as ${model}`).toEqual(
         Object.fromEntries(
-          contract.columns.map((column) => [column.name, duckDbType(column.type)]),
+          contract.columns.map((column) => [column.name, lakehouseSqlType(column.type)]),
         ),
       );
     }

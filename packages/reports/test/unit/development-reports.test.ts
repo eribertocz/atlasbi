@@ -1,10 +1,10 @@
 import { parseVisualSpec, visualPositionIssues } from '@atlasbi/contracts';
 import { describe, expect, it } from 'vitest';
 
-import { DEMO_REPORT } from '../../src/index.ts';
+import { DEMO_REPORTS } from '../../src/index.ts';
 
-describe('the demo report', () => {
-  const visuals = DEMO_REPORT.pages.flatMap((page) => page.visuals);
+describe.each(DEMO_REPORTS)('the demo report "$name"', (report) => {
+  const visuals = report.pages.flatMap((page) => page.visuals);
 
   it('stores only the platform’s visual grammar, exactly as the grammar parses it', () => {
     for (const { spec } of visuals) {

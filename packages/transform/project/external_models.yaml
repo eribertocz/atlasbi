@@ -1,5 +1,6 @@
-# Sources this project reads that SQLMesh does not manage (docs/02 §6.1.1). Build step 2 reads only
-# the development dataset of step 1 (`pnpm seed`); external registered sources arrive in step 7.
+# Sources this project reads that SQLMesh does not manage (docs/02 §6.1.1), each exactly as its data
+# contract says (docs/21 §2.4; a unit test compares them): the development dataset of build step 1
+# (`pnpm seed`) and, from build step 7, the landings that ingestion publishes.
 - name: lake.fixture.sales_orders
   description: Deterministic development dataset (packages/warehouse, DEVELOPMENT_DATASET).
   columns:
@@ -11,3 +12,13 @@
     quantity: INTEGER
     unit_price: DECIMAL(10, 2)
     amount: DECIMAL(12, 2)
+- name: lake.landing_github.repo_events
+  description: GitHub repository events, one per event, completed loads only (landing.github_repo_events 1.0, packages/ingestion).
+  columns:
+    event_id: VARCHAR
+    event_type: VARCHAR
+    repository: VARCHAR
+    actor: VARCHAR
+    created_at: TIMESTAMPTZ
+    _load_id: VARCHAR
+    _loaded_at: TIMESTAMPTZ

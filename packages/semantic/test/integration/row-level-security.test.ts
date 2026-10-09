@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { READINESS_CLAIMS, toQueryClaims } from '../../src/index.ts';
 import { ALL_REGIONS, forgeToken, startCubeStack, type CubeStack } from './support/cube-stack.ts';
-import { withoutTrailingZeros, writeSalesMart } from './support/sales-mart.ts';
+import { withoutTrailingZeros, writeMarts } from './support/marts.ts';
 
 const MART = 'lake.marts.mart_sales_orders';
 const ORG = '11111111-1111-4111-8111-111111111111';
@@ -16,28 +16,35 @@ const ANA = '44444444-4444-4444-8444-444444444441';
 const BRUNO = '44444444-4444-4444-8444-444444444442';
 
 // The scenario of the MVP acceptance script (docs/16 §4), as the security contexts that
-// @atlasbi/auth resolves for it: Ana is admin in Comercial with every region, and viewer in
-// Finanzas with North; Bruno is viewer in Finanzas with South.
+// @atlasbi/auth resolves for it: Ana is admin in Comercial with every region and repository, and
+// viewer in Finanzas with North and one repository; Bruno is viewer in Finanzas with South and the
+// other repository.
 const anaComercial: SecurityContext = {
   userId: ANA,
   organizationId: ORG,
   workspaceId: COMERCIAL,
   workspaceRole: 'admin',
-  entitlements: { region: { kind: 'all' } },
+  entitlements: { region: { kind: 'all' }, repository: { kind: 'all' } },
 };
 const anaFinanzas: SecurityContext = {
   userId: ANA,
   organizationId: ORG,
   workspaceId: FINANZAS,
   workspaceRole: 'viewer',
-  entitlements: { region: { kind: 'listed', values: ['North'] } },
+  entitlements: {
+    region: { kind: 'listed', values: ['North'] },
+    repository: { kind: 'listed', values: ['acme/widgets'] },
+  },
 };
 const brunoFinanzas: SecurityContext = {
   userId: BRUNO,
   organizationId: ORG,
   workspaceId: FINANZAS,
   workspaceRole: 'viewer',
-  entitlements: { region: { kind: 'listed', values: ['South'] } },
+  entitlements: {
+    region: { kind: 'listed', values: ['South'] },
+    repository: { kind: 'listed', values: ['acme/gadgets'] },
+  },
 };
 const noGrant: SecurityContext = { ...brunoFinanzas, entitlements: {} };
 
@@ -56,7 +63,7 @@ const slice = (region: string) => ({ [region]: expected.get(region) });
 
 beforeAll(async () => {
   lakehouse = await createTestLakehouse('postgres');
-  await writeSalesMart(lakehouse.settings);
+  await writeMarts(lakehouse.settings);
   platform = await createAnalyticalQueryEngine(lakehouse.readerSettings);
   const rows = await platform.query(`SELECT region, sum(amount) FROM ${MART} GROUP BY region`);
   // VARCHAR and DECIMAL both come back as strings from the read port (docs/01 §7).
@@ -153,6 +160,90 @@ describe('row-level security over REST (build step 4)', () => {
       const response = await cube.load(BY_REGION, token);
       expect(response.data, token).toBeUndefined();
       expect(response.error, token).toBeDefined();
+    }
+  });
+});
+
+describe('two protected dimensions, one per cube (decision D1, build step 7)', () => {
+  const BY_REPOSITORY = {
+    measures: ['github_events.event_count'],
+    dimensions: ['github_events.repository'],
+    order: { 'github_events.repository': 'asc' },
+  };
+
+  async function repositories(context: SecurityContext): Promise<Record<string, string>> {
+    const response = await cube.load(BY_REPOSITORY, toQueryClaims(context));
+    if (response.error !== undefined || response.data === undefined) {
+      throw new Error(`denied: ${response.error ?? 'no data'}`);
+    }
+    return Object.fromEntries(
+      response.data.map((row) => [
+        row['github_events.repository'],
+        row['github_events.event_count'],
+      ]),
+    ) as Record<string, string>;
+  }
+
+  it('slices each cube by its own dimension, for the same person', async () => {
+    await expect(repositories(anaComercial)).resolves.toEqual({
+      'acme/gadgets': '2',
+      'acme/widgets': '3',
+    });
+    await expect(repositories(anaFinanzas)).resolves.toEqual({ 'acme/widgets': '3' });
+    await expect(repositories(brunoFinanzas)).resolves.toEqual({ 'acme/gadgets': '2' });
+    await expect(regions(anaFinanzas)).resolves.toEqual(slice('North'));
+    await expect(regions(brunoFinanzas)).resolves.toEqual(slice('South'));
+  });
+
+  it("never lets one dimension's 'all' lift the other's slice — nor stand in for a missing grant", async () => {
+    const allRepositories: SecurityContext = {
+      ...anaFinanzas,
+      entitlements: { ...anaFinanzas.entitlements, repository: { kind: 'all' } },
+    };
+    const allRegionsOnly: SecurityContext = {
+      ...anaFinanzas,
+      entitlements: { region: { kind: 'all' } },
+    };
+
+    await expect(regions(allRepositories)).resolves.toEqual(slice('North'));
+    await expect(repositories(allRepositories)).resolves.toEqual({
+      'acme/gadgets': '2',
+      'acme/widgets': '3',
+    });
+    await expect(regions(allRegionsOnly)).resolves.toEqual(Object.fromEntries(expected));
+    await expect(repositories(allRegionsOnly)).rejects.toThrow(/denied/);
+  });
+
+  it('counts by day over the event instants, and through the SQL API with the same slice', async () => {
+    const daily = await cube.load(
+      {
+        measures: ['github_events.event_count', 'github_events.contributor_count'],
+        timeDimensions: [{ dimension: 'github_events.created_at', granularity: 'day' }],
+        order: { 'github_events.created_at': 'asc' },
+      },
+      toQueryClaims(anaComercial),
+    );
+    expect(
+      daily.data?.map((row) => [
+        row['github_events.created_at.day']?.slice(0, 10),
+        row['github_events.event_count'],
+        row['github_events.contributor_count'],
+      ]),
+    ).toEqual([
+      ['2026-10-01', '3', '2'],
+      ['2026-10-02', '1', '1'],
+      ['2026-10-03', '1', '1'],
+    ]);
+
+    const client = cube.sqlClient(cube.token(toQueryClaims(brunoFinanzas)));
+    await client.connect();
+    try {
+      const { rows } = await client.query<{ repository: string }>(
+        'SELECT repository, MEASURE(event_count) AS events FROM github_events GROUP BY 1',
+      );
+      expect(rows).toEqual([{ repository: 'acme/gadgets', events: '2' }]);
+    } finally {
+      await client.end();
     }
   });
 });

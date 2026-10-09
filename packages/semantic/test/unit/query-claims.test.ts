@@ -47,6 +47,18 @@ describe('toQueryClaims (security context → Cube groups, decision E2)', () => 
     expect(JSON.stringify(claims)).not.toContain('admin');
   });
 
+  it('maps each protected dimension on its own: a group per grant, the lists apart', () => {
+    const claims = toQueryClaims(
+      context({
+        region: { kind: 'listed', values: ['North'] },
+        repository: { kind: 'all' },
+      }),
+    );
+
+    expect(claims.groups).toEqual(['region:listed', 'repository:all']);
+    expect(claims.entitlements).toEqual({ region: ['North'] });
+  });
+
   it('ignores grants on dimensions the model does not protect', () => {
     const claims = toQueryClaims(context({ category: { kind: 'all' } }));
 
@@ -64,8 +76,22 @@ describe('the access policies of the model', () => {
     file,
     text: readFileSync(path.join(MODEL, file), 'utf8'),
   }));
+  // Every cube of every file, as its own block of text: `  - name:` opens one.
+  const cubes = models.flatMap(({ file, text }) =>
+    text
+      .split(/^ {2}- name: /m)
+      .slice(1)
+      .map((block) => ({ name: `${file}: ${block.split('\n')[0] ?? ''}`, text: block })),
+  );
+  const dimensionsOf = (text: string) =>
+    new Set([
+      ...[...text.matchAll(/securityContext\.entitlements\.([a-z][a-z0-9_]*)/g)].map(
+        (match) => match[1],
+      ),
+      ...[...text.matchAll(/group: '([a-z][a-z0-9_]*):(?:listed|all)'/g)].map((match) => match[1]),
+    ]);
 
-  it('protect exactly the dimensions the mapping knows — one, until docs/09 §6.1 is redesigned', () => {
+  it('protect exactly the dimensions the mapping knows', () => {
     const referenced = new Set(
       models.flatMap(({ text }) =>
         [...text.matchAll(/securityContext\.entitlements\.([a-z][a-z0-9_]*)/g)].map(
@@ -75,7 +101,30 @@ describe('the access policies of the model', () => {
     );
 
     expect([...referenced].sort()).toEqual([...PROTECTED_DIMENSIONS].sort());
-    expect(PROTECTED_DIMENSIONS).toHaveLength(1);
+  });
+
+  it('protect every cube: a cube without a policy is open to anyone', () => {
+    expect(cubes.length).toBeGreaterThan(0);
+    for (const cube of cubes) {
+      expect(cube.text, cube.name).toContain('access_policy:');
+    }
+  });
+
+  it('protect each cube by one dimension at most — policies of two would combine with OR (decision D1)', () => {
+    for (const cube of cubes) {
+      expect(dimensionsOf(cube.text).size, cube.name).toBeLessThanOrEqual(1);
+    }
+    // The guard itself: a cube protected by region and repository is refused.
+    const both = `access_policy:
+      - group: 'region:listed'
+        row_level:
+          filters:
+            - member: region
+              values: '{ securityContext.entitlements.region }'
+      - group: 'repository:all'
+        row_level:
+          allow_all: true`;
+    expect(dimensionsOf(both)).toEqual(new Set(['region', 'repository']));
   });
 
   it('give every cube that filters on a dimension both its listed and its all group', () => {

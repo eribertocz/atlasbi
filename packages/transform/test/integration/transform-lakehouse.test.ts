@@ -16,11 +16,13 @@ import {
   createTestLakehouse as createWarehouseTestLakehouse,
   testS3Storage,
   type TestLakehouse as WarehouseTestLakehouse,
+  writeContractView,
 } from '@atlasbi/warehouse/testing';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { PRODUCED_DATA_CONTRACTS, runSqlMesh, type TransformTarget } from '../../src/index.ts';
+import { GITHUB_LANDING_ROWS, githubLandingContract } from '../support/landing-fixture.ts';
 import { extensionDirectory, workspaceEnvironment } from '../support/transform-environment.ts';
 
 async function adminUrl(): Promise<string> {
@@ -72,6 +74,7 @@ async function provisionAndSeed(lakehouse: LakehouseSettings): Promise<void> {
   const admin = await createLakehouseAdmin(lakehouse);
   try {
     await seedDevelopmentDataset(admin);
+    await writeContractView(admin, githubLandingContract(), GITHUB_LANDING_ROWS);
   } finally {
     await admin.close();
   }
@@ -124,6 +127,32 @@ for (const catalogType of ['postgres', 'sqlite'] as const) {
       }
     });
 
+    it('turns the GitHub landing into its mart: every event once, timestamps kept as instants', async () => {
+      const port = await createAnalyticalQueryEngine(lakehouse.target.lakehouse);
+      try {
+        const mart = await port.query(
+          `SELECT count(*), count(DISTINCT repository), count(actor), min(created_at), max(created_at)
+           FROM lake.marts.mart_github_repo_events`,
+        );
+
+        expect(mart.rows).toEqual([
+          [String(GITHUB_LANDING_ROWS.length), '2', '4', expect.any(String), expect.any(String)],
+        ]);
+        expect(mart.columns.map((column) => column.type.kind).slice(3)).toEqual([
+          'timestamp_tz',
+          'timestamp_tz',
+        ]);
+        // The read port renders an instant as text (docs/01 §7).
+        const [, , , first, last] = mart.rows[0] as unknown as string[];
+        expect([Date.parse(first ?? ''), Date.parse(last ?? '')]).toEqual([
+          Date.parse('2026-10-01T09:00:00Z'),
+          Date.parse('2026-10-03T23:59:59Z'),
+        ]);
+      } finally {
+        await port.close();
+      }
+    });
+
     it('publishes every mart as its data contract says (docs/21 §2.4)', async () => {
       const port = await createAnalyticalQueryEngine(lakehouse.target.lakehouse);
       try {
@@ -142,7 +171,10 @@ for (const catalogType of ['postgres', 'sqlite'] as const) {
     it('stores the mart without per-day partitions, and the staging model as a view only', async () => {
       const files = await lakehouse.lakehouse.listDataFiles();
       const martFiles = files.filter(
-        (file) => file.startsWith('sqlmesh__marts/') && file.endsWith('.parquet'),
+        (file) =>
+          file.startsWith('sqlmesh__marts/') &&
+          file.includes('mart_sales_orders') &&
+          file.endsWith('.parquet'),
       );
 
       expect(martFiles).toHaveLength(1);

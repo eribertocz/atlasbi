@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createCubeSemanticRuntime } from '../../src/adapters/cube/cube-semantic-runtime.ts';
 import { probeSemanticLayer } from '../../src/index.ts';
 import { startCubeStack, type CubeStack } from './support/cube-stack.ts';
-import { writeSalesMart } from './support/sales-mart.ts';
+import { writeMarts } from './support/marts.ts';
 
 const MART = 'lake.marts.mart_sales_orders';
 
@@ -17,7 +17,7 @@ let cube: CubeStack | undefined;
 
 beforeAll(async () => {
   lakehouse = await createTestLakehouse('postgres');
-  await writeSalesMart(lakehouse.settings);
+  await writeMarts(lakehouse.settings);
   platform = await createAnalyticalQueryEngine(lakehouse.readerSettings);
   cube = await startCubeStack(lakehouse.readerSettings);
   await probeSemanticLayer({ url: cube.restUrl, apiSecret: cube.apiSecret });

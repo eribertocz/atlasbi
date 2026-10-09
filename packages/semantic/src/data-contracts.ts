@@ -3,4 +3,7 @@
  * names their tables, and its tests run against a mart built from the contract itself — so a
  * member that reads a column the contract does not promise fails here, not in production.
  */
-export const CONSUMED_DATA_CONTRACTS = [{ id: 'mart.sales_orders', major: 1 }] as const;
+export const CONSUMED_DATA_CONTRACTS = [
+  { id: 'mart.sales_orders', major: 1 },
+  { id: 'mart.github_repo_events', major: 1 },
+] as const;

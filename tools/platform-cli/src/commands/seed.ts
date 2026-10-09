@@ -17,12 +17,7 @@ import {
 } from '@atlasbi/config';
 import type { DataEntitlement, IdentityPort } from '@atlasbi/contracts';
 import { listPendingMigrations } from '@atlasbi/database';
-import {
-  createReportRepository,
-  DEMO_REPORT,
-  type ReportRepository,
-  seedDemoReports,
-} from '@atlasbi/reports';
+import { createReportRepository, type ReportRepository, seedDemoReports } from '@atlasbi/reports';
 import {
   createAnalyticalQueryEngine,
   createLakehouseAdmin,
@@ -77,7 +72,12 @@ export async function runSeed(): Promise<void> {
   try {
     await seedLakehouse(await resolveLakehouseSettings(config.lakehouse, secrets));
 
-    const demo = await seedDemoAccess(identity, access, demoPassword);
+    const demo = await seedDemoAccess(
+      identity,
+      access,
+      demoPassword,
+      config.ingestion.github.repositories,
+    );
     // The password is never printed: it is the seed.demo-password secret.
     console.log(
       `\nDemo access (organization ${demo.organizationSlug}), each checked by signing in — password: ATLASBI_SEED_DEMO_PASSWORD`,
@@ -116,11 +116,12 @@ async function seedReports(
   }
 
   const rows = await seedDemoReports(reports, targets);
-  console.log(`
-Demo report "${DEMO_REPORT.name}":`);
-  for (const [index, row] of rows.entries()) {
-    const slug = targets[index]?.slug ?? row.workspaceId;
-    console.log(`  ${slug.padEnd(10)} ${row.created ? 'created' : 'already there'}`);
+  console.log('\nDemo reports:');
+  for (const row of rows) {
+    const slug = targets.find((target) => target.workspaceId === row.workspaceId)?.slug;
+    console.log(
+      `  ${(slug ?? row.workspaceId).padEnd(10)} ${`"${row.name}"`.padEnd(22)} ${row.created ? 'created' : 'already there'}`,
+    );
   }
 }
 
@@ -152,7 +153,7 @@ async function seedLakehouse(settings: LakehouseSettings): Promise<void> {
 }
 
 function describeAccess(row: DemoAccessRow): string {
-  return `${row.email.padEnd(19)} ${row.workspace.padEnd(10)} ${row.role.padEnd(7)} region: ${describeEntitlement(row.region)}`;
+  return `${row.email.padEnd(19)} ${row.workspace.padEnd(10)} ${row.role.padEnd(7)} region: ${describeEntitlement(row.region)} · repository: ${describeEntitlement(row.repository)}`;
 }
 
 function describeEntitlement(entitlement: DataEntitlement | undefined): string {

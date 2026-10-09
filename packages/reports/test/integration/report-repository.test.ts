@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   createReportRepository,
   DEMO_REPORT,
+  DEMO_REPORTS,
   InvalidReportError,
   type NewReport,
   type ReportRepository,
@@ -151,7 +152,7 @@ describe('the report repository', () => {
     ).toBe('ok');
   });
 
-  it('seeds the demo report once per workspace', async () => {
+  it('seeds each demo report once per workspace', async () => {
     const targets = [
       { workspaceId: fixture.workspaces.comercial, createdBy: fixture.author },
       { workspaceId: fixture.workspaces.finanzas, createdBy: fixture.author },
@@ -160,11 +161,19 @@ describe('the report repository', () => {
     const first = await seedDemoReports(reports, targets);
     const second = await seedDemoReports(reports, targets);
 
-    expect(first.map((row) => row.created)).toEqual([true, true]);
+    expect(first.map((row) => [row.name, row.created])).toEqual([
+      ['Ventas', true],
+      ['Actividad en GitHub', true],
+      ['Ventas', true],
+      ['Actividad en GitHub', true],
+    ]);
     expect(second).toEqual(first.map((row) => ({ ...row, created: false })));
-    const report = await reports.getReport(targets[1]?.workspaceId ?? '', first[1]?.reportId ?? '');
-    expect(report?.pages[0]?.visuals.map((visual) => visual.spec)).toEqual(
-      DEMO_REPORT.pages[0].visuals.map((visual) => visual.spec),
-    );
+    for (const [index, demo] of DEMO_REPORTS.entries()) {
+      const row = first[DEMO_REPORTS.length + index];
+      const report = await reports.getReport(targets[1]?.workspaceId ?? '', row?.reportId ?? '');
+      expect(report?.pages[0]?.visuals.map((visual) => visual.spec)).toEqual(
+        demo.pages[0]?.visuals.map((visual) => visual.spec),
+      );
+    }
   });
 });
