@@ -13,7 +13,7 @@ Una plataforma de BI moderna y 100% open source diseñada para reemplazar y supe
 4. `docs/14-interaction-state-engine.md`, `docs/15-testing-cicd.md`, `docs/17-self-service-calculations.md` — diseño de piezas que faltaban (interacción/estado, testing, y cómo el usuario del dashboard crea medidas sin aprender un lenguaje nuevo).
 5. `docs/18-first-class-citizens.md` — **leer antes de tocar cualquier código de la Capa 8**: distingue las capacidades arquitectónicas (Semantic Model, Filter Engine, Matrix Engine, etc.) de las herramientas que las implementan hoy. Nunca confundir una con la otra — es el error más caro de corregir después.
 6. `docs/19-operabilidad-runtime.md` — **leer antes de escribir el primer `docker-compose`/`podman-compose`**: qué corre como servicio permanente y qué no, cómo arranca la plataforma (`pnpm dev`), migraciones, seed, health checks, el esquema real del Report Document Model.
-7. `docs/20-product-ui-ux.md` — **leer antes de tocar la Capa 8**: qué UI es nuestra (Svelte) y qué UI es de una herramienta técnica externa (dlt, SQLMesh, Airflow, Cube, OpenMetadata) — nunca clonarlas, siempre deep-link. La arquitectura de experiencia (Viewer/Author/Explore/Datos/Monitor/Admin) y la anatomía del Report Builder.
+7. `docs/20-product-ui-ux.md` — **leer antes de tocar la Capa 8**: qué UI es nuestra (Svelte) y qué UI es de una herramienta técnica externa (dlt, SQLMesh, Airflow, Cube, OpenMetadata) — nunca clonarlas. **Desde el 2026-10-08, tampoco se enlazan: ninguna aparece en el producto (decisión R1, en "Orden de construcción")**; el "siempre deep-link" de §1 y §6 se corrige al llegar el paso 15. La arquitectura de experiencia (Viewer/Author/Explore/Datos/Monitor/Admin) y la anatomía del Report Builder.
 8. `docs/22-visualization-engine.md` — **leer antes de tocar cualquier visualización de la Capa 8**: la visualización es un diferenciador principal; `VisualSpec` es contrato propio y nunca persiste configuración de un renderer (ECharts es un adaptador); Custom Components (HTML/CSS/JS) siempre aislados. Es visión: nada de esto entra en un paso anterior al Authoring Engine salvo que el orden de construcción lo diga.
 9. `docs/21-engineering-standards.md` — **normativo, aplica a todo el código generado, sin excepción**: inglés obligatorio en identificadores, versionado por contrato separado del versionado del producto, y la arquitectura de Puertos y Adaptadores (ningún tipo de Cube/ECharts/DuckDB/SQLMesh/Electric cruza la frontera de su adaptador).
 10. `docs/00-documentacion-general.md` y `docs/01` a `docs/12-metadata-gobernanza.md` — la narrativa completa, con el razonamiento y las correcciones de cada decisión. Consultar solo para el *por qué*, no para el *qué*.
@@ -105,6 +105,25 @@ El proyecto corre en tres niveles sin reescribir código de aplicación: **port�
 12. Copiloto de IA (sobre contratos ya estables — opcional, debe poder apagarse sin romper nada más).
 13. Metadata y catálogo (OpenMetadata) — se alimenta de las capas ya construidas, no tiene sentido antes.
 14. Producción avanzada: OpenBao, modo nube de OpenTofu, Edge Connector Agent completo.
+
+**Los estudios (decisión de producto, 2026-10-08).** Cada capa tiene su propia UI, avanzada y de primer nivel, dentro de un mismo producto, como Power BI (Obtener datos, Power Query, vista de modelo, vista de informe). Los pasos 0–14 conservan su número; los estudios entran con números nuevos:
+
+15. **Base de los estudios, Admin y Monitor:**
+    - la base: el cascarón según permisos (`20-product-ui-ux.md` §2), el sistema de diseño, el ciclo de vida borrador → validar → vista previa → publicar → versiones, el servicio de trabajos, los permisos por capacidad y la auditoría;
+    - Admin: personas, workspaces, membresías y permisos por dimensión;
+    - Monitor: estado, historial y errores de cada trabajo, mostrados por la plataforma misma.
+16. **Report Studio:** el Authoring Engine (`20-product-ui-ux.md` §7): lienzo, páginas, datos, formato, interacciones, filtros del autor, publicación y versiones.
+17. **Model Studio:** relaciones, medidas, jerarquías y seguridad por filas, sobre un Semantic Model AST neutro compilado a Cube. Se construye junto con el paso 11.
+18. **Connections Studio:** el registro de fuentes, el catálogo de conectores con formularios, las credenciales y los horarios.
+19. **Data Studio:** pasos visuales sobre un Transformation AST, vista previa y publicación con `transform deploy`; después, el editor SQL avanzado.
+
+**Ninguna UI de otra herramienta aparece en el producto (decisión R1):** ni dlt, ni SQLMesh, ni Cube, ni Airflow, ni OpenMetadata, tampoco como enlace. Monitor muestra por sí mismo el estado, el historial y los errores. `20-product-ui-ux.md` §1 y §6, que hoy dicen "deep-link", se editan cuando llegue el paso 15.
+
+**Orden de ejecución, provisional — se revisa después de cada Fase 0:**
+
+Plan C → 8 → 15 → 9 → 16 → 10 → 11 y 17 → 18 → 19 → 12 → 13 → 14
+
+El Plan C son los verbos de los trabajos (`transform`, `semantic refresh`, `lakehouse maintain`), que el 8 y los estudios llaman (`07-orquestacion.md` §7.1). Qué necesita cada estudio antes de empezar, la base común y las decisiones abiertas (R2–R5, que se miden en la Fase 0 del paso que las necesita) están en `docs/IMPLEMENTATION.md`, "Los estudios".
 
 Si te piden trabajar en un paso posterior sin que los anteriores existan, dilo antes de improvisar una base temporal.
 

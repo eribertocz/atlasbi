@@ -123,6 +123,37 @@ Realtime (10) ──sync/broadcast── visual, filter_definition (Postgres)
 
 1. Almacenamiento (nivel "equipo local mínimo" — no "portátil") → 2. Transformación → 3. Semántico básico + *pushdown* validado → **4. Auth (`workspace_membership` + `data_entitlements`)** → **5. API Gateway + seguridad de Cube** (JWT REST; el experimento de `/v1/cubesql` dio que usa `checkAuth`, no `checkSqlAuth`, `17` §3.2.4) → 6. Frontend mínimo Viewer → 7. Ingesta real → 8. Orquestación → 9. Interaction/State Engine → 10. Realtime (Electric) → 11. Self-service calculations → 12. IA → 13. Metadata → 14. Producción avanzada (OpenBao, nube, Edge Agent completo).
 
+**Los estudios (2026-10-08), con números nuevos** — los pasos 0–14 conservan el suyo: **15.** Base de los estudios, Admin y Monitor → **16.** Report Studio → **17.** Model Studio (junto con el 11) → **18.** Connections Studio → **19.** Data Studio.
+
+**Orden de ejecución, provisional — se revisa después de cada Fase 0:** Plan C → 8 → 15 → 9 → 16 → 10 → 11 y 17 → 18 → 19 → 12 → 13 → 14.
+
+## Los estudios — base común, prerrequisitos y decisiones abiertas
+
+**Decisión de producto (2026-10-08):** cada capa tiene su propia UI de primer nivel dentro del mismo producto, como Power BI. **Ninguna UI de otra herramienta aparece en el producto (decisión R1)**, ni como enlace: Monitor muestra por sí mismo el estado, el historial y los errores. `20-product-ui-ux.md` §1 y §6 se corrigen al llegar el paso 15. El orden es una dirección aprobada, no un compromiso: se revisa después de la Fase 0 de cada paso.
+
+**Base común (paso 15, antes del primer estudio):**
+- El cascarón según permisos (`20` §2), nunca según el "tipo" de persona (`09` §9.1).
+- El sistema de diseño: tokens, componentes, la disposición de editor en tres paneles (explorador, lienzo, inspector), estados vacío/carga/error, textos en español y accesibilidad.
+- El ciclo de vida de un artefacto: borrador → validar → vista previa → publicar → versiones y vuelta atrás, con concurrencia optimista (`version`, `14` §2.2), un contrato de problemas de validación (ruta, código, severidad, mensaje) y la publicación como un trabajo con su evento de auditoría (`18`, Tier 2).
+- Un servicio de trabajos para lo que tarda (publicar, desplegar, refrescar, "ingerir ahora"): estado en Postgres, llama a los verbos del Plan C o dispara la orquestación, y se consulta su avance hasta que llegue el tiempo real (paso 10).
+- Mensajes de error propios de la plataforma, nunca los de una herramienta.
+
+**Qué necesita cada estudio antes de empezar:**
+
+| Paso | Estudio | Prerrequisitos |
+| --- | --- | --- |
+| 15 | Admin y Monitor | Permisos por capacidad y eventos de auditoría. Monitor: el paso 8, los resúmenes de trabajo del Plan C y un historial de ejecuciones; el lineage llega con el 13 |
+| 16 | Report Studio | El State Engine (paso 9); `FormattingSpec`/`ThemeSpec` y el versionado de `VisualSpec` (`19` §8.1); `filter_definition`; GridStack reevaluado con la regla 7 (`08` §11.1); títulos propios en el modelo semántico |
+| 17 | Model Studio | Un **Semantic Model AST** neutro, con compilador a Cube e importador de los cubes existentes; un verbo `semantic deploy` (publicar y recargar el modelo), que el Plan C no incluye; la regla de una dimensión protegida por cube (D1, `09` §6.1); las medidas de auto-servicio (`17` §6) |
+| 18 | Connections Studio | El registro de fuentes (`02` §6.1.2); un almacén de secretos con escritura (hoy `SecretProvider` solo lee); conectores declarativos generados desde formularios (`03` §10.3); una ingesta de fuentes configuradas; horarios (paso 8); el Edge Connector Agent (paso 14) solo para fuentes de la red del cliente |
+| 19 | Data Studio | Un **Transformation AST**; un motor de vista previa; un compilador del AST a modelos de SQLMesh; `transform deploy` (Plan C) llamado por el servicio de trabajos; el puerto de lectura endurecido para consultas de usuarios (`08` §10.3); el registro de fuentes |
+
+**Decisiones abiertas — no se deciden hoy; cada una se mide en la Fase 0 del paso que la necesita:**
+- **R2 (pasos 17 y 19):** dónde viven los modelos que publica un estudio — en Git, generados, con el PR detrás de escena (`20` §8), o en Postgres, compilados al desplegar.
+- **R3 (paso 17):** un modelo semántico por workspace o uno global en Cube.
+- **R4 (paso 19):** Ibis o un compilador propio para la vista previa.
+- **R5 (paso 18):** el almacén de secretos con escritura — adelantar OpenBao o un adaptador cifrado para el nivel local —, evaluado con la regla 7.
+
 **No saltar pasos.** Si te piden trabajar en el paso 7 sin que el 1-6 exista, decilo antes de improvisar una base temporal.
 
 ## Antes del primer commit: fijar versiones exactas, nunca `:latest`
