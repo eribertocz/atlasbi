@@ -405,7 +405,85 @@ Después, el Paso 6: frontend mínimo, modo Viewer.
 - **El `.env.example` de `0.5.0` fijaba `ATLASBI_PUBLIC_URL` en el puerto del gateway:** al actualizar hay que cambiarlo (README).
 
 **Siguiente:**
-- El tag `v0.6.0`, cuando el usuario lo pida.
-- Después, el Paso 7, con la primera fuente externa real, y antes del Paso 8 el Plan C de la auditoría (verbos de los jobs).
-- Los documentos de ingesta (`03`, `02` §6.1.1, `13`, `01`) se editan después de la Fase 0 del Paso 7.
-- **Versiones del frontend:** subir Vite a 8.3.3 cuando pase la edad mínima, y migrar a SvelteKit 3 cuando tenga algunas semanas de parches.
+- El tag `v0.6.0` — puesto el 2026-10-07.
+- El Paso 7 — hecho en `0.7.0`, abajo.
+- Vite 8.3.3 — subido en su propio commit; SvelteKit 3 sigue pendiente.
+
+### 0.7.0 — la primera fuente externa real, con ingesta (Paso 7) — cerrado el 2026-10-08
+
+**Antes del código, la Fase 0 midió dlt sobre el lakehouse real**, con un lakehouse, un bucket y una clave descartables, borrados al terminar:
+- GitHub como fuente; Stripe no, porque no había cuenta.
+- Licencias y vulnerabilidades de todo el árbol de dlt.
+- El destino `ducklake`, el incremental, las vistas del landing y la evolución de esquema.
+- Los secretos, las fallas y la regla de lint con nombres reales.
+
+El informe se aprobó antes de escribir código.
+
+**Qué quedó construido y verificado en vivo** (dlt 1.30.0, DuckDB 1.5.5 en Python):
+
+- **`packages/ingestion`:**
+  - El runner en Python, con su entorno de uv.
+  - La _verified source_ de GitHub copiada y fijada a un commit.
+  - El adaptador TypeScript.
+  - `pnpm ingest <source> [--json]`, con el contrato del trabajo de ingesta 1.0 (`IngestSummary`).
+  - El landing como vista (`landing_github.repo_events`): solo cargas completas, cada evento una vez, publicada vacía y tipada por `pnpm bootstrap`.
+- **GitHub de punta a punta:**
+  - los contratos `landing.github_repo_events` 1.0 y `mart.github_repo_events` 1.0;
+  - el staging y el mart `FULL` en SQLMesh;
+  - el cube `github_events`, protegido por `repository`;
+  - los permisos por repositorio y el reporte "Actividad en GitHub" en `pnpm seed`.
+- **Cube se recrea solo cuando cambia su modelo** (D3).
+- **Tests:**
+  - 400 unitarios: web 28, api-gateway 33, CLI 71, contracts 19, contracts-testing 2, reports 6, config 30, auth 11, database 5, warehouse 73, transform 16, semantic 101, ingestion 5.
+  - 239 de integración: api-gateway 9, reports 13, auth 45, database 11, warehouse 74, transform 16, semantic 54, ingestion 17.
+- **En vivo, sobre la base y el lakehouse de desarrollo** (`duckdb/duckdb` y `sveltejs/svelte`):
+  - 595 eventos en la primera ingesta, uno solo en la segunda, nada en la tercera;
+  - cada falla con su código, sin secretos en ningún lado: token falso 77, clave S3 77, contraseña del catálogo 77, API caída 75;
+  - los dos contratos cumplidos con los datos reales;
+  - en un navegador real, Ana y Bruno ven repositorios distintos en el mismo reporte, con cross-filter;
+  - D3: con el modelo igual, el mismo contenedor; con un cambio, uno nuevo.
+
+**Contratos:**
+- Config Schema v7 → v8 (`ATLASBI_INGESTION_DATA_PATH`, `ATLASBI_GITHUB_REPOSITORIES`, `ATLASBI_GITHUB_API_URL`, secreto `github.token`).
+- El trabajo de ingesta 1.0.
+- Los contratos de datos `landing.github_repo_events` 1.0 y `mart.github_repo_events` 1.0.
+- Sin migraciones de base.
+
+**Decisiones del usuario:**
+- **Plan:**
+  - K1: GitHub, y Stripe solo si hubiera cuenta.
+  - K2: el fixture se queda para desarrollo y tests.
+  - K3: la ingesta escribe con las credenciales de escritura del lakehouse.
+  - K4: `pnpm ingest` es el primer verbo del Plan C, con códigos de salida y resumen JSON.
+  - K5: las columnas evolucionan y los tipos se congelan.
+  - K6: `append` para eventos.
+  - K7: los secretos de la fuente van en el `SecretProvider`.
+- **Fase 0:** las cuatro configuraciones de seguridad (`PGPASSWORD`, el home propio, `global_config`, el esquema `public`). MPL-2.0 de `certifi` y `orjson`, aceptadas.
+- **Condiciones:**
+  - el commit de origen de la source en `versions.md`, con revisión periódica;
+  - un test de que `~/.dlt` queda vacío;
+  - un umbral medido para revisar el mart `FULL`.
+- **D1 (a):** una dimensión protegida por cube, con el test que lo impide.
+- **D2:** las dos guardas que nombran `_dlt` son la única excepción, documentada en el código y en `21` §2.4, y el chequeo las reconoce.
+- **D3 (a):** `pnpm dev` recrea Cube solo cuando cambió su modelo.
+- **Fase B:** el paso `Ingestion landing` del bootstrap, el mart `FULL`, `writeContractView` en `warehouse/testing` y los permisos por posición.
+- **Notas en `07`:** el hallazgo de `--reporter=silent` y el `cron '@daily'` del mart.
+- **Commits separados por tema.** El tag se pide aparte.
+
+**Lecciones de la verificación:**
+- **Una herramienta de datos puede filtrar un secreto por un camino que no es la salida:** dlt guarda en su traza los mensajes de error de DuckDB, que repiten la URL del catálogo. Por eso la contraseña viaja en `PGPASSWORD`.
+- **"Telemetría apagada" no quiere decir "nada en el home":** dlt escribe igual su identificador anónimo, y hay que darle un home propio.
+- **Una carga cortada a la mitad deja filas visibles:** el landing tiene que filtrar por cargas completas.
+- **Cube en modo producción no ve un modelo nuevo** hasta que se recrea su contenedor.
+- **`pnpm -s` no silencia la línea `[ELIFECYCLE]` de pnpm en stdout:** hace falta `--reporter=silent`.
+- **Mis scripts de prueba de la Fase 0 no aislaban el home y dejaron un `~/.dlt`,** que se borró. Los scripts de prueba con dlt aíslan el home.
+
+**Siguiente:**
+- El tag `v0.7.0`, cuando el usuario lo pida.
+- Antes del Paso 8, el resto del Plan C (los verbos de los jobs y `pnpm transform tool`).
+- **Paso 8 (Airflow):**
+  - llamar a la ingesta con `pnpm --reporter=silent ingest <source> --json`;
+  - el horario tiene en cuenta el `cron '@daily'` del mart de GitHub;
+  - la retención del lakehouse se programa junto con la ingesta.
+- Pendientes de presentación: los títulos del modelo de Cube (hoy los genera Cube), y que la línea diaria rellene los días sin eventos.
+- Migrar a SvelteKit 3 cuando tenga algunas semanas de parches.

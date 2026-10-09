@@ -6,9 +6,96 @@ Migration…) versionan por separado y se listan en cada release.
 
 ## Unreleased
 
+## 0.7.0 — la primera fuente externa real, con ingesta (2026-10-08)
+
+Paso 7 del orden de construcción: la primera fuente real, GitHub, entra por la ingesta y llega hasta un reporte.
+
+- `pnpm ingest github` trae, de forma incremental, los eventos de los repositorios configurados a un landing en el lakehouse.
+- SQLMesh los transforma en un mart, y Cube los sirve con seguridad por filas por repositorio.
+- El reporte "Actividad en GitHub" muestra a Ana y a Bruno repositorios distintos.
+- La herramienta de ingesta queda encerrada en su paquete: fuera de él y de la documentación, nada la nombra salvo dos guardas, y un test lo verifica.
+
+### Agregado — la ingesta (`packages/ingestion`, dlt 1.30.0)
+
+- **`pnpm ingest <source> [--json]`, el primer verbo de trabajo:** carga GitHub (los eventos de los repositorios de `ATLASBI_GITHUB_REPOSITORIES`) en el landing `landing_github.repo_events` del lakehouse, de forma incremental.
+  - Cada resultado termina en un resumen y un código de salida: 0 bien, 64 uso, 65 datos (un tipo que cambió), 70 interno, **75 reintentable**, 77 credenciales rechazadas, 78 configuración. Con `--json`, el resumen va a stdout y nada más; el progreso, a stderr. Es el contrato que va a leer Airflow en el Paso 8 (`docs/07` §7.1).
+  - Para que stdout lleve solo el JSON, hay que llamarlo con `pnpm --reporter=silent ingest …`: `pnpm -s` igual escribe ahí la línea `[ELIFECYCLE]` de pnpm.
+- **El paquete:**
+  - un runner en Python, con su propio entorno de uv;
+  - la _verified source_ de GitHub copiada y fijada a un commit (`runner/vendor/github/PROVENANCE.md`);
+  - el adaptador TypeScript que lo corre.
+- **Cómo corre la ingesta:**
+  - Abre el lakehouse a la manera de la plataforma antes de empezar, y nunca lo crea.
+  - Recibe los secretos solo por su entorno de proceso. La contraseña del catálogo va en `PGPASSWORD`, nunca en la URL.
+  - No deja nada en el home del usuario: el runner le da a dlt un home propio dentro de `.data/ingestion`.
+  - Un pipeline por repositorio, `append` para eventos, y los tipos congelados: un cambio de tipo en la fuente rechaza la carga (código 65).
+- **El landing es una vista,** no una copia: las columnas del contrato, solo cargas completas, cada evento una vez. `pnpm bootstrap` la publica vacía y tipada, para que `pnpm transform plan` funcione antes de la primera ingesta.
+- **La herramienta queda encerrada (decisión D2).** Fuera del paquete y de la documentación, nada nombra a dlt salvo las dos guardas que lo frenan: el contrato de datos y la regla de lint de SQLMesh. Un test recorre el repositorio y falla ante cualquier otra mención.
+- **Las advertencias de dlt**, que nombraban cada columna vacía de una carga, quedan en ERROR; vuelven con `ATLASBI_INGEST_DEBUG=1`.
+
+### Agregado — GitHub de punta a punta
+
+- **Contratos de datos:** `landing.github_repo_events` 1.0 (lo produce la ingesta y lo verifica con datos) y `mart.github_repo_events` 1.0.
+- **Transformación:** el landing declarado como modelo externo, `staging.stg_github_repo_events` (vista) y `marts.mart_github_repo_events`.
+  - El mart es `FULL`, porque los eventos llegan horas tarde. El umbral para revisarlo está medido en `docs/versions.md`: 5 millones de filas, 30 s por reconstrucción o 100 MiB escritos por corrida.
+- **Capa semántica:** el cube `github_events` (eventos, contribuidores, pushes), protegido por `repository`.
+  - **Decisión D1: una dimensión protegida por cube,** porque Cube combina las políticas de grupos distintos con OR (`docs/09` §6.1). Un test rechaza un cube protegido por dos dimensiones, o sin política.
+  - Un test combinado verifica que el "todos" de una dimensión nunca levanta el filtro de la otra.
+- **`pnpm seed`:**
+  - permisos por repositorio, tomados de `ATLASBI_GITHUB_REPOSITORIES`: Ana tiene todos en Comercial y el primero en Finanzas, y Bruno, el segundo;
+  - el reporte "Actividad en GitHub" en cada workspace demo: dos KPIs, barras por tipo y por repositorio, y una línea diaria.
+- **`@atlasbi/warehouse/testing`:** `writeContractView` escribe una tabla tal como la describe un contrato, para los tests de quien la consume.
+
+### Agregado — operación
+
+- **`pnpm bootstrap`** prepara el entorno de la ingesta (`uv sync`) y publica el landing de cada fuente; **`pnpm preflight`** verifica el entorno.
+- **Cube se recrea solo cuando cambió su modelo (decisión D3).** Cube compila el modelo una vez al arrancar, y `compose up` no reinicia un contenedor que ya corre. Ahora la CLI le pasa a compose un resumen del contenido de `packages/semantic/cube`: con un cambio, Cube se recrea; sin cambios, el contenedor y sus consultas siguen.
+
 ### Cambiado
 
 - **Vite 8.3.2 → 8.3.3**, en cuanto pasó la edad mínima de publicación. Es un parche de una dependencia (`launch-editor`); el Paso 6 había salido con la 8.3.2 por esa espera.
+- **La protección por filas acepta más de una dimensión** (`PROTECTED_DIMENSIONS = ['region', 'repository']`), siempre una por cube.
+
+### Verificado en vivo
+
+- **Sobre la base y el lakehouse de desarrollo, con `duckdb/duckdb` y `sveltejs/svelte`:**
+  - la primera ingesta cargó 595 eventos; la segunda, solo el nuevo; la tercera, nada;
+  - ningún secreto en el resumen, en la salida ni en los archivos de trabajo, y `~/.dlt` sigue sin existir.
+- **Cada falla con su código:**
+  - token falso → 77;
+  - clave S3 equivocada → 77;
+  - contraseña del catálogo equivocada → 77;
+  - API inalcanzable → 75, reintentable.
+- **El landing y el mart cumplen sus contratos con los datos reales.**
+- **En un navegador real,** "Actividad en GitHub" muestra:
+  - a Ana en Comercial, 596 eventos de los dos repositorios;
+  - a Ana en Finanzas, solo `duckdb/duckdb`;
+  - a Bruno, solo `sveltejs/svelte`.
+
+  El cross-filter por tipo de evento funciona, y "Ventas" no cambió.
+
+- **D3:** con el modelo igual, `pnpm dev` dejó el mismo contenedor de Cube; con un cambio, lo recreó.
+
+### Medido
+
+- **La Fase 0 de dlt** (detalle en `docs/03` §6.2–6.4):
+  - el destino `ducklake` sobre el lakehouse de la plataforma;
+  - la contraseña filtrada en la traza si viaja en la URL;
+  - el `~/.dlt` que escribe aun con la telemetría apagada;
+  - el cursor incremental por pipeline;
+  - las cargas parciales visibles;
+  - el costo de `merge`.
+- **La reconstrucción del mart FULL** sobre catálogo PostgreSQL y Garage: 0,3 s con 100 mil eventos, 1,0 s con un millón y 4,0 s con 5 millones. Cada corrida reescribe el mart entero, unos 13,5 MiB por millón de eventos (`docs/versions.md`).
+
+### Contratos
+
+- **Config Schema v7 → v8:** `ATLASBI_INGESTION_DATA_PATH`, `ATLASBI_GITHUB_REPOSITORIES` y `ATLASBI_GITHUB_API_URL`, con valores por defecto, y el secreto `github.token` (`ATLASBI_GITHUB_TOKEN`). Un `.env` anterior sigue funcionando; sin repositorios, solo `pnpm ingest github` se niega a correr.
+- **Nuevos:** el trabajo de ingesta 1.0 (`IngestSummary`, `parseIngestSummary`, `@atlasbi/contracts`), y los contratos de datos `landing.github_repo_events` 1.0 y `mart.github_repo_events` 1.0.
+- **Sin migraciones de base.** El BFF y la API pública no cambian.
+
+### Licencias
+
+- Del árbol de dlt (40 paquetes), ninguno GPL ni AGPL. `certifi` y `orjson` (MPL-2.0) se aceptaron caso por caso, y quedan anotadas para la auditoría de licencias (`docs/IMPLEMENTATION.md`).
 
 ## 0.6.0 — frontend mínimo, modo Viewer (2026-10-07)
 
