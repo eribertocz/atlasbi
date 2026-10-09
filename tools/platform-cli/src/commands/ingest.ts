@@ -19,21 +19,17 @@ import {
   type IngestionTarget,
 } from '@atlasbi/ingestion';
 
+import {
+  assertEnvironmentReady,
+  JobStopped,
+  parseJobArguments,
+  reportJob,
+} from '../jobs/run-job.ts';
 import { describeFailure, resolveLakehouseSettings } from '../lakehouse-environment.ts';
 import { loadEnvFile, MissingEnvFileError } from '../local-environment.ts';
 import { WORKSPACE_ROOT } from '../workspace-paths.ts';
 
 const USAGE = `Usage: pnpm ingest <source> [--json] — sources: ${INGESTION_SOURCES.join(', ')}.`;
-
-class IngestStopped extends Error {
-  readonly code: IngestErrorCode;
-
-  constructor(code: IngestErrorCode, message: string) {
-    super(message);
-    this.name = 'IngestStopped';
-    this.code = code;
-  }
-}
 
 /**
  * The ingestion job (docs/03, build step 7): every outcome ends in a summary and its exit code, the
@@ -47,19 +43,16 @@ export async function runIngest(args: readonly string[]): Promise<void> {
   }
   const startedAt = new Date().toISOString();
   const json = args.includes('--json');
-  const positional = args.filter((arg) => !arg.startsWith('--'));
-  const source = positional[0] ?? '';
+  let source = '';
   let summary: IngestSummary;
   try {
-    if (
-      positional.length !== 1 ||
-      args.some((arg) => arg.startsWith('--') && arg !== '--json') ||
-      !isIngestionSource(source)
-    ) {
-      throw new IngestStopped('usage_error', USAGE);
+    const { positional } = parseJobArguments(args, USAGE);
+    source = positional[0] ?? '';
+    if (positional.length !== 1 || !isIngestionSource(source)) {
+      throw new JobStopped('usage_error', USAGE);
     }
     const target = await ingestionTarget(source);
-    await assertEnvironmentReady();
+    assertEnvironmentReady(await checkIngestionEnvironment(), 'ingestion');
     console.error(styleText('gray', `Ingesting ${source} into the landing…`));
     ({ summary } = await runIngestion(source, target, {
       output: 'terminal',
@@ -69,16 +62,12 @@ export async function runIngest(args: readonly string[]): Promise<void> {
     summary = ingestionFailure(
       source,
       startedAt,
-      error instanceof IngestStopped
-        ? { code: error.code, message: error.message }
+      error instanceof JobStopped
+        ? { code: error.code as IngestErrorCode, message: error.message }
         : { code: 'internal_error', message: describeFailure(error) },
     );
   }
-  if (json) {
-    console.log(JSON.stringify(summary));
-  }
-  console.error(describeOutcome(summary));
-  process.exitCode = summary.exitCode;
+  reportJob(`Ingestion of ${summary.source || 'a source'}`, summary, json);
 }
 
 async function ingestionTarget(source: IngestionSource): Promise<IngestionTarget> {
@@ -98,35 +87,8 @@ async function ingestionTarget(source: IngestionSource): Promise<IngestionTarget
     };
   } catch (error) {
     if (error instanceof ConfigurationError || error instanceof MissingEnvFileError) {
-      throw new IngestStopped('configuration_error', error.message);
+      throw new JobStopped('configuration_error', error.message);
     }
     throw error;
   }
-}
-
-async function assertEnvironmentReady(): Promise<void> {
-  const state = await checkIngestionEnvironment();
-  if (state === 'missing-uv') {
-    throw new IngestStopped(
-      'configuration_error',
-      '`uv` was not found on PATH — see `pnpm preflight`.',
-    );
-  }
-  if (state === 'out-of-sync') {
-    throw new IngestStopped(
-      'configuration_error',
-      'The ingestion environment is not prepared or out of date — run `pnpm bootstrap`.',
-    );
-  }
-}
-
-function describeOutcome(summary: IngestSummary): string {
-  if (summary.error === undefined) {
-    return styleText('green', `Ingestion of ${summary.source} succeeded.`);
-  }
-  const retry = summary.retryable ? ' It can be run again as it is.' : '';
-  return styleText(
-    'red',
-    `Ingestion failed (${summary.error.code}, exit ${summary.exitCode}): ${summary.error.message}${retry}`,
-  );
 }

@@ -4,7 +4,8 @@ import { TRANSFORM_PACKAGE_DIRECTORY } from './run-sqlmesh.ts';
 
 export interface TransformEnvironment {
   python: string;
-  sqlmesh: string;
+  /** The tool that transforms — named here, so no caller has to (docs/21 §3). */
+  tool: { name: string; version: string };
   duckdb: string;
 }
 
@@ -48,7 +49,7 @@ export async function readTransformEnvironment(): Promise<TransformEnvironment> 
   if (probe.exitCode !== 0 || duckdb === '') {
     throw new Error(`The transform environment is not usable: ${lastLine(probe.output)}`);
   }
-  return { python, sqlmesh, duckdb };
+  return { python, tool: { name: 'SQLMesh', version: sqlmesh }, duckdb };
 }
 
 function runUv(args: readonly string[]): Promise<{ exitCode: number; output: string }> {

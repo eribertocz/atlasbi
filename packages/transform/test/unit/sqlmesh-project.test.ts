@@ -3,7 +3,11 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { runSqlMesh, SQLMESH_PROJECT_DIRECTORY, type TransformTarget } from '../../src/index.ts';
+import {
+  runSqlMesh,
+  SQLMESH_PROJECT_DIRECTORY,
+  type TransformTarget,
+} from '../../src/run-sqlmesh.ts';
 import {
   copyProject,
   environmentWithoutPlatformVariables,

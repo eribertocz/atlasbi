@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 
 import { EnvSecretProvider, SECRET_KEYS } from '@atlasbi/config';
-import { getDataContract, LakehouseError, type LakehouseCatalogType } from '@atlasbi/contracts';
+import { getDataContract, type LakehouseCatalogType } from '@atlasbi/contracts';
 import { findDataContractViolations } from '@atlasbi/contracts-testing';
 import { createThrowawayDatabase, type ThrowawayDatabase } from '@atlasbi/database/testing';
 import {
@@ -21,7 +21,7 @@ import {
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { PRODUCED_DATA_CONTRACTS, runSqlMesh, type TransformTarget } from '../../src/index.ts';
+import { PRODUCED_DATA_CONTRACTS, runTransformJob, type TransformTarget } from '../../src/index.ts';
 import { GITHUB_LANDING_ROWS, githubLandingContract } from '../support/landing-fixture.ts';
 import { extensionDirectory, workspaceEnvironment } from '../support/transform-environment.ts';
 
@@ -92,16 +92,25 @@ for (const catalogType of ['postgres', 'sqlite'] as const) {
       await lakehouse.dispose();
     });
 
-    it('plans and applies the project, audits passing', async () => {
-      const run = await runSqlMesh(lakehouse.target, ['plan', '--auto-apply', '--no-prompts'], {
+    it('deploys the project, every model built and its audits passing', async () => {
+      const { summary, stderr } = await runTransformJob('deploy', lakehouse.target, {
         output: 'capture',
       });
 
-      expect(run.exitCode, run.stdout + run.stderr).toBe(0);
-      expect(run.stdout).toContain('audits passed');
+      expect(summary, stderr).toMatchObject({ status: 'succeeded', exitCode: 0 });
+      expect(summary.changes?.changed).toBe(true);
+      expect(summary.changes?.models).toEqual(
+        expect.arrayContaining(['marts.mart_sales_orders', 'marts.mart_github_repo_events']),
+      );
+      const marts = summary.models.filter(({ model }) => model.startsWith('marts.'));
+      expect(marts.map(({ model }) => model).sort()).toEqual([
+        'marts.mart_github_repo_events',
+        'marts.mart_sales_orders',
+      ]);
+      expect(marts.every((mart) => mart.auditsPassed > 0 && mart.auditsFailed === 0)).toBe(true);
       const { storage } = lakehouse.target.lakehouse;
       if (storage.kind === 's3') {
-        expect(run.stdout + run.stderr).not.toContain(storage.secretAccessKey);
+        expect(JSON.stringify(summary) + stderr).not.toContain(storage.secretAccessKey);
       }
     });
 
@@ -182,12 +191,18 @@ for (const catalogType of ['postgres', 'sqlite'] as const) {
       expect(files.some((file) => file.startsWith('sqlmesh__staging/'))).toBe(false);
     });
 
-    it('runs pending intervals and audits again, idempotently', async () => {
-      const run = await runSqlMesh(lakehouse.target, ['run'], { output: 'capture' });
-      const audit = await runSqlMesh(lakehouse.target, ['audit'], { output: 'capture' });
+    it('runs what is pending — nothing, right after a deploy — and checks rules and audits', async () => {
+      const run = await runTransformJob('run', lakehouse.target, { output: 'capture' });
+      const check = await runTransformJob('check', lakehouse.target, { output: 'capture' });
+      const again = await runTransformJob('deploy', lakehouse.target, { output: 'capture' });
 
-      expect(run.exitCode, run.stdout + run.stderr).toBe(0);
-      expect(audit.exitCode, audit.stdout + audit.stderr).toBe(0);
+      expect(run.summary, run.stderr).toMatchObject({ status: 'succeeded', models: [] });
+      expect(check.summary, check.stderr).toMatchObject({
+        status: 'succeeded',
+        lint: [],
+        audits: { passed: true },
+      });
+      expect(again.summary.changes).toEqual({ changed: false, models: [] });
     });
   });
 }
@@ -203,11 +218,11 @@ describe('SQLMesh state belongs to one lakehouse', () => {
         const lakehouse = await createTestLakehouse(catalogType, state.connectionString);
         lakehouses.push(lakehouse);
 
-        const run = await runSqlMesh(lakehouse.target, ['plan', '--auto-apply', '--no-prompts'], {
+        const { summary, stderr } = await runTransformJob('deploy', lakehouse.target, {
           output: 'capture',
         });
 
-        expect(run.exitCode, run.stdout + run.stderr).toBe(0);
+        expect(summary.exitCode, stderr).toBe(0);
         expect(await martRowCount(lakehouse.target.lakehouse)).toBe('20000');
       }
       expect(await stateSchemas(state.connectionString)).toHaveLength(2);
@@ -222,20 +237,16 @@ describe('SQLMesh state belongs to one lakehouse', () => {
   it('starts from an empty state when the lakehouse is created again at the same location', async () => {
     const lakehouse = await createTestLakehouse('sqlite');
     try {
-      const first = await runSqlMesh(lakehouse.target, ['plan', '--auto-apply', '--no-prompts'], {
-        output: 'capture',
-      });
-      expect(first.exitCode, first.stdout + first.stderr).toBe(0);
+      const first = await runTransformJob('deploy', lakehouse.target, { output: 'capture' });
+      expect(first.summary.exitCode, first.stderr).toBe(0);
 
       // What `pnpm reset:local` + `pnpm bootstrap` do to the lakehouse. The state database is kept
       // on purpose: the worst case for a state keyed by location.
       await rm(lakehouse.lakehouse.root, { recursive: true, force: true });
       await provisionAndSeed(lakehouse.target.lakehouse);
-      const second = await runSqlMesh(lakehouse.target, ['plan', '--auto-apply', '--no-prompts'], {
-        output: 'capture',
-      });
+      const second = await runTransformJob('deploy', lakehouse.target, { output: 'capture' });
 
-      expect(second.exitCode, second.stdout + second.stderr).toBe(0);
+      expect(second.summary.exitCode, second.stderr).toBe(0);
       expect(await martRowCount(lakehouse.target.lakehouse)).toBe('20000');
       expect(await stateSchemas(lakehouse.target.stateConnectionString)).toHaveLength(2);
     } finally {
@@ -244,12 +255,13 @@ describe('SQLMesh state belongs to one lakehouse', () => {
   });
 });
 
-describe('the runner protects the lakehouse before SQLMesh ever attaches it', () => {
+describe('the job protects the lakehouse before the tool ever attaches it', () => {
   it('refuses a catalog that was never provisioned, and nothing gets created in it', async () => {
     const empty = await createThrowawayDatabase(await adminUrl());
     const state = await createThrowawayDatabase(await adminUrl());
     try {
-      const error: unknown = await runSqlMesh(
+      const { summary } = await runTransformJob(
+        'run',
         {
           mode: 'lakehouse',
           lakehouse: {
@@ -259,12 +271,10 @@ describe('the runner protects the lakehouse before SQLMesh ever attaches it', ()
           },
           stateConnectionString: state.connectionString,
         },
-        ['fetchdf', 'SELECT 1'],
         { output: 'capture' },
-      ).catch((reason: unknown) => reason);
+      );
 
-      expect(error).toBeInstanceOf(LakehouseError);
-      expect((error as LakehouseError).code).toBe('catalog_unreachable');
+      expect([summary.exitCode, summary.error?.code]).toEqual([78, 'configuration_error']);
       expect(await tableCount(empty.connectionString)).toBe(0);
     } finally {
       await empty.drop();
@@ -272,7 +282,7 @@ describe('the runner protects the lakehouse before SQLMesh ever attaches it', ()
     }
   });
 
-  it('rejects a wrong catalog password before SQLMesh runs, without the password in the error', async () => {
+  it('rejects a wrong catalog password before the tool runs, without the password in the error', async () => {
     const lakehouse = await createTestLakehouse('postgres');
     try {
       const { lakehouse: settings } = lakehouse.target;
@@ -282,7 +292,8 @@ describe('the runner protects the lakehouse before SQLMesh ever attaches it', ()
       const url = new URL(settings.catalog.connectionString);
       url.password = 'wrong-password-step2';
 
-      const error: unknown = await runSqlMesh(
+      const { summary } = await runTransformJob(
+        'run',
         {
           ...lakehouse.target,
           lakehouse: {
@@ -290,13 +301,11 @@ describe('the runner protects the lakehouse before SQLMesh ever attaches it', ()
             catalog: { type: 'postgres', connectionString: url.toString() },
           },
         },
-        ['fetchdf', 'SELECT 1'],
         { output: 'capture' },
-      ).catch((reason: unknown) => reason);
+      );
 
-      expect(error).toBeInstanceOf(LakehouseError);
-      expect((error as LakehouseError).code).toBe('catalog_unreachable');
-      expect((error as Error).message).not.toMatch(/wrong-password-step2|atlasbi-dev-only/);
+      expect([summary.exitCode, summary.error?.code]).toEqual([77, 'credentials_refused']);
+      expect(JSON.stringify(summary)).not.toMatch(/wrong-password-step2|atlasbi-dev-only/);
     } finally {
       await lakehouse.dispose();
     }

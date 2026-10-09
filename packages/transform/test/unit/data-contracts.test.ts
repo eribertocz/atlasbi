@@ -5,11 +5,8 @@ import { getDataContract } from '@atlasbi/contracts';
 import { lakehouseSqlType } from '@atlasbi/warehouse/testing';
 import { describe, expect, it } from 'vitest';
 
-import {
-  CONSUMED_DATA_CONTRACTS,
-  PRODUCED_DATA_CONTRACTS,
-  SQLMESH_PROJECT_DIRECTORY,
-} from '../../src/index.ts';
+import { CONSUMED_DATA_CONTRACTS, PRODUCED_DATA_CONTRACTS } from '../../src/index.ts';
+import { SQLMESH_PROJECT_DIRECTORY } from '../../src/run-sqlmesh.ts';
 
 /** The columns `external_models.yaml` declares for one external model, as `name → type`. */
 function declaredColumns(yaml: string, model: string): Record<string, string> {

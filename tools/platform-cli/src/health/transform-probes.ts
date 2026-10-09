@@ -6,15 +6,16 @@ import type { ReadinessStep } from './readiness-chain.ts';
 
 /**
  * Bootstrap only: the Python environment of packages/transform (uv sync — the one download) and
- * SQLMesh's state database. `pnpm dev` does not run SQLMesh: it is a job, not a service (docs/19 §1).
+ * the transformation's state database. `pnpm dev` does not transform: it is a job, not a service
+ * (docs/19 §1).
  */
 export function transformBootstrapSteps(stateConnectionString: string): ReadinessStep[] {
   return [
     {
       name: 'Transform environment',
       ensureReady: async () => {
-        const environment = await syncTransformEnvironment();
-        return `Python ${environment.python}, SQLMesh ${environment.sqlmesh}, DuckDB ${environment.duckdb}`;
+        const { python, tool, duckdb } = await syncTransformEnvironment();
+        return `Python ${python}, ${tool.name} ${tool.version}, DuckDB ${duckdb}`;
       },
     },
     {

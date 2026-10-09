@@ -91,7 +91,7 @@ export async function runSqlMesh(
 }
 
 /** Opens the lakehouse the platform's way (never creating it) and returns its identity. */
-async function provisionedLakehouseId(settings: LakehouseSettings): Promise<string> {
+export async function provisionedLakehouseId(settings: LakehouseSettings): Promise<string> {
   const admin = await createLakehouseAdmin(settings);
   try {
     return (await admin.checkHealth()).lakehouseId;
@@ -110,7 +110,7 @@ export function stateSchemaFor(lakehouseId: string): string {
 }
 
 /** Only what SQLMesh needs: every other ATLASBI_* variable — other secrets included — stays out. */
-function childEnvironment(
+export function childEnvironment(
   target: TransformTarget,
   stateSchema: string | undefined,
 ): NodeJS.ProcessEnv {

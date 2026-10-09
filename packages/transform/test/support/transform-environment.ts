@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 import { loadLakehouseConfig } from '@atlasbi/config';
 
-import { SQLMESH_PROJECT_DIRECTORY, TRANSFORM_PACKAGE_DIRECTORY } from '../../src/index.ts';
+import { SQLMESH_PROJECT_DIRECTORY, TRANSFORM_PACKAGE_DIRECTORY } from '../../src/run-sqlmesh.ts';
 
 const WORKSPACE_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 

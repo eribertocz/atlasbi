@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { describeFailure, stateSchemaFor } from '../../src/index.ts';
+import { describeFailure, stateSchemaFor } from '../../src/run-sqlmesh.ts';
 
 describe('describeFailure', () => {
   it('reduces a Python traceback to the exception it ends with', () => {

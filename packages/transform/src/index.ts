@@ -1,12 +1,16 @@
 export { CONSUMED_DATA_CONTRACTS, PRODUCED_DATA_CONTRACTS } from './data-contracts.ts';
+export { stateSchemaFor, TRANSFORM_PACKAGE_DIRECTORY } from './run-sqlmesh.ts';
+export type { TransformTarget } from './run-sqlmesh.ts';
 export {
-  describeFailure,
-  runSqlMesh,
-  SQLMESH_PROJECT_DIRECTORY,
-  stateSchemaFor,
-  TRANSFORM_PACKAGE_DIRECTORY,
-} from './run-sqlmesh.ts';
-export type { RunSqlMeshOptions, SqlMeshRun, TransformTarget } from './run-sqlmesh.ts';
+  isTransformVerb,
+  runTransformJob,
+  TRANSFORM_JOBS,
+  transformFailure,
+  transformJobNeedsLakehouse,
+} from './transform-jobs.ts';
+export type { TransformJobOptions, TransformJobRun } from './transform-jobs.ts';
+export { runTransformTool } from './transform-tool.ts';
+export type { TransformToolOptions, TransformToolRun } from './transform-tool.ts';
 export {
   checkTransformEnvironment,
   readTransformEnvironment,
