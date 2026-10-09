@@ -1,7 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { AnalyticalQueryPort } from '@atlasbi/contracts';
-import { LAKEHOUSE_CATALOG_TYPES, type LakehouseAdminPort } from '@atlasbi/contracts';
+import {
+  LAKEHOUSE_CATALOG_TYPES,
+  type LakehouseAdminPort,
+  MIN_ORPHAN_GRACE_HOURS,
+} from '@atlasbi/contracts';
 import { expectLakehouseError } from './analytical-query-port-contract.ts';
 
 export interface LakehouseAdminPortFixture {
@@ -106,6 +110,66 @@ export function describeLakehouseAdminPortContract(
       } finally {
         await reader.close();
       }
+    });
+
+    it('maintains the lakehouse: a dry run changes nothing, a real run expires and compacts, results unchanged', async () => {
+      await admin.execute('CREATE TABLE contract_maintained (id BIGINT)');
+      for (let round = 0; round < 4; round += 1) {
+        // Above the inlining limit: each insert leaves a data file of its own.
+        await admin.execute(
+          `INSERT INTO contract_maintained SELECT range + ${round * 100} FROM range(100)`,
+        );
+      }
+      await admin.execute('DELETE FROM contract_maintained WHERE id < 50');
+      // A table with one file of deleted rows and one clean file: nothing for compaction to merge.
+      await admin.execute('CREATE TABLE contract_deleted (id BIGINT)');
+      await admin.execute('INSERT INTO contract_deleted SELECT range FROM range(100)');
+      await admin.execute('DELETE FROM contract_deleted WHERE id = 0');
+      await admin.execute('INSERT INTO contract_deleted SELECT range FROM range(100, 200)');
+      // A table whose own columns change between two loads: its files cannot be merged.
+      await admin.execute('CREATE TABLE contract_evolved (id BIGINT)');
+      await admin.execute('INSERT INTO contract_evolved SELECT range FROM range(100)');
+      await admin.execute('ALTER TABLE contract_evolved ADD COLUMN note VARCHAR');
+      await admin.execute("INSERT INTO contract_evolved SELECT range, 'x' FROM range(100, 200)");
+      const policy = {
+        snapshotRetentionDays: 0,
+        cleanupGraceMinutes: 0,
+        orphanGraceHours: MIN_ORPHAN_GRACE_HOURS,
+      };
+      const sum = async () => {
+        const reader = await fixture.openQueryPort();
+        try {
+          return (await reader.query('SELECT count(*), sum(id) FROM contract_maintained')).rows;
+        } finally {
+          await reader.close();
+        }
+      };
+      const before = await sum();
+
+      const dry = await admin.maintain(policy, { dryRun: true });
+      const dryAgain = await admin.maintain(policy, { dryRun: true });
+      const real = await admin.maintain(policy);
+      const after = await admin.maintain(policy, { dryRun: true });
+
+      expect(dry).toMatchObject({ dryRun: true, deletedOrphans: 0 });
+      expect(dry.expiredSnapshots).toBeGreaterThan(0);
+      expect(dry.compactedTables).toBeGreaterThan(0);
+      expect(dryAgain).toEqual(dry);
+      // What the dry run announced is exactly what the real run does.
+      expect({ ...real, dryRun: true }).toEqual(dry);
+      expect(real.compactedTables).toBeGreaterThan(0);
+      expect(after.expiredSnapshots).toBeLessThan(dry.expiredSnapshots);
+      expect(await sum()).toEqual(before);
+    });
+
+    it('refuses an orphan grace under the floor, before changing anything', async () => {
+      await expect(
+        admin.maintain({
+          snapshotRetentionDays: 7,
+          cleanupGraceMinutes: 60,
+          orphanGraceHours: MIN_ORPHAN_GRACE_HOURS - 1,
+        }),
+      ).rejects.toThrow(RangeError);
     });
 
     it('rejects several statements or an explicit transaction in one call, running none', async () => {

@@ -5,6 +5,9 @@ import {
   type LakehouseAdminCapabilities,
   type LakehouseAdminPort,
   type LakehouseHealth,
+  maintenancePolicyIssues,
+  type MaintenancePolicy,
+  type MaintenanceReport,
   type QueryParameter,
 } from '@atlasbi/contracts';
 import type { DuckDBConnection, DuckDBResultReader } from '@duckdb/node-api';
@@ -51,6 +54,107 @@ export class DuckDBLakehouseAdmin implements LakehouseAdminPort {
       );
       return { rowsFlushed: flushed.toString() };
     });
+  }
+
+  /**
+   * Retention (docs/01 §6.8), in DuckLake's order: expire versions, delete what only they used,
+   * delete orphans past their grace, compact small files. Every function's rows are read in full:
+   * `SELECT count(*) FROM ducklake_expire_snapshots(…)` counts without expiring anything (measured
+   * in Plan C, Phase 0). A dry run asks each function what it would do; compaction has no dry run,
+   * so the tables it would touch are counted from the catalog, by the rule it follows.
+   */
+  async maintain(
+    policy: MaintenancePolicy,
+    options: { dryRun?: boolean } = {},
+  ): Promise<MaintenanceReport> {
+    const issues = maintenancePolicyIssues(policy);
+    if (issues.length > 0) {
+      throw new RangeError(`Invalid maintenance policy: ${issues.join('; ')}.`);
+    }
+    const lake = quoteLiteral(LAKE_ALIAS);
+    const dryRun = options.dryRun === true;
+    const flag = dryRun ? ', dry_run => true' : '';
+    const steps = {
+      expire: `SELECT * FROM ducklake_expire_snapshots(${lake}, older_than => now() - INTERVAL '${policy.snapshotRetentionDays} days'${flag})`,
+      cleanup: `SELECT * FROM ducklake_cleanup_old_files(${lake}, older_than => now() - INTERVAL '${policy.cleanupGraceMinutes} minutes'${flag})`,
+      orphans: `SELECT * FROM ducklake_delete_orphaned_files(${lake}, older_than => now() - INTERVAL '${policy.orphanGraceHours} hours'${flag})`,
+      compact: dryRun ? undefined : `SELECT * FROM ducklake_merge_adjacent_files(${lake})`,
+    };
+    const rowsOf = async (statement: string) =>
+      (await this.#write(statement, (connection) => readRows(connection, statement))).length;
+    return {
+      dryRun,
+      expiredSnapshots: await rowsOf(steps.expire),
+      deletedFiles: await rowsOf(steps.cleanup),
+      deletedOrphans: await rowsOf(steps.orphans),
+      compactedTables:
+        steps.compact === undefined
+          ? await this.#countCompactableTables()
+          : await rowsOf(steps.compact),
+    };
+  }
+
+  /**
+   * What compaction would merge — it has no dry run — counted by the rules it follows, measured in
+   * Plan C, Phase C: it merges, per table, the live files written under the same schema of that
+   * table and with no deleted rows; a deletion kept in a delete file or inlined in the catalog both
+   * exclude a file. The battery checks a dry run against the real one, so a DuckLake that changes
+   * these rules fails there before anyone trusts a wrong count.
+   */
+  async #countCompactableTables(): Promise<number> {
+    const filesStatement = `
+      SELECT f.table_id, f.data_file_id, (
+        SELECT max(v.begin_snapshot) FROM ${METADATA_CATALOG}.ducklake_schema_versions v
+        WHERE v.table_id = f.table_id AND v.begin_snapshot <= f.begin_snapshot
+      ) AS table_schema
+      FROM ${METADATA_CATALOG}.ducklake_data_file f
+      WHERE f.end_snapshot IS NULL AND NOT EXISTS (
+        SELECT 1 FROM ${METADATA_CATALOG}.ducklake_delete_file d
+        WHERE d.data_file_id = f.data_file_id AND d.end_snapshot IS NULL
+      )`;
+    const files = await this.#engine.run(filesStatement, (connection) =>
+      readRows(connection, filesStatement),
+    );
+    const groups = new Map<string, { tableId: string; fileIds: Set<string> }>();
+    for (const file of files) {
+      const tableId = scalarText(file.table_id) ?? '';
+      const key = `${tableId}:${scalarText(file.table_schema) ?? ''}`;
+      const group = groups.get(key) ?? { tableId, fileIds: new Set<string>() };
+      group.fileIds.add(scalarText(file.data_file_id) ?? '');
+      groups.set(key, group);
+    }
+    const compactable = new Set<string>();
+    for (const group of groups.values()) {
+      if (group.fileIds.size < 2) {
+        continue;
+      }
+      const inlinedDeletes = await this.#filesWithInlinedDeletes(group.tableId);
+      const clean = [...group.fileIds].filter((fileId) => !inlinedDeletes.has(fileId));
+      if (clean.length >= 2) {
+        compactable.add(group.tableId);
+      }
+    }
+    return compactable.size;
+  }
+
+  /** Small deletions stay in the catalog, one table per lakehouse table — when there are any. */
+  async #filesWithInlinedDeletes(tableId: string): Promise<Set<string>> {
+    if (!/^\d+$/.test(tableId)) {
+      return new Set();
+    }
+    const statement = `SELECT DISTINCT file_id FROM ${METADATA_CATALOG}.ducklake_inlined_delete_${tableId}`;
+    try {
+      const rows = await this.#engine.run(statement, (connection) =>
+        readRows(connection, statement),
+      );
+      return new Set(rows.map((row) => scalarText(row.file_id) ?? ''));
+    } catch (error) {
+      // No such table: this lakehouse table never had a deletion kept in the catalog.
+      if (error instanceof LakehouseError && /does not exist|not found/i.test(error.message)) {
+        return new Set();
+      }
+      throw error;
+    }
   }
 
   async checkHealth(): Promise<LakehouseHealth> {

@@ -1,10 +1,15 @@
 import path from 'node:path';
 
-import { LAKEHOUSE_CATALOG_TYPES, type LakehouseCatalogType } from '@atlasbi/contracts';
+import {
+  LAKEHOUSE_CATALOG_TYPES,
+  type LakehouseCatalogType,
+  type MaintenancePolicy,
+  MIN_ORPHAN_GRACE_HOURS,
+} from '@atlasbi/contracts';
 import { z } from 'zod';
 
 /** Config Schema contract version (docs/21 §2) — bump when a variable changes meaning or is removed. */
-export const CONFIG_SCHEMA_VERSION = 8;
+export const CONFIG_SCHEMA_VERSION = 9;
 
 const DUCKDB_CATALOG_REJECTION =
   'a DuckDB-file catalog allows a single client only and is not supported — use postgres (default) or sqlite (docs/01 §6.6)';
@@ -42,6 +47,17 @@ const lakehouseVariables = {
   ATLASBI_LAKEHOUSE_S3_REGION: z.string().optional(),
   ATLASBI_LAKEHOUSE_S3_USE_SSL: z.enum(['true', 'false']).optional(),
   ATLASBI_DUCKDB_EXTENSION_DIRECTORY: z.string().default('.data/duckdb/extensions'),
+  // Retention (docs/01 §6.8): `pnpm lakehouse maintain`. Development defaults; production sets its own.
+  ATLASBI_LAKEHOUSE_SNAPSHOT_RETENTION_DAYS: z.coerce.number().int().min(0).default(7),
+  ATLASBI_LAKEHOUSE_CLEANUP_GRACE_MINUTES: z.coerce.number().int().min(0).default(60),
+  ATLASBI_LAKEHOUSE_ORPHAN_GRACE_HOURS: z.coerce
+    .number()
+    .int()
+    .min(
+      MIN_ORPHAN_GRACE_HOURS,
+      `must be at least ${MIN_ORPHAN_GRACE_HOURS}: a shorter grace deletes files writers have not committed yet, and their tables lose data`,
+    )
+    .default(24),
 };
 
 const S3_VARIABLES = [
@@ -193,6 +209,8 @@ export interface LakehouseConfig {
   sqliteCatalogPath: string;
   /** Absolute; `pnpm bootstrap` installs the DuckDB extensions here. */
   extensionDirectory: string;
+  /** What `pnpm lakehouse maintain` keeps (docs/01 §6.8). */
+  retention: MaintenancePolicy;
 }
 
 /** Domain shape of the configuration — code never reads env var names directly. */
@@ -302,5 +320,10 @@ export function toLakehouseConfig(
     storage,
     sqliteCatalogPath: resolve(environment.ATLASBI_LAKEHOUSE_SQLITE_PATH),
     extensionDirectory: resolve(environment.ATLASBI_DUCKDB_EXTENSION_DIRECTORY),
+    retention: {
+      snapshotRetentionDays: environment.ATLASBI_LAKEHOUSE_SNAPSHOT_RETENTION_DAYS,
+      cleanupGraceMinutes: environment.ATLASBI_LAKEHOUSE_CLEANUP_GRACE_MINUTES,
+      orphanGraceHours: environment.ATLASBI_LAKEHOUSE_ORPHAN_GRACE_HOURS,
+    },
   };
 }

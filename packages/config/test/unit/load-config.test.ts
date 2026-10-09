@@ -59,6 +59,7 @@ describe('loadConfig', () => {
         },
         sqliteCatalogPath: path.join(BASE, '.data/lakehouse/sqlite/catalog.sqlite'),
         extensionDirectory: path.join(BASE, '.data/duckdb/extensions'),
+        retention: { snapshotRetentionDays: 7, cleanupGraceMinutes: 60, orphanGraceHours: 24 },
       },
     });
   });
@@ -360,5 +361,34 @@ describe('lakehouse configuration (Config Schema v4)', () => {
     expect(
       bootstrapSecretKeys(loadLakehouseConfig({ ATLASBI_LAKEHOUSE_CATALOG_TYPE: 'sqlite' })),
     ).toEqual(['database.url', 'transform.state-url', 'auth.secret']);
+  });
+});
+
+describe('lakehouse retention (Config Schema v9, Plan C)', () => {
+  it('keeps 7 days of versions, an hour of cleanup grace and a day of orphan grace by default', () => {
+    expect(loadLakehouseConfig({}, { baseDirectory: BASE }).retention).toEqual({
+      snapshotRetentionDays: 7,
+      cleanupGraceMinutes: 60,
+      orphanGraceHours: 24,
+    });
+  });
+
+  it('never lets .env set an orphan grace under the floor: it would corrupt tables', () => {
+    for (const value of ['0', '-1', '0.5']) {
+      const error = captureError(() =>
+        loadLakehouseConfig(
+          { ATLASBI_LAKEHOUSE_ORPHAN_GRACE_HOURS: value },
+          { baseDirectory: BASE },
+        ),
+      );
+      expect(error, value).toBeInstanceOf(ConfigurationError);
+      expect((error as ConfigurationError).issues.join(' '), value).toMatch(
+        /ATLASBI_LAKEHOUSE_ORPHAN_GRACE_HOURS/,
+      );
+    }
+    expect(
+      loadLakehouseConfig({ ATLASBI_LAKEHOUSE_ORPHAN_GRACE_HOURS: '1' }, { baseDirectory: BASE })
+        .retention.orphanGraceHours,
+    ).toBe(1);
   });
 });

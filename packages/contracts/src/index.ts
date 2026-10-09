@@ -36,6 +36,8 @@ export type {
 export {
   LAKEHOUSE_ADMIN_PORT_VERSION,
   LAKEHOUSE_CATALOG_TYPES,
+  maintenancePolicyIssues,
+  MIN_ORPHAN_GRACE_HOURS,
 } from './lakehouse/lakehouse-admin-port.ts';
 export type {
   ExecuteResult,
@@ -44,6 +46,8 @@ export type {
   LakehouseAdminPort,
   LakehouseCatalogType,
   LakehouseHealth,
+  MaintenancePolicy,
+  MaintenanceReport,
 } from './lakehouse/lakehouse-admin-port.ts';
 export { LAKEHOUSE_ERROR_CODES, LakehouseError } from './lakehouse/lakehouse-error.ts';
 export type { LakehouseErrorCode, LakehouseErrorOptions } from './lakehouse/lakehouse-error.ts';
