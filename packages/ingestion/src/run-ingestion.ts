@@ -6,6 +6,7 @@ import {
   INGEST_JOB_VERSION,
   type IngestErrorCode,
   type IngestSummary,
+  jobErrorForLakehouseFailure,
   LakehouseError,
   parseIngestSummary,
 } from '@atlasbi/contracts';
@@ -79,7 +80,10 @@ export async function runIngestion(
     await assertProvisioned(target.lakehouse);
   } catch (error) {
     if (error instanceof LakehouseError) {
-      return { summary: ingestionFailure(source, startedAt, lakehouseFailure(error)), stderr: '' };
+      return {
+        summary: ingestionFailure(source, startedAt, jobErrorForLakehouseFailure(error)),
+        stderr: '',
+      };
     }
     throw error;
   }
@@ -224,42 +228,6 @@ export function childEnvironment(
     /* eslint-enable @typescript-eslint/naming-convention */
     ...(options.debug === true ? { ATLASBI_INGEST_DEBUG: '1' } : {}),
   };
-}
-
-/** What a failure of the lakehouse means for the job, in its own terms (it never creates one). */
-function lakehouseFailure(error: LakehouseError): { code: IngestErrorCode; message: string } {
-  const message = error.remedy === undefined ? error.message : `${error.message} ${error.remedy}`;
-  // The warehouse gives a refused password and a missing database the same code; its own message
-  // (never the engine's) tells them apart, and the integration tests pin both.
-  switch (error.code) {
-    case 'catalog_unreachable':
-      return {
-        code: error.retryable
-          ? 'catalog_unavailable'
-          : /authentication failed/i.test(error.message)
-            ? 'credentials_refused'
-            : 'configuration_error',
-        message,
-      };
-    case 'storage_unreachable':
-      return {
-        code: error.retryable
-          ? 'storage_unavailable'
-          : /refused the request/i.test(error.message)
-            ? 'credentials_refused'
-            : 'configuration_error',
-        message,
-      };
-    case 'catalog_busy':
-    case 'write_conflict':
-      return { code: 'catalog_unavailable', message };
-    case 'extension_missing':
-    case 'catalog_format_mismatch':
-    case 'data_path_mismatch':
-      return { code: 'configuration_error', message };
-    default:
-      return { code: 'internal_error', message };
-  }
 }
 
 /**

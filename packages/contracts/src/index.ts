@@ -98,6 +98,49 @@ export type {
   SemanticRuntimePort,
 } from './semantic/semantic-runtime-port.ts';
 export {
+  JOB_EXIT_CODES,
+  jobErrorForLakehouseFailure,
+  SHARED_JOB_ERROR_CODES,
+} from './jobs/job-summary.ts';
+export type { JobEnvelope, JobError, JobExitCode, SharedJobErrorCode } from './jobs/job-summary.ts';
+export {
+  InvalidLakehouseMaintenanceSummaryError,
+  LAKEHOUSE_MAINTENANCE_ERROR_CODES,
+  LAKEHOUSE_MAINTENANCE_JOB_VERSION,
+  lakehouseMaintenanceExitCodeFor,
+  parseLakehouseMaintenanceSummary,
+} from './jobs/lakehouse-maintenance-job.ts';
+export type {
+  LakehouseMaintenanceErrorCode,
+  LakehouseMaintenanceSummary,
+} from './jobs/lakehouse-maintenance-job.ts';
+export {
+  InvalidSemanticRefreshSummaryError,
+  parseSemanticRefreshSummary,
+  SEMANTIC_REFRESH_ERROR_CODES,
+  SEMANTIC_REFRESH_JOB_VERSION,
+  semanticRefreshExitCodeFor,
+} from './jobs/semantic-refresh-job.ts';
+export type {
+  SemanticRefreshBuild,
+  SemanticRefreshErrorCode,
+  SemanticRefreshSummary,
+} from './jobs/semantic-refresh-job.ts';
+export {
+  InvalidTransformSummaryError,
+  parseTransformSummary,
+  TRANSFORM_ERROR_CODES,
+  TRANSFORM_JOB_VERSION,
+  TRANSFORM_VERBS,
+  transformExitCodeFor,
+} from './jobs/transform-job.ts';
+export type {
+  TransformErrorCode,
+  TransformJobSummary,
+  TransformModelResult,
+  TransformVerb,
+} from './jobs/transform-job.ts';
+export {
   exitCodeFor,
   INGEST_ERROR_CODES,
   INGEST_EXIT_CODES,
