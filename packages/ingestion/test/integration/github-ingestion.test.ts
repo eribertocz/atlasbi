@@ -257,11 +257,11 @@ for (const catalogType of CATALOG_TYPES) {
   });
 }
 
-// A recreated lakehouse — `pnpm reset:local` + `pnpm bootstrap` keeps .data/ingestion — must not
-// inherit the incremental cursors of the one it replaces, or it would load only what is newer than
-// them (SQLMesh's state had that trap, build step 2). dlt avoids it on its own: with no pipeline
-// state in the destination, it drops the local one (measured in Phase D). This pins it, so an
-// upgrade that changes it fails here.
+// A recreated lakehouse must not inherit the incremental cursors of the one it replaces, or it would
+// load only what is newer than them (SQLMesh's state had that trap, build step 2). `pnpm
+// reset:local` deletes .data/ingestion with the lakehouse, but a custom ATLASBI_INGESTION_DATA_PATH
+// survives it — and dlt copes on its own: with no pipeline state in the destination, it drops the
+// local one (measured in build step 7). This guard pins that, so an upgrade that changes it fails.
 describe('the ingestion state belongs to one lakehouse', () => {
   let github: FakeGitHub;
   let dataDirectory: string;

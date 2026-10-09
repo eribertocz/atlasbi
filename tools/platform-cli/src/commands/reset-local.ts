@@ -3,13 +3,14 @@ import { createInterface } from 'node:readline/promises';
 
 import { composeDown, ensureEngineRunning } from '../container-runtime/podman.ts';
 import { hasEnvFile, loadEnvFile } from '../local-environment.ts';
-import { PROJECT_NAME, WORKSPACE_FILES } from '../workspace-paths.ts';
+import { LOCAL_DATA_DIRECTORIES, PROJECT_NAME } from '../workspace-paths.ts';
 
 const CONFIRM_FLAG = `--confirm=${PROJECT_NAME}`;
 
 /**
- * Destroys the local stack including its data volumes and the lakehouse folder (docs/19 §2:
- * destructive, always explicit). Confirmation is typed interactively, or given as
+ * Destroys the local stack including its data volumes, the lakehouse folder and the ingestion's
+ * local state of that lakehouse (docs/19 §2: destructive, always explicit). The ingestion folder
+ * goes too, rather than trusting the tool to notice a recreated lakehouse on its own. Confirmation is typed interactively, or given as
  * `--confirm=atlasbi` for scripted use. `.env` is configuration, not data, and is left untouched;
  * the DuckDB extensions are a cache, not data, and are kept so no download is needed afterwards.
  */
@@ -23,10 +24,12 @@ export async function runResetLocal(args: readonly string[]): Promise<void> {
   }
   await ensureEngineRunning();
   await composeDown({ removeVolumes: true });
-  await rm(WORKSPACE_FILES.lakehouseDataDirectory, { recursive: true, force: true });
-  console.log(`Removed ${WORKSPACE_FILES.lakehouseDataDirectory}.`);
+  for (const directory of LOCAL_DATA_DIRECTORIES) {
+    await rm(directory, { recursive: true, force: true });
+    console.log(`Removed ${directory}.`);
+  }
   console.log(
-    '\nLocal stack and its data removed. A custom ATLASBI_LAKEHOUSE_DATA_PATH outside .data/ is never deleted.' +
+    '\nLocal stack and its data removed. A custom ATLASBI_LAKEHOUSE_DATA_PATH or ATLASBI_INGESTION_DATA_PATH outside .data/ is never deleted.' +
       '\nRun `pnpm bootstrap` to start from scratch.',
   );
 }
@@ -40,7 +43,7 @@ async function confirmInteractively(): Promise<boolean> {
   const prompt = createInterface({ input: process.stdin, output: process.stdout });
   try {
     const answer = await prompt.question(
-      `This permanently deletes all local data (every volume of the "${PROJECT_NAME}" stack and the lakehouse in .data/lakehouse).\n` +
+      `This permanently deletes all local data (every volume of the "${PROJECT_NAME}" stack and the lakehouse and the ingestion state in .data/lakehouse and .data/ingestion).\n` +
         `Type "${PROJECT_NAME}" to confirm: `,
     );
     return answer.trim() === PROJECT_NAME;

@@ -160,6 +160,7 @@ Lo que la Fase 0 midió y la plataforma hace por eso:
 - **`append` para eventos inmutables, `merge` solo con una clave que lo pida** (decisión K6). Medido: `merge` duplica los archivos de cada carga, deja un esquema `_staging` persistente y tarda un 25 % más. GitHub usa `append` y el dedupe lo hace la vista.
 - **Un pipeline por partición.** El cursor incremental pertenece a un pipeline y a un recurso: dos repositorios en un pipeline comparten cursor, y el segundo no carga nada. GitHub usa un pipeline por repositorio. Perder ese estado con `append` duplicaría eventos; la vista los deduplica igual.
 - **Una carga que falla se retoma, no se duplica:** la corrida siguiente termina el paquete pendiente con el mismo `load_id`.
+- **El estado local pertenece a un lakehouse.** Un lakehouse recreado no hereda los cursores del anterior. dlt ya lo evita solo: descarta su estado local cuando el destino no tiene el suyo, y un test lo fija como guarda. Además, `pnpm reset:local` borra `.data/ingestion` junto con el lakehouse, para no depender de ese comportamiento interno.
 - **El home del usuario queda intacto.** dlt escribe `~/.dlt/.anonymous_id` en cada corrida, aun con la telemetría apagada. El runner le da un home propio dentro de `.data/ingestion` antes de importarlo, y un test verifica que `~/.dlt` no se crea y, si ya existe, queda vacío.
 
 ---
