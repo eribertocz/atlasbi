@@ -17,6 +17,7 @@
     "transform": "node tools/platform-cli/src/main.ts transform",
     "ingest": "node tools/platform-cli/src/main.ts ingest",
     "semantic": "node tools/platform-cli/src/main.ts semantic",
+    "lakehouse": "node tools/platform-cli/src/main.ts lakehouse",
     "stack:up": "node tools/platform-cli/src/main.ts stack:up",
     "stack:down": "node tools/platform-cli/src/main.ts stack:down",
     "stack:logs": "node tools/platform-cli/src/main.ts stack:logs",

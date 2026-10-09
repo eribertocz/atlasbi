@@ -4,6 +4,7 @@ import { runBootstrap } from './commands/bootstrap.ts';
 import { runDev } from './commands/dev.ts';
 import { runIdentityReconcile } from './commands/identity-reconcile.ts';
 import { runIngest } from './commands/ingest.ts';
+import { runLakehouse } from './commands/lakehouse.ts';
 import { runPreflight } from './commands/preflight.ts';
 import { runResetLocal } from './commands/reset-local.ts';
 import { runSeed } from './commands/seed.ts';
@@ -21,6 +22,7 @@ const COMMANDS: Record<string, (args: readonly string[]) => Promise<void>> = {
   transform: runTransform,
   ingest: runIngest,
   semantic: runSemantic,
+  lakehouse: runLakehouse,
   'stack:up': runStackUp,
   'stack:down': runStackDown,
   'stack:logs': runStackLogs,
