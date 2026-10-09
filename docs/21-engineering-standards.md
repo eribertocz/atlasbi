@@ -111,7 +111,15 @@ Commits normales (`feat(matrix): add server-side hierarchy expansion`, `fix(quer
 - `_load_id` (`varchar`, nunca nulo): la carga que escribió la fila. Es opaco y lo elige el adaptador.
 - `_loaded_at` (`timestamp_tz`, nunca nulo): cuándo terminó esa carga.
 
-Las columnas propias de una herramienta (`_dlt_load_id`, `_dlt_id`…) **nunca** forman parte de un contrato: `parseDataContract` las rechaza. Tampoco pueden leerlas los modelos: la regla de lint `NoIngestionInternals` de SQLMesh rechaza cualquier referencia a `_dlt_*` o a los esquemas `ingestion_*` (`02-transformacion.md` §6.5). Cómo publica el adaptador de dlt ese contrato se decide y se mide en la Fase 0 del Paso 7.
+Las columnas propias de una herramienta (`_dlt_load_id`, `_dlt_id`…) **nunca** forman parte de un contrato: `parseDataContract` las rechaza. Tampoco pueden leerlas los modelos: la regla de lint `NoIngestionInternals` de SQLMesh rechaza cualquier referencia a `_dlt_*` o a los esquemas `ingestion_*` (`02-transformacion.md` §6.5).
+
+**La única excepción al confinamiento de la herramienta de ingesta (decisión D2, Paso 7).** Fuera de `packages/ingestion` y de la documentación, ningún archivo nombra a dlt, salvo dos guardas que existen justamente para frenarlo, con sus tests:
+- el rechazo de las columnas `_dlt*` en `parseDataContract` (`@atlasbi/contracts`), y
+- la regla de lint `NoIngestionInternals` de SQLMesh (`packages/transform/project/linter/platform_rules.py`).
+
+Quitarles el nombre las debilitaría: el contrato y el linter, que corre en Python dentro de SQLMesh, no pueden leer esos prefijos desde el paquete de ingesta. Un test de `packages/ingestion` recorre el repositorio y falla ante cualquier otra mención; estas dos figuran en su lista de excepciones conocidas. Si se cambia de herramienta, se actualizan las dos guardas y esa lista.
+
+**Cómo publica la ingesta un contrato de landing (Paso 7).** La herramienta escribe en su propio dataset, `ingestion_<source>`. El adaptador publica encima una vista `landing_<source>.<entidad>` con las columnas del contrato, `_load_id` y `_loaded_at`, solo de cargas completas y sin repetidos. La vista está vacía y tipada antes de la primera carga y se regenera en cada corrida (`03-ingesta.md` §6.4).
 
 **Contratos vigentes:**
 
@@ -119,6 +127,8 @@ Las columnas propias de una herramienta (`_dlt_load_id`, `_dlt_id`…) **nunca**
 | --- | --- | --- | --- |
 | `source.development_sales_orders` 1.0 | `@atlasbi/warehouse` (`pnpm seed`) | `@atlasbi/transform` | `fixture.sales_orders` |
 | `mart.sales_orders` 1.0 | `@atlasbi/transform` | `@atlasbi/semantic` | `marts.mart_sales_orders` |
+| `landing.github_repo_events` 1.0 | `@atlasbi/ingestion` (`pnpm ingest github`) | `@atlasbi/transform` | `landing_github.repo_events` |
+| `mart.github_repo_events` 1.0 | `@atlasbi/transform` | `@atlasbi/semantic` | `marts.mart_github_repo_events` |
 
 ---
 

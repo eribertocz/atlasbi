@@ -138,6 +138,26 @@ Airflow permite re-ejecutar un DAG para un rango de fechas pasado sin tocar el r
 - **Expone**: una UI/API de monitoreo de ejecuciones, historial de corridas, y alertas por tarea.
 - **No expone**: ninguna transformación ni definición de métrica propia.
 
+### 7.1 El trabajo de ingesta: códigos de salida y resumen (contrato 1.0, Paso 7)
+
+La tarea de ingesta llama a `pnpm ingest <source> --json` y decide con dos cosas: el código de salida y el resumen JSON (`IngestSummary`, `@atlasbi/contracts`, `jobVersion` 1.0). El resumen dice qué cargó por partición (`loads`) y qué quedó en el landing (`landing`), o por qué falló (`error.code`, un mensaje propio de la plataforma, nunca el de la herramienta).
+
+| Código | Significado | Qué hace Airflow |
+| --- | --- | --- |
+| 0 | Terminó bien | Sigue con `sqlmesh run` |
+| 64 | Uso incorrecto del comando | Falla sin reintento: es un error del DAG |
+| 65 | Los datos cambiaron: un tipo de columna, o un contrato que no se cumple | Falla sin reintento y avisa: hay que revisar la fuente o el contrato |
+| 70 | Error interno | Falla sin reintento; el detalle sale con `ATLASBI_INGEST_DEBUG=1` |
+| **75** | **Reintentable:** la fuente, el catálogo o el almacenamiento no respondieron | Reintenta tal cual: la carga que falló se retoma, nunca se duplica |
+| 77 | Credenciales rechazadas (la fuente o el lakehouse) | Falla sin reintento y avisa |
+| 78 | Configuración: falta un secreto o una variable, o el entorno no está preparado | Falla sin reintento |
+
+`retryable` del resumen es `true` exactamente cuando el código es 75.
+
+**Cómo llamarlo para que stdout tenga solo el JSON (hallazgo del Paso 7).** `pnpm -s ingest github --json` no alcanza: cuando el comando falla, pnpm 11 igual escribe en stdout su línea `[ELIFECYCLE] Command failed with exit code N.`, después del resumen. Con **`pnpm --reporter=silent ingest github --json`** (o `pnpm run --silent ingest github --json`), stdout lleva solo el resumen; está probado con pnpm 11.27.1. El progreso para una persona va siempre a stderr.
+
+**Cuándo llega lo ingerido al mart (hallazgo del Paso 7).** El mart de GitHub (`marts.mart_github_repo_events`) tiene `cron '@daily'`: `sqlmesh run` lo reconstruye una vez por intervalo diario, que cierra a las 00:00 UTC. Lo que se ingiere más tarde en el día, después de esa corrida, llega al mart al día siguiente: `sqlmesh run` responde "No models are ready to run" hasta que cierre el próximo intervalo (medido en la Fase C). **El horario del DAG tiene que tenerlo en cuenta:** encadenar la ingesta antes de `sqlmesh run` dentro del mismo intervalo, o cambiar el `cron` del mart si hace falta más frescura. Nunca forzar un `plan` para refrescar: eso es despliegue, no operación diaria (`15-testing-cicd.md`).
+
 ---
 
 ## 8. Por dónde empezar a construir (paso a paso concreto)

@@ -156,6 +156,12 @@ fuente
 SNAPSHOT — opcional, sobre cualquiera de los dos, con motivo explícito y retención
 ```
 
+**Cómo quedó el landing en el Paso 7 (la primera fuente con ingesta, GitHub).** La copia física es la del extractor y no hay otra: dlt escribe sus tablas en el dataset `ingestion_<source>`, solo con lo que trae la fuente. Lo que lee la transformación es una **vista** sobre esas tablas, `landing_<source>.<entidad>`, que no duplica nada:
+- tiene las columnas de su contrato (`landing.<source>_<entidad>`, `21-engineering-standards.md` §2.4) más `_load_id` y `_loaded_at`;
+- muestra solo cargas completas y cada fila una vez.
+
+Ningún modelo puede leer las tablas del extractor: la regla de lint `NoIngestionInternals` (§6.5) rechaza el esquema `ingestion_*` y la metadata de la herramienta. Detalle medido en `03-ingesta.md` §6.4.
+
 **Direct transformation is preferred when the source is certified for analytical direct-read.** Una fuente que no cumple las condiciones de §6.1.2 usa el import con ingesta. La plataforma decide el camino: el autor en Data Studio nunca ve esta distinción (`20-product-ui-ux.md` §8). Cuando dlt no aporta valor —una fuente certificada, un archivo durable—, no se inserta en el pipeline.
 
 **Ejemplo concreto — una tabla operativa de 120M filas de las que el análisis usa 60M:**
@@ -209,7 +215,7 @@ Un pipeline puede no guardar en DuckLake nada más que su `mart_*`.
 5. **No hay que capturar historia ni borrados que la fuente ya no pueda reproducir.** Reprocesar un período lee el estado *actual* de la fuente, no el de entonces. Si esa historia importa, corresponde CDC o un snapshot.
 6. **Está aprobada y registrada por la plataforma.**
 
-Si falla cualquiera, la fuente usa el import con ingesta (dlt con landing mínimo). El formato concreto del registro de fuentes se diseña con la primera fuente real (Paso 7); estas reglas ya son norma. Cómo adjunta SQLMesh las fuentes en su conexión DuckDB se verifica contra la versión exacta de SQLMesh que fije el Paso 2.
+Si falla cualquiera, la fuente usa el import con ingesta (dlt con landing mínimo). La primera fuente real del Paso 7 fue una API (GitHub): falla la condición 4 (GitHub guarda solo los últimos 300 eventos de un repositorio) y una API no se lee desde DuckDB, así que usa el import con ingesta. El formato concreto del registro de fuentes para lectura directa se diseña con la primera fuente certificada; estas reglas ya son norma. Cómo adjunta SQLMesh las fuentes en su conexión DuckDB se verifica contra la versión exacta de SQLMesh que fije el Paso 2.
 
 ### 6.2 Entornos virtuales, en concreto
 
@@ -262,11 +268,18 @@ Medido en la Fase 0 del Paso 2 (SQLMesh 0.236.2, DuckDB 1.5.5, DuckLake 1.0) ant
 **Corrección, hecha al construir el Paso 2:** la versión anterior decía `pip install "sqlmesh[web,duckdb]"` — ese extra `duckdb` no existe (DuckDB es dependencia base de SQLMesh) y la UI web no se usa. Así quedó construido:
 
 1. `packages/transform` es un proyecto uv propio (`pyproject.toml`, `uv.lock`, `.python-version` = 3.13.14): `sqlmesh[postgres]==0.236.2` (el extra `postgres` es para el state) y `duckdb==1.5.5`, igual que la plataforma. `pnpm bootstrap` corre `uv sync --frozen` una vez; nunca comparte entorno con `packages/ingestion`.
-2. El proyecto SQLMesh vive en `packages/transform/project/`: `config.py` (todo desde las variables del runner), `external_models.yaml` (el fixture del Paso 1 como fuente), `models/`, `tests/`, `linter/`.
+2. El proyecto SQLMesh vive en `packages/transform/project/`: `config.py` (todo desde las variables del runner), `external_models.yaml` (el fixture del Paso 1 como fuente y, desde el Paso 7, el landing de GitHub, cada uno exactamente como su contrato de datos), `models/`, `tests/`, `linter/`.
 3. `state_connection` apunta a la base `sqlmesh_state` del mismo Postgres, que `pnpm bootstrap` crea; `state_schema` es el del lakehouse (§6.3).
 4. Primer modelo: `staging.stg_sales_orders` (`VIEW`) sobre `lake.fixture.sales_orders`; primer resultado analítico: `marts.mart_sales_orders` (`INCREMENTAL_BY_TIME_RANGE` por `order_date`, grano pedido, sin partición por día), con audits `not_null`, `unique_values` y `accepted_values` y un unit test.
 5. `pnpm transform test` (sin lakehouse) y `pnpm transform plan` para desplegar — siempre por la CLI (§6.5). En CI, el `plan` a `prod` sigue las reglas de `15-testing-cicd.md`.
-6. La primera fuente externa real llega en el Paso 7, directa o con ingesta según §6.1.2; la capa semántica (Paso 3) lee `marts.mart_sales_orders`.
+6. **Paso 7 (`0.7.0`):** la primera fuente externa real, GitHub, llega con ingesta (§6.1.2), y el recorrido es este:
+   - `landing_github.repo_events` (contrato `landing.github_repo_events` 1.0);
+   - `staging.stg_github_repo_events` (`VIEW`);
+   - `marts.mart_github_repo_events` (contrato `mart.github_repo_events` 1.0, grano evento).
+
+   El mart es `FULL`, no incremental por fecha: los eventos de GitHub llegan horas tarde, y un día ya procesado todavía puede sumar eventos. El umbral medido para revisarlo está en `versions.md` ("Ingesta (Paso 7)"). Su `cron '@daily'` decide cuándo llega lo ingerido (`07-orquestacion.md` §7.1).
+
+   El fixture del Paso 1 se queda como dataset determinista de desarrollo y de tests (decisión K2). `pnpm bootstrap` publica el landing vacío y tipado, para que `pnpm transform plan` funcione antes de la primera ingesta: DuckDB exige que la tabla exista al crear la vista de staging.
 
 ---
 

@@ -167,6 +167,15 @@ CREATE TABLE access.data_entitlements (
 1. **Rediseñar la traducción.** Por ejemplo, un solo grupo con todos los filtros en la misma política, que se combinan con AND; o políticas elegidas con `conditions` según la combinación de dimensiones. Recién después, agregar la dimensión.
 2. **Agregar un test que combine las dos dimensiones** y verifique que cada una sigue filtrando por su cuenta.
 
+**Cómo se resolvió en el Paso 7 (decisión D1, opción a): una dimensión protegida por cube.** GitHub trajo la segunda dimensión, `repository`, que no se puede reusar con `region` ni con el mart de ventas.
+- **La regla:** cada cube se protege con **una sola** dimensión. `sales_orders` y `regions` usan `region`; `github_events` usa `repository`. Así cada grupo solo se encuentra con las políticas de su propia dimensión, y el OR entre grupos nunca mezcla dos dimensiones en el mismo cube: `region:all` no tiene política en `github_events` que levantar.
+- **La traducción** (`toQueryClaims`) arma un grupo por dimensión protegida (`PROTECTED_DIMENSIONS = ['region', 'repository']`) y ya no se niega a más de una.
+- **Los tests que la sostienen:**
+  - un test unitario rechaza un cube cuyas políticas nombren dos dimensiones, y otro uno sin `access_policy`;
+  - el test combinado de integración verifica que la misma persona ve North en Ventas y solo su repositorio en GitHub;
+  - y que el "todos" de una dimensión nunca levanta el filtro de la otra, ni reemplaza un permiso que falta.
+- **Si algún día un mismo cube necesita dos dimensiones,** vale el rediseño del punto 1, no esta regla.
+
 **Dónde vive la traducción.** Está en un solo lugar, `@atlasbi/semantic`, que arma los grupos a partir del security context, para que este cambio no se disperse. Por la misma razón, nunca se escribe una política sin `group` "por las dudas": se aplicaría a todo el mundo.
 
 **Capacidad disponible, sin implementar todavía: enmascaramiento de datos en Cube Core.** Además de ocultar filas (`row_level`) y miembros (`member_level`), las `access_policy` de Cube Core admiten `member_masking` desde la versión 1.6.23 (la fijada en el Paso 3, 1.7.45, lo incluye): un miembro que el usuario no puede ver en claro devuelve un valor enmascarado (`***`, `-1`, `NULL`, según el `mask` declarado en la dimensión o medida) en vez de negar la consulta entera. Sirve, por ejemplo, para que un reporte compartido siga funcionando para quien no puede ver el nombre del cliente. Queda registrado para cuando haga falta; no forma parte del MVP.

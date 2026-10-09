@@ -240,7 +240,7 @@ Si algo falla, no lo oculta. El cliente recibe siempre el mismo mensaje genéric
 - **Qué filas ve.**
   - `access_policy` en `sales_orders` y en `regions`, con los grupos `region:listed` (filtro por `securityContext.entitlements.region`) y `region:all` (concesión explícita). Sin grupo, se deniega (§6.2).
   - Los grupos los arma un único lugar, `toQueryClaims` en `@atlasbi/semantic`, a partir del `SecurityContext` de Auth; el rol nunca viaja.
-  - Si alguien agrega una segunda dimensión protegida sin rediseñar esa traducción, el código falla a propósito (advertencia de `09-auth-gobernanza.md` §6.1).
+  - Si alguien agrega una segunda dimensión protegida sin rediseñar esa traducción, el código falla a propósito (advertencia de `09-auth-gobernanza.md` §6.1). **Paso 7:** la segunda dimensión llegó, `repository`, con la regla de una dimensión por cube (decisión D1, `09-auth-gobernanza.md` §6.1). El cube `github_events` (`marts.mart_github_repo_events`) se protege solo por `repository`, y un test unitario rechaza un cube protegido por dos dimensiones.
 - **La sonda de `pnpm dev`** firma con el grupo `readiness`, que solo ve `regions.zone`.
 - **Logs.** Cube escribe en su log los tokens que **rechaza** completos, nunca los que acepta. La Gateway (Paso 5) nunca le reenvía a Cube el token del cliente: firma uno propio por request.
 

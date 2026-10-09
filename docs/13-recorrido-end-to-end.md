@@ -15,8 +15,8 @@
 ## Paso 0: dónde vive cada archivo, de una
 
 ```
-packages/ingestion/pipelines/salesforce_ventas.py       ← Capa 3
-packages/ingestion/pipelines/salesforce/                ← Capa 3, código del verified source (via dlt init)
+packages/ingestion/pipelines/salesforce_ventas.py       ← Capa 3 (ver la corrección del Paso 7, abajo)
+packages/ingestion/pipelines/salesforce/                ← Capa 3, código del verified source (copiado y fijado, no `dlt init`)
 packages/transform/models/staging/stg_ventas_sf.sql     ← Capa 2
 packages/transform/models/marts/mart_ventas.sql         ← Capa 2
 packages/semantic/cubes/ventas.yml                       ← Capa 4
@@ -63,6 +63,22 @@ pipeline.run(source.with_resources("opportunity"))
 **Resultado concreto:** una tabla `landing.opportunity` en DuckLake (capa 1) con los campos que expone la API, más las columnas de control de dlt (`03-ingesta.md` §6.4). Es un landing, no una capa RAW: existe porque esta fuente no se puede volver a leer barato. dlt ya resolvió la paginación, el estado incremental y la evolución de esquema — y ahora, además, escribe directo al formato de la Capa 1 sin destino intermedio.
 
 **Quién lo dispara:** no se corre a mano — lo dispara un DAG de Airflow (paso 6).
+
+**Cómo quedó en el Paso 7 (`0.7.0`), con GitHub en lugar de Salesforce.** Corrige el bloque de esta sección en cinco puntos:
+
+1. **El código de la fuente se copia y se fija, no se genera.** La *verified source* está en `packages/ingestion/runner/vendor/github/`, sin cambios locales. Su procedencia, el commit de `dlt-hub/verified-sources` y cuándo se revisa están en `PROVENANCE.md` y en `versions.md`. `dlt init` no se usa: genera código y configuración que nadie fijó.
+2. **El pipeline no vive en `pipelines/*.py`.** El runner es `packages/ingestion/runner/` (`python -m runner github --json`) y la fuente es `runner/sources/github.py`:
+   - un pipeline por repositorio, porque el cursor incremental es por pipeline;
+   - `append` para eventos, que no cambian;
+   - el contrato de esquema congela los tipos.
+3. **`dataset_name="landing"` no es el landing.** dlt escribe en `ingestion_github`, con sus tablas y su metadata. El runner publica la vista `landing_github.repo_events`, que es lo que el modelo lee: solo las columnas del contrato `landing.github_repo_events` 1.0, solo cargas completas, cada evento una vez. Con este caso, el `FROM landing.opportunity` del paso 2 sería `FROM lake.landing_salesforce.opportunity`.
+4. **Nada de `secrets.toml`.** El token es el secreto `github.token` del `SecretProvider`. El adaptador TypeScript (`packages/ingestion/src/run-ingestion.ts`) se lo pasa al runner solo por su entorno, y la contraseña del catálogo va en `PGPASSWORD`, nunca en la URL (`03-ingesta.md` §6.3).
+5. **Se dispara con `pnpm ingest github`** (`tools/platform-cli/src/commands/ingest.ts`): a mano mientras no hay orquestación, y desde Airflow en el Paso 8. Devuelve un resumen JSON y un código de salida (`07-orquestacion.md` §7.1).
+
+El resto del recorrido real, con nombres de archivo:
+- `packages/transform/project/models/staging/stg_github_repo_events.sql` y `marts/mart_github_repo_events.sql`;
+- `packages/semantic/cube/model/cubes/github_events.yml`, con seguridad por filas sobre `repository`;
+- el reporte "Actividad en GitHub", que crea `pnpm seed`.
 
 ---
 

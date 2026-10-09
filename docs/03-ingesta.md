@@ -94,9 +94,18 @@ flowchart LR
     B[Fuente: Postgres/MySQL/SQL Server] --> D
     C[Fuente: filesystem/object storage] --> D
     D -->|ConnectorX por defecto; ADBC vía TableLoader propio si un driver puntual lo justifica| D
-    D -->|destino ducklake: landing mínimo, filas y columnas necesarias| F[DuckLake - capa 1]
-    G[Secretos: variables de entorno / vault] -.credenciales.-> D
+    P["pnpm ingest &lt;source&gt;: adaptador TypeScript (@atlasbi/ingestion)"] -->|abre el lakehouse primero; secretos solo por el entorno del proceso| D
+    D -->|destino ducklake: dataset ingestion_&lt;source&gt;, tablas y metadata de dlt| F[DuckLake - capa 1]
+    D -->|el runner publica vistas: landing_&lt;source&gt;.&lt;entidad&gt;, el contrato| F
+    G[SecretProvider de la plataforma] -.credenciales.-> P
+    P -->|resumen JSON + código de salida| H[Quien lo llamó: una persona, o Airflow en el Paso 8]
 ```
+
+**Cómo quedó construido (Paso 7, `0.7.0`).** `packages/ingestion` tiene dos mitades:
+- **El runner en Python** (`runner/`, con su propio entorno de uv): corre dlt, una fuente por invocación (`python -m runner <source> --json`), y publica las vistas del landing. Nunca lo corre una persona directamente: se niega si no lo lanzó la plataforma.
+- **El adaptador en TypeScript** (`src/run-ingestion.ts`): abre el lakehouse a la manera de la plataforma antes de empezar, le pasa al runner exactamente lo que necesita por su entorno de proceso, y valida el resumen que devuelve contra su contrato (`IngestSummary`, `@atlasbi/contracts`).
+
+La primera fuente es GitHub (`repo_events`), con la *verified source* de dlt copiada al repositorio y fijada a un commit (`runner/vendor/github/PROVENANCE.md`, `versions.md`).
 
 ### 6.1 Las tres fuentes "core" de dlt cubren la mayoría de los casos
 
@@ -110,9 +119,20 @@ Para una fuente que no encaje en ninguna de las tres, un conector propio en dlt 
 
 Cada corrida de un pipeline dlt compara el esquema inferido contra el esquema anterior guardado en el estado del pipeline. Si hay una columna nueva, la agrega; si un tipo cambia de forma incompatible, lo señala explícitamente en vez de fallar en silencio o truncar datos. Este comportamiento es configurable por tabla (agregar automáticamente vs. requerir aprobación explícita) — la política se declara en código, no depende de un clic olvidado en una UI.
 
+**Corrección con medición (Fase 0 del Paso 7, dlt 1.30.0).** Con la configuración por defecto, dlt **no** falla ante un tipo que cambia: crea en silencio una columna paralela (`amount__v_text`) y sigue. La plataforma declara, por eso, el contrato de esquema `{'tables': 'evolve', 'columns': 'evolve', 'data_type': 'freeze'}` (decisión K5):
+- **Una columna nueva se acepta:** la vista del landing expone solo las columnas de su contrato, así que no le llega a nadie.
+- **Un tipo que cambia rechaza la carga** en la normalización, sin dejar nada de ella en el landing: `pnpm ingest` sale con el código 65 (`schema_change`).
+- Un valor que dlt puede convertir sin perder nada no es un cambio de tipo: `'yes'` en una columna booleana se carga como `true`. Uno que no (`'abc'`) sí lo es.
+- Una columna que vino vacía en una carga no se crea hasta que traiga datos. dlt avisa cada una con una advertencia; la plataforma deja su log en ERROR para no llenar la salida de ruido, y lo vuelve a WARNING con `ATLASBI_INGEST_DEBUG=1` (Fase C).
+
 ### 6.3 Manejo de secretos
 
-Las credenciales de cada fuente (tokens de API, connection strings) se resuelven vía variables de entorno o un archivo `secrets.toml` **fuera del control de versiones** (excluido explícitamente en `.gitignore`) — nunca hardcodeadas en el código del pipeline. En producción, el mismo mecanismo se alimenta desde el gestor de secretos que defina la capa de infraestructura (documento 11), sin cambiar una línea del pipeline.
+**Corrección (Paso 7): nunca `secrets.toml`.** Las credenciales de una fuente son secretos de la plataforma, como cualquier otro: se resuelven con el `SecretProvider` (`.env` en desarrollo, OpenBao o el gestor de la nube después; documento 11), con una clave lógica por secreto (`github.token` → `ATLASBI_GITHUB_TOKEN`, Config Schema v8). El adaptador TypeScript las lee y se las pasa al runner **solo por el entorno de ese proceso**: ningún archivo de configuración de dlt, ninguna variable heredada de quien lo llama (el adaptador filtra `ATLASBI_*`, `PG*` y las secciones de configuración de dlt antes de armar el suyo).
+
+Lo que la Fase 0 midió y la plataforma hace por eso:
+- **La contraseña del catálogo viaja en `PGPASSWORD`, nunca en la URL.** dlt adjunta el catálogo con la URL completa; ante un error, DuckDB la repite en el mensaje y dlt guarda ese mensaje en la traza de la corrida (`trace.pickle`). Con la URL sin contraseña no hay nada que filtrar. Ponerla con `os.environ` dentro del proceso no alcanza: la libpq de la extensión de DuckDB no la ve, así que la pone el proceso padre.
+- **Ningún secreto en lo que queda:** ni en el resumen, ni en la salida, ni en los archivos de trabajo, ni en el landing. Lo prueban los tests de integración y se verificó en vivo (Fase C).
+- La ingesta escribe con las credenciales de **escritura** del lakehouse (decisión K3) y nunca usa la base de la plataforma.
 
 ### 6.4 Qué persiste dlt, siempre — sin ocultar la limitación
 
@@ -124,9 +144,23 @@ Las credenciales de cada fuente (tokens de API, connection strings) se resuelven
 | Proyección y filtro | En `sql_database`: elegir columnas y adaptar la consulta al origen (p. ej. un `WHERE`) para no traer lo que no se usa; en Python, `add_map`/`add_filter` para lo que no se pueda empujar | Se usan siempre que el conector lo permita |
 | Columnas y tablas propias | `_dlt_load_id` y `_dlt_id` en cada fila; tablas `_dlt_loads`, `_dlt_version` y `_dlt_pipeline_state` (donde vive también el estado incremental) | Son metadata del landing, nunca parte del resultado analítico |
 | Cargas `merge` | Pasan por un dataset intermedio (`<dataset>_staging`) en el mismo destino | Una materialización técnica más: se trunca después de cargar cuando sea posible |
-| Archivos temporales locales | Antes de cargar escribe paquetes en su directorio de trabajo, por defecto `~/.dlt/pipelines` (una carpeta global del usuario) | Se configura dentro del repo (p. ej. `.data/dlt`), con el mismo criterio que las extensiones de DuckDB |
+| Archivos temporales locales | Antes de cargar escribe paquetes en su directorio de trabajo, por defecto `~/.dlt/pipelines` (una carpeta global del usuario) | Dentro del repo: `.data/ingestion` (`ATLASBI_INGESTION_DATA_PATH`), y se borran al terminar cada carga (`LOAD__DELETE_COMPLETED_JOBS`): ninguna copia local de los datos |
 
-Los detalles exactos —el destino `ducklake`, el dataset intermedio de `merge`, las opciones de proyección y filtro, el directorio de trabajo— se verifican contra la versión de dlt que fije el Paso 7.
+**Lo que midió la Fase 0 del Paso 7, con dlt 1.30.0** (detalle de versiones en `versions.md`):
+- **El destino `ducklake` funciona sobre el lakehouse de la plataforma**, con tres ajustes:
+  - el esquema de metadata del catálogo tiene que ser `public`, como lo aprovisiona la plataforma; el valor por defecto de dlt es otro;
+  - las extensiones de DuckDB se cargan desde el directorio de la plataforma, sin descargar nada, con `global_config` (su opción `extensions` las carga antes de fijar el directorio);
+  - dlt adjunta con `IF NOT EXISTS`: sobre un catálogo equivocado crearía en silencio un lakehouse vacío. Por eso la plataforma abre el lakehouse primero, el mismo cuidado que con SQLMesh en el Paso 2.
+- **El landing es una vista, no una copia.** dlt escribe en el dataset `ingestion_<source>`, con sus tablas y su metadata. El runner publica después de cada corrida la vista `landing_<source>.<entidad>`, que es lo que promete el contrato (`21-engineering-standards.md` §2.4):
+  - solo las columnas del contrato, más `_load_id` y `_loaded_at`;
+  - **solo cargas completas:** una carga cortada a la mitad deja filas visibles en las tablas de dlt, y la vista las filtra con su tabla de cargas;
+  - cada evento una vez, el de la carga más nueva;
+  - vacía y tipada mientras no hubo cargas: `pnpm bootstrap` la publica así, para que la transformación se pueda planificar antes de la primera ingesta;
+  - se regenera en cada corrida, porque un tipo de evento nuevo es una tabla nueva.
+- **`append` para eventos inmutables, `merge` solo con una clave que lo pida** (decisión K6). Medido: `merge` duplica los archivos de cada carga, deja un esquema `_staging` persistente y tarda un 25 % más. GitHub usa `append` y el dedupe lo hace la vista.
+- **Un pipeline por partición.** El cursor incremental pertenece a un pipeline y a un recurso: dos repositorios en un pipeline comparten cursor, y el segundo no carga nada. GitHub usa un pipeline por repositorio. Perder ese estado con `append` duplicaría eventos; la vista los deduplica igual.
+- **Una carga que falla se retoma, no se duplica:** la corrida siguiente termina el paquete pendiente con el mismo `load_id`.
+- **El home del usuario queda intacto.** dlt escribe `~/.dlt/.anonymous_id` en cada corrida, aun con la telemetría apagada. El runner le da un home propio dentro de `.data/ingestion` antes de importarlo, y un test verifica que `~/.dlt` no se crea y, si ya existe, queda vacío.
 
 ---
 
@@ -135,11 +169,17 @@ Los detalles exactos —el destino `ducklake`, el dataset intermedio de `merge`,
 - **Consume**: credenciales y endpoints de fuentes externas (APIs, bases operativas, archivos) — nunca la base de datos interna de otra capa de este proyecto.
 - **Expone**: un **landing mínimo** en DuckLake para las fuentes que usan el import con ingesta (`02-transformacion.md` §6.1.1). Las fuentes certificadas para lectura directa y los archivos durables no pasan por esta capa: la capa 2 las lee a través de DuckDB (`02-transformacion.md` §6.1.2).
 - **No expone**: ninguna transformación de negocio, ningún join entre fuentes — eso empieza recién en `stg_*` de la capa de transformación (documento 02).
-- **Intercambiabilidad**: si una fuente puntual requiere Airbyte por catálogo de conectores, el contrato no cambia — deposita el mismo landing mínimo en DuckLake. Ni la capa de transformación ni las de arriba deberían notar qué herramienta trajo el dato.
+- **Intercambiabilidad**: si una fuente puntual requiere Airbyte por catálogo de conectores, el contrato no cambia — deposita el mismo landing mínimo en DuckLake. Ni la capa de transformación ni las de arriba deberían notar qué herramienta trajo el dato. **Desde el Paso 7 esto se prueba:** fuera de `packages/ingestion` y de la documentación, ningún archivo nombra a dlt, salvo las dos guardas que lo frenan (decisión D2, `21-engineering-standards.md` §2.4); un test del paquete recorre el repositorio y falla ante cualquier otra mención.
+
+**Los dos contratos que expone (Paso 7):**
+- **Contrato de datos:** cada landing es un contrato `landing.<source>_<entidad>` (`packages/contracts/data/`). El primero es `landing.github_repo_events` 1.0. La ingesta lo declara como producido (`PRODUCED_DATA_CONTRACTS`) y lo verifica con datos en sus tests.
+- **Contrato del trabajo:** `pnpm ingest <source> [--json]` (`IngestSummary` 1.0, `@atlasbi/contracts`). Cada resultado termina en un resumen y un código de salida, y solo el 75 se reintenta tal cual. La tabla de códigos y cómo llamarlo desde Airflow están en `07-orquestacion.md` §7.1.
 
 ---
 
 ## 8. Por dónde empezar a construir (paso a paso concreto)
+
+> **Estado (Paso 7, `0.7.0`): hecho, con tres correcciones a la lista original.** El entorno es un proyecto de uv con `dlt[ducklake]` fijado (`packages/ingestion/pyproject.toml`), no un `pip install`. La primera fuente no salió de `dlt init`: es la *verified source* de GitHub copiada y fijada a un commit, para que el código que corre esté en el repositorio. Y los secretos van por el `SecretProvider`, nunca en `secrets.toml` (§6.3). La evolución de esquema del punto 4 se validó con un test (§6.2).
 
 1. `pip install "dlt[ducklake]"` dentro de `packages/ingestion`, en su propio entorno (nunca compartido con `packages/transform`, `CLAUDE.md`) — **corrección: no `dlt[duckdb]`**, ese extra no incluye soporte de DuckLake, que es el destino nativo que ya elegimos (`13-recorrido-end-to-end.md`, paso 1).
 2. `dlt init sql_database ducklake` (o `rest_api ducklake` si la primera fuente real es una API) para generar el scaffold del primer pipeline — corrección: `ducklake` como destino, no `duckdb`.

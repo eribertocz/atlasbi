@@ -133,6 +133,8 @@ Ninguno de los dos es candidato a motor del corazón: SQL Server es propietario 
 
 **Lo que sí queda como riesgo genuino, y hay que diseñarlo:** un conflicto real de concurrencia optimista ocurre cuando dos escritores intentan **modificar (no agregar) la misma fila** al mismo tiempo — por ejemplo, dos usuarios editando el mismo valor de forecast en Input Tables en el mismo instante. Ese caso sí puede fallar con un error de conflicto, y la mitigación es responsabilidad de la Capa 6 (API Gateway), no de esta capa: el procedimiento de escritura de Input Tables (capa 6, sección 9.1) debe reintentar automáticamente con backoff ante un conflicto de commit, usando los parámetros que DuckLake ya expone para esto (`ducklake_max_retry_count`, `ducklake_retry_wait_ms`, `ducklake_retry_backoff`) — no hay que inventar un mecanismo de colas ni de locking propio.
 
+**El escritor de ingesta, desde el Paso 7.** La ingesta (dlt, con las credenciales de escritura del lakehouse) escribe solo su dataset `ingestion_<source>` y las vistas `landing_<source>.<entidad>`, un conjunto de tablas disjunto del de SQLMesh. Por eso, una ingesta y un `sqlmesh run` simultáneos no chocan. GitHub carga en modo `append`, que nunca genera conflicto. Un conflicto de commit que llegue igual se informa como `catalog_unavailable`, reintentable (código 75, `07-orquestacion.md` §7.1).
+
 ### 6.6 Catálogo SQLite: límite multi-proceso medido, y su remedio
 
 El catálogo SQLite existe para el nivel **portátil** (un solo desarrollador, un solo proceso que escribe); el catálogo **PostgreSQL** es el primario y el único para escritura concurrente real. La documentación de DuckLake dice que, con SQLite, su modo por defecto (ATTACH/DETACH por consulta más un *retry time-out* ante el bloqueo de escritura) da *"a reasonable amount of multi-processing support"*. Se midió en la Fase 0 del Paso 1 (septiembre 2026; Windows 11, DuckDB 1.5.5, extensión `ducklake` `d8a1881e`, journal por defecto de SQLite, sin reintentos de la aplicación):
@@ -213,13 +215,21 @@ La política cubre cuatro operaciones de mantenimiento de DuckLake (nombres seg�
 - **Desarrollo** usa un *default* razonable: 7 días de *time travel*.
 - **Producción** es configurable por política, no una constante del producto: se fija por instalación y, si hace falta, por tabla. **La política concreta de producción se cierra antes de depender de ella operacionalmente.**
 - El mantenimiento **es una operación administrativa explícita**, igual que el vaciado de *Inlining v1* (§6.7): nunca un efecto de leer ni de escribir. Se ejecuta a través del puerto administrativo —hoy `LakehouseAdminPort` no la ofrece: agregarla es un cambio de contrato versionado— y la programa Airflow en el Paso 8 (`07-orquestacion.md`).
+- **Lo que el Paso 7 suma a esta cuenta, medido:**
+  - El primer modelo `FULL`, `marts.mart_github_repo_events`, reescribe su tabla en cada corrida: unos 13,5 MiB por millón de eventos (`versions.md`, "Ingesta (Paso 7)"). Hasta que el mantenimiento esté programado, cada corrida suma un mart entero al disco.
+  - Cada carga `append` de dlt agrega archivos chicos, unos once por carga en la Fase 0. Muchas cargas chicas son justo lo que la compactación junta.
+
+  Las dos son razones concretas para que el Paso 8 programe la retención junto con la ingesta, no después.
 - La retención de versiones **no reemplaza a un snapshot**. Si una fuente necesita historia más allá de la ventana de *time travel* —auditoría, regulación, reproducibilidad—, eso es un snapshot con motivo y retención propios (`02-transformacion.md` §6.1.1), no un umbral de expiración más largo.
 
 ---
 
 ## 7. Contrato de esta capa (qué expone, qué consume)
 
-- **Consume**: archivos Parquet/CSV/Iceberg ya depositados en object storage por la capa de ingesta.
+- **Consume**: lo que escriben sus escritores, siempre a través de DuckLake y nunca como archivos sueltos:
+  - SQLMesh, que escribe los `mart_*`;
+  - la ingesta, desde el Paso 7: dlt escribe su dataset por el destino `ducklake`, con las credenciales de escritura del lakehouse (`03-ingesta.md` §6.4);
+  - el *seed* de desarrollo.
 - **Expone**: una conexión SQL estándar (protocolo DuckDB o el conector de MotherDuck) — nada de HTTP directo al frontend. La capa de transformación y la capa semántica son las únicas que hablan directo con este motor.
 - **Expone a la plataforma TypeScript (implementado en el Paso 1)** dos puertos propios en `@atlasbi/contracts`, nunca un tipo de DuckDB (`21-engineering-standards.md` §3):
   - **`AnalyticalQueryPort` v1** — solo lectura, para *health*, lectores y el futuro SQL Lab: `query(statement, parameters?, { maxRows?, timeoutMs? })` → `QueryResult`, `capabilities`, `close()`. **No tiene `execute`.**

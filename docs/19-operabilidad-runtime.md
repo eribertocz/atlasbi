@@ -23,7 +23,7 @@
 | **DuckDB** | **No** | Embebido — nunca un "servidor DuckDB" |
 | **DuckLake** | **No** | Catálogo + storage, no un servidor propio |
 | **SQLMesh** | **No** | Proceso/job/CLI (`sqlmesh run`, disparado por Airflow) |
-| **dlt** | **No** | Pipeline/job, disparado por Airflow |
+| **dlt** | **No** | Job: `pnpm ingest <source>` (Paso 7), corre y termina; lo dispara Airflow desde el Paso 8 |
 | better-auth | No necesariamente | Librería dentro del backend (API Gateway), no un servicio aparte |
 | ECharts / TanStack Table | No | Corre en el navegador |
 | OpenTofu | No | CLI de *provisioning*, corre y termina |
@@ -62,6 +62,7 @@ pnpm dev          # ver sección 3
 | `pnpm seed` | Carga datos de demo (sección 6) — nunca corre solo, siempre a pedido explícito. Llega en el Paso 1 con el dataset del lakehouse; la organización y los usuarios demo se suman en el Paso 4 |
 | `pnpm identity:reconcile` | Repara la identidad propia de la plataforma (`identity.*`, `09-auth-gobernanza.md` §6.4): agrega las personas y organizaciones que el proveedor de identidad conoce y la plataforma no. **Nunca borra**: lo que solo conoce la plataforma se lista para que lo decida una persona. `pnpm dev` solo detecta el desfase (paso `Identity`) |
 | `pnpm transform <comando>` | Corre SQLMesh (`plan`, `run`, `test`, `audit`, `lint`…) sobre el lakehouse — **la única forma soportada** (`02-transformacion.md` §6.5): verifica el lakehouse antes y le pasa los secretos solo a ese proceso. `test` y `lint` corren sin lakehouse ni secretos |
+| `pnpm ingest <source> [--json]` | Trae una fuente con ingesta a su landing (Paso 7; hoy `github`) — **la única forma soportada** de correr la ingesta: abre el lakehouse antes, le pasa los secretos solo a ese proceso y termina con un código de salida y, con `--json`, un resumen en stdout (`07-orquestacion.md` §7.1) |
 | `pnpm reset:local` | **Destructivo, siempre explícito.** Pide escribir `atlasbi` para confirmar (o `--confirm=atlasbi` en uso no interactivo) y borra los volúmenes —incluidos los del object storage y de Cube Store— y la carpeta `.data/lakehouse`; `.env` no se toca, y las extensiones de DuckDB se conservan (son una caché, no datos). Nunca se esconde un borrado de datos dentro de `dev` — si `pnpm dev` alguna vez necesita limpiar algo, lo pide, no lo hace solo |
 
 **Por qué `pnpm dev` y `pnpm stack:up` son comandos distintos, no el mismo con una bandera:** durante desarrollo, *hot reload* en el código propio (Web, API Gateway) es lo que hace productivo el día a día — nadie quiere reconstruir un contenedor cada vez que cambia una línea de Svelte. Pero esa velocidad esconde diferencias reales con producción (variables de entorno, healthchecks, tiempos de arranque). `stack:up` es la versión honesta — todo en contenedores, la misma forma en que corre de verdad — y es la que se usa para el vertical slice de validación (`16-mvp-definicion-terminado.md`) y para CI.
@@ -95,6 +96,10 @@ pnpm dev
 Si algo no está saludable, `pnpm dev` no imprime el resumen de arriba como si todo estuviera bien — muestra explícitamente qué pieza falló y por qué, antes de dejar que alguien abra el navegador y se encuentre con errores confusos más adelante.
 
 **Paso 2:** `pnpm bootstrap` además prepara el entorno Python de `packages/transform` (`uv sync --frozen`, la única descarga de esa pieza) y la base `sqlmesh_state`; `pnpm preflight` verifica sin red que el entorno coincida con `uv.lock`. `pnpm dev` no corre SQLMesh: es un job, no un servicio (§1) — lo programa Airflow en el Paso 8.
+
+**Paso 7:** `pnpm bootstrap` además prepara el entorno Python de `packages/ingestion` (`uv sync --frozen`) y publica el landing de cada fuente, vacío y tipado mientras no haya cargas (línea `Ingestion landing`), para que `pnpm transform plan` funcione antes de la primera ingesta. `pnpm preflight` verifica sin red el entorno de la ingesta. `pnpm dev` tampoco corre la ingesta: es un job (§1).
+
+**Paso 7, decisión D3 — Cube se recrea solo cuando cambió su modelo.** Cube compila su modelo una sola vez al arrancar (`CUBEJS_DEV_MODE=false`), y `compose up` no reinicia un contenedor que ya corre, así que un cube nuevo no aparecía hasta reiniciarlo a mano (medido en la Fase C). Ahora la CLI le pasa a compose un resumen del contenido de `packages/semantic/cube` (`ATLASBI_SEMANTIC_MODEL_VERSION`). Si el modelo cambió, `pnpm dev`, `pnpm bootstrap` y `pnpm stack:up` recrean Cube; si no, dejan el contenedor que corre y sus consultas en curso. Verificado en vivo: con el modelo igual, el mismo contenedor; con un cambio, uno nuevo.
 
 **Alcance real a partir del Paso 1:** el resumen lista Postgres, Migrations, OTel Collector y **Lakehouse** (`healthy — Catalog: PostgreSQL`, o `healthy — Catalog: SQLite (single-writer mode — recommended for individual development)`; depende de Postgres solo si el catálogo es PostgreSQL). `pnpm bootstrap` agrega, una sola vez, la base del catálogo, las extensiones de DuckDB (la única descarga, línea `DuckDB extensions`) y el aprovisionamiento del lakehouse; `pnpm dev` solo verifica — nunca instala, descarga ni crea nada (`01-motor-almacenamiento.md` §6.7). `pnpm preflight` verifica sin red las extensiones y que las carpetas del lakehouse se puedan escribir.
 
@@ -226,6 +231,13 @@ Esto es lo que hace posible correr el script de la demo de aceptación (`16-mvp-
   - Si los usuarios demo ya existen con otra contraseña, lo dice y da el remedio.
 - **El reporte demo llega con el Report Document Model** (Paso 6 en adelante).
 
+**Implementado en el Paso 7 — permisos por repositorio y el reporte de GitHub:**
+- **Permisos por repositorio.** `pnpm seed` da permisos sobre `repository`, la segunda dimensión protegida (decisión D1: una por cube, `09-auth-gobernanza.md` §6.1). Los repositorios son los que esta máquina ingiere (`ATLASBI_GITHUB_REPOSITORIES`), así que se asignan por su lugar en esa lista:
+  - Ana tiene todos en Comercial y el primero en Finanzas.
+  - Bruno tiene el segundo en Finanzas.
+  - Sin repositorios configurados, los permisos con lista no se dan, y GitHub les niega el acceso, como a cualquiera sin permiso.
+- **El reporte "Actividad en GitHub"**, en cada workspace demo: los eventos y los contribuidores (KPI), los eventos por tipo y por repositorio (barras) y por día (línea). Un click en un tipo o en un repositorio filtra a los demás.
+
 **Implementado en el Paso 6 — el reporte demo:** `pnpm seed` crea el reporte "Ventas" en cada workspace demo, con una página y 4 visuales: el total de ventas y la cantidad de pedidos (KPI), las ventas por región (barras) y por mes (línea). Un click en una región filtra a los demás visuales (`14` parte 1). Como es el mismo reporte en Comercial y en Finanzas, Ana y Bruno ven números distintos en él. Es idempotente: si el workspace ya tiene un reporte con ese nombre, lo deja como está (`pnpm reset:local` vuelve a empezar).
 
 ---
@@ -253,6 +265,12 @@ Validación al arrancar (parte de `pnpm dev`/`pnpm bootstrap` y del bootstrap de
 - `loadConfig()` valida la configuración no secreta y la traduce a un objeto de dominio (`{ environment, secretProvider, telemetry }`) — ningún código lee nombres de variables de entorno directo. Un `KEY=` vacío cuenta como "no definido".
 - Los secretos nunca se leen como configuración: pasan por el puerto `SecretProvider` (`11-infraestructura.md` §4.7) con claves lógicas (`database.url`); el adaptador `EnvSecretProvider` las mapea a `ATLASBI_DATABASE_URL`. `assertSecretsAvailable()` resuelve todos los obligatorios al arrancar y lista **todos** los faltantes de una vez, nombrando la variable a definir.
 - El puerto de host de Postgres por defecto es **55432**, no 5432, para no chocar con un Postgres ya instalado en la máquina (caso real encontrado al implementar).
+
+**Paso 7 — "Config Schema v8":** tres variables nuevas, con un valor por defecto, y un secreto. Un `.env` anterior sigue funcionando: sin repositorios configurados, solo `pnpm ingest github` se niega a correr (código 78).
+- `ATLASBI_GITHUB_REPOSITORIES`: los repositorios que trae `pnpm ingest github`, `owner/name`, separados por coma.
+- `ATLASBI_GITHUB_API_URL` (`https://api.github.com`): otra dirección solo para GitHub Enterprise.
+- `ATLASBI_INGESTION_DATA_PATH` (`.data/ingestion`): la carpeta de trabajo de la ingesta. Guarda el estado de la herramienta y el home propio que el runner le da, nunca los datos del landing, que viven en el lakehouse.
+- **Secreto nuevo:** `github.token` (`ATLASBI_GITHUB_TOKEN`), un token de solo lectura. No tiene valor de desarrollo: cada persona pone el suyo. Lo pide solo `pnpm ingest github` (`ingestionSecretKeys`), junto con las credenciales de escritura del lakehouse.
 
 **Paso 5 — "Config Schema v6":** tres variables nuevas, todas con un valor por defecto. Un `.env` anterior sigue funcionando.
 - `ATLASBI_GATEWAY_PORT` (4100): el gateway escucha solo en `127.0.0.1`.
