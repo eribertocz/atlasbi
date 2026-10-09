@@ -1,11 +1,16 @@
+import githubRepoEventsLandingV1 from '../../data/landing.github_repo_events.v1.json' with { type: 'json' };
+import githubRepoEventsMartV1 from '../../data/mart.github_repo_events.v1.json' with { type: 'json' };
 import salesOrdersMartV1 from '../../data/mart.sales_orders.v1.json' with { type: 'json' };
 import developmentSalesOrdersV1 from '../../data/source.development_sales_orders.v1.json' with { type: 'json' };
 import { type DataContract, majorVersion, parseDataContract } from './data-contract.ts';
 
 /** Every contract file, validated when the module loads: an invalid file fails every consumer. */
-const CONTRACTS: readonly DataContract[] = [developmentSalesOrdersV1, salesOrdersMartV1].map(
-  (file) => parseDataContract(file),
-);
+const CONTRACTS: readonly DataContract[] = [
+  developmentSalesOrdersV1,
+  salesOrdersMartV1,
+  githubRepoEventsLandingV1,
+  githubRepoEventsMartV1,
+].map((file) => parseDataContract(file));
 
 export class UnknownDataContractError extends Error {
   constructor(id: string, major: number) {

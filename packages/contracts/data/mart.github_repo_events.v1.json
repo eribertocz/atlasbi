@@ -1,0 +1,15 @@
+{
+  "id": "mart.github_repo_events",
+  "version": "1.0",
+  "kind": "mart",
+  "description": "One row per GitHub repository event: the activity of the repositories the platform ingests, as transformation publishes it and the semantic layer reads it.",
+  "table": { "schema": "marts", "name": "mart_github_repo_events" },
+  "grain": ["event_id"],
+  "columns": [
+    { "name": "event_id", "type": { "kind": "varchar" }, "nullable": false },
+    { "name": "event_type", "type": { "kind": "varchar" }, "nullable": false },
+    { "name": "repository", "type": { "kind": "varchar" }, "nullable": false },
+    { "name": "actor", "type": { "kind": "varchar" }, "nullable": true },
+    { "name": "created_at", "type": { "kind": "timestamp_tz" }, "nullable": false }
+  ]
+}

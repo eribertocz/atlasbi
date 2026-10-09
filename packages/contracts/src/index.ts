@@ -94,6 +94,21 @@ export type {
   SemanticRuntimePort,
 } from './semantic/semantic-runtime-port.ts';
 export {
+  exitCodeFor,
+  INGEST_ERROR_CODES,
+  INGEST_EXIT_CODES,
+  INGEST_JOB_VERSION,
+  InvalidIngestSummaryError,
+  parseIngestSummary,
+} from './jobs/ingest-job.ts';
+export type {
+  IngestErrorCode,
+  IngestExitCode,
+  IngestLanding,
+  IngestLoad,
+  IngestSummary,
+} from './jobs/ingest-job.ts';
+export {
   REPORT_GRID_COLUMNS,
   REPORT_SCHEMA_VERSION,
   visualPositionIssues,

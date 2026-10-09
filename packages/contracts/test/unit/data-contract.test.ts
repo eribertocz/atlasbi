@@ -39,7 +39,28 @@ describe('the data contract files', () => {
   it('are all valid, one per id and major version', () => {
     const keys = listDataContracts().map((contract) => `${contract.id}@${majorVersion(contract)}`);
 
-    expect(keys.sort()).toEqual(['mart.sales_orders@1', 'source.development_sales_orders@1']);
+    expect(keys.sort()).toEqual([
+      'landing.github_repo_events@1',
+      'mart.github_repo_events@1',
+      'mart.sales_orders@1',
+      'source.development_sales_orders@1',
+    ]);
+  });
+
+  it('describe the GitHub activity mart and the landing it is built from', () => {
+    const landing = getDataContract('landing.github_repo_events', 1);
+    const mart = getDataContract('mart.github_repo_events', 1);
+
+    expect(landing.table).toEqual({ schema: 'landing_github', name: 'repo_events' });
+    expect(mart.table).toEqual({ schema: 'marts', name: 'mart_github_repo_events' });
+    // The mart publishes the landing's business columns, as the landing promises them; the
+    // technical columns of a load stay behind.
+    const shape = (columns: typeof mart.columns) =>
+      columns.map(({ name, type, nullable }) => ({ name, type, nullable }));
+    expect(shape(mart.columns)).toEqual(
+      shape(landing.columns.filter((column) => !column.name.startsWith('_'))),
+    );
+    expect(mart.grain).toEqual(landing.grain);
   });
 
   it('describe the sales orders mart and the development dataset it is built from', () => {

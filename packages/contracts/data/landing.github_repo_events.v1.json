@@ -1,0 +1,32 @@
+{
+  "id": "landing.github_repo_events",
+  "version": "1.0",
+  "kind": "landing",
+  "description": "One row per GitHub repository event, from completed loads only: what ingestion leaves for transformation. GitHub keeps the last 300 events of a repository, for 90 days at most.",
+  "table": { "schema": "landing_github", "name": "repo_events" },
+  "grain": ["event_id"],
+  "columns": [
+    { "name": "event_id", "type": { "kind": "varchar" }, "nullable": false },
+    {
+      "name": "event_type",
+      "type": { "kind": "varchar" },
+      "nullable": false,
+      "description": "GitHub's event type: PushEvent, IssuesEvent, WatchEvent…"
+    },
+    {
+      "name": "repository",
+      "type": { "kind": "varchar" },
+      "nullable": false,
+      "description": "owner/name."
+    },
+    {
+      "name": "actor",
+      "type": { "kind": "varchar" },
+      "nullable": true,
+      "description": "The login of who caused the event."
+    },
+    { "name": "created_at", "type": { "kind": "timestamp_tz" }, "nullable": false },
+    { "name": "_load_id", "type": { "kind": "varchar" }, "nullable": false },
+    { "name": "_loaded_at", "type": { "kind": "timestamp_tz" }, "nullable": false }
+  ]
+}
