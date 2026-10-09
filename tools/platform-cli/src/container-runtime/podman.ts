@@ -1,4 +1,10 @@
-import { STACK_DATABASE_URL_VARIABLE, stackDatabaseUrl } from '../local-environment.ts';
+import { semanticModelVersion } from '@atlasbi/semantic';
+
+import {
+  SEMANTIC_MODEL_VERSION_VARIABLE,
+  STACK_DATABASE_URL_VARIABLE,
+  stackDatabaseUrl,
+} from '../local-environment.ts';
 import { runCommand, type CommandResult } from '../system/run-command.ts';
 import { WORKSPACE_FILES, WORKSPACE_ROOT } from '../workspace-paths.ts';
 import { composeProcessEnvironment, resolveComposeProvider } from './compose-provider.ts';
@@ -193,6 +199,9 @@ async function composeEnvironment(options: { quiet: boolean }): Promise<NodeJS.P
     ...composeProcessEnvironment((await resolveComposeProvider()).path),
     // Computed for compose only, never written anywhere: it holds the database password.
     [STACK_DATABASE_URL_VARIABLE]: stackDatabaseUrl() ?? '',
+    // Cube compiles its model once: a new value makes `compose up` recreate it, the same value
+    // leaves the running container — and its queries — alone (decision D3).
+    [SEMANTIC_MODEL_VERSION_VARIABLE]: await semanticModelVersion(),
   };
   return options.quiet ? { ...environment, PODMAN_COMPOSE_WARNING_LOGS: 'false' } : environment;
 }

@@ -99,6 +99,10 @@ services:
       CUBEJS_DEV_MODE: 'false'
       CUBEJS_TELEMETRY: 'false'
       CUBEJS_DB_TYPE: duckdb
+      # Not read by Cube. It compiles the model once, so the platform CLI passes a digest of
+      # packages/semantic/cube here: when the model changes, `compose up` recreates Cube; when it
+      # does not, the running container and its queries are left alone (decision D3).
+      ATLASBI_SEMANTIC_MODEL_VERSION: ${ATLASBI_SEMANTIC_MODEL_VERSION:-}
       CUBEJS_API_SECRET: ${ATLASBI_SEMANTIC_API_SECRET:-}
       # The SQL API takes the platform's short query token as the password (cube/cube.js).
       CUBEJS_PG_SQL_PORT: '15432'

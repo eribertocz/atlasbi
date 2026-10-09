@@ -115,6 +115,9 @@ export const PLATFORM_SERVICES = ['api-gateway', 'web'] as const;
 
 export type PlatformService = (typeof PLATFORM_SERVICES)[number];
 
+/** The variable compose.yaml gives Cube the version of its model in (decision D3). */
+export const SEMANTIC_MODEL_VERSION_VARIABLE = 'ATLASBI_SEMANTIC_MODEL_VERSION';
+
 /** The variable compose.yaml reads the gateway container's database URL from. */
 export const STACK_DATABASE_URL_VARIABLE = 'ATLASBI_STACK_DATABASE_URL';
 

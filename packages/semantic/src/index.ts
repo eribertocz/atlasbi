@@ -5,6 +5,7 @@ export {
   CUBE_IMAGE,
   CUBE_STORE_IMAGE,
 } from './cube-images.ts';
+export { SEMANTIC_MODEL_DIRECTORY, semanticModelVersion } from './model-version.ts';
 export { PROTECTED_DIMENSIONS, READINESS_CLAIMS, toQueryClaims } from './query-claims.ts';
 export type { QueryClaims } from './query-claims.ts';
 export { QUERY_TOKEN, signQueryToken } from './query-token.ts';
