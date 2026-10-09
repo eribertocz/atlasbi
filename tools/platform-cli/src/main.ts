@@ -7,6 +7,7 @@ import { runIngest } from './commands/ingest.ts';
 import { runPreflight } from './commands/preflight.ts';
 import { runResetLocal } from './commands/reset-local.ts';
 import { runSeed } from './commands/seed.ts';
+import { runSemantic } from './commands/semantic.ts';
 import { runStackDown, runStackLogs, runStackUp } from './commands/stack.ts';
 import { runTransform } from './commands/transform.ts';
 import { describeFailure } from './lakehouse-environment.ts';
@@ -19,6 +20,7 @@ const COMMANDS: Record<string, (args: readonly string[]) => Promise<void>> = {
   'identity:reconcile': runIdentityReconcile,
   transform: runTransform,
   ingest: runIngest,
+  semantic: runSemantic,
   'stack:up': runStackUp,
   'stack:down': runStackDown,
   'stack:logs': runStackLogs,

@@ -10,6 +10,12 @@ const QUERY_TOKEN = Object.freeze({
   maxLifetimeSeconds: 300,
 });
 
+/**
+ * A job token (Plan C, decision C3): signed by the platform for `pnpm semantic refresh`, it may run
+ * pre-aggregation jobs and nothing else. Kept in step with packages/semantic/src/query-token.ts.
+ */
+const JOB_SCOPE = 'jobs';
+
 const SQL_API_REFUSAL = 'Invalid SQL API credentials';
 const EXPIRED = 'The query token has expired, or it is not short-lived';
 
@@ -46,6 +52,13 @@ function createQuerySecurity({ verifyJwt, secret, now = () => Date.now() }) {
       issuer: [QUERY_TOKEN.issuer],
       audience: QUERY_TOKEN.audience,
     },
+
+    // Cube's API scopes, both ways (Plan C, Phase 0): a job token gets `jobs` alone — it reads no
+    // data, no metadata, nothing over SQL — and no other token ever gets `jobs`.
+    contextToApiScopes: (securityContext, defaultScopes) =>
+      securityContext && securityContext.scope === JOB_SCOPE
+        ? [JOB_SCOPE]
+        : defaultScopes.filter((scope) => scope !== JOB_SCOPE),
 
     contextToGroups: ({ securityContext }) =>
       securityContext && Array.isArray(securityContext.groups)
@@ -86,4 +99,4 @@ function createQuerySecurity({ verifyJwt, secret, now = () => Date.now() }) {
   };
 }
 
-module.exports = { createQuerySecurity, EXPIRED, QUERY_TOKEN, SQL_API_REFUSAL };
+module.exports = { createQuerySecurity, EXPIRED, JOB_SCOPE, QUERY_TOKEN, SQL_API_REFUSAL };

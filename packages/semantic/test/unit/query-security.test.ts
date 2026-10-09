@@ -2,7 +2,7 @@ import { createRequire } from 'node:module';
 
 import { describe, expect, it } from 'vitest';
 
-import { QUERY_TOKEN } from '../../src/index.ts';
+import { JOB_TOKEN_CLAIMS, QUERY_TOKEN, toQueryClaims } from '../../src/index.ts';
 
 interface QuerySecurity {
   jwt: { algorithms: string[]; issuer: string[]; audience: string };
@@ -13,6 +13,7 @@ interface QuerySecurity {
     password: unknown,
   ): { password: unknown; superuser: boolean; securityContext: Record<string, unknown> };
   queryRewrite(query: object, context: { securityContext: unknown }): object;
+  contextToApiScopes(securityContext: unknown, defaultScopes: string[]): string[];
 }
 
 interface QuerySecurityModule {
@@ -24,6 +25,7 @@ interface QuerySecurityModule {
   QUERY_TOKEN: { issuer: string; audience: string; maxLifetimeSeconds: number };
   SQL_API_REFUSAL: string;
   EXPIRED: string;
+  JOB_SCOPE: string;
 }
 
 // The CommonJS module Cube's container loads, tested as is. Signature checking itself is
@@ -118,6 +120,30 @@ describe("Cube's query security (cube/query-security.cjs)", () => {
 
     expect(instance.queryRewrite(query, { securityContext: {} })).toBe(query);
     expect(instance.queryRewrite(query, { securityContext: undefined })).toBe(query);
+  });
+
+  it('gives a job token the jobs scope alone, and never gives it to any other token (Plan C)', () => {
+    const { instance } = security(live());
+    const defaults = ['graphql', 'meta', 'data', 'sql'];
+
+    expect(instance.contextToApiScopes(JOB_TOKEN_CLAIMS, defaults)).toEqual(['jobs']);
+    expect(instance.contextToApiScopes(live(), defaults)).toEqual(defaults);
+    // Even if Cube's defaults ever included it, no other token keeps it.
+    expect(instance.contextToApiScopes(live(), [...defaults, 'jobs'])).toEqual(defaults);
+    expect(instance.contextToApiScopes(undefined, [...defaults, 'jobs'])).toEqual(defaults);
+    expect(module.JOB_SCOPE).toBe(JOB_TOKEN_CLAIMS.scope);
+  });
+
+  it('never lets a query token claim the jobs scope: the claims the gateway signs have none', () => {
+    const claims = toQueryClaims({
+      userId: '44444444-4444-4444-8444-444444444444',
+      organizationId: '11111111-1111-4111-8111-111111111111',
+      workspaceId: '33333333-3333-4333-8333-333333333333',
+      workspaceRole: 'admin',
+      entitlements: { region: { kind: 'all' }, repository: { kind: 'all' } },
+    });
+
+    expect(Object.keys(claims)).not.toContain('scope');
   });
 
   it('reads the groups from the token, and nothing but strings', () => {

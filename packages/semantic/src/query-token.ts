@@ -44,3 +44,18 @@ export function signQueryToken(
   const signature = createHmac('sha256', apiSecret).update(`${head}.${body}`).digest('base64url');
   return `${head}.${body}.${signature}`;
 }
+
+/**
+ * The claims of a job token (Plan C, decision C3): Cube gives it the `jobs` scope alone
+ * (cube/query-security.cjs — a unit test keeps both in step). It carries no groups, so even past
+ * its scope it would see no rows.
+ */
+export const JOB_TOKEN_CLAIMS = { sub: 'platform-jobs', scope: 'jobs' } as const;
+
+/** A short-lived token that may run Cube's pre-aggregation jobs, and nothing else. */
+export function signJobToken(
+  apiSecret: string,
+  lifetimeSeconds: number = QUERY_TOKEN.maxLifetimeSeconds,
+): string {
+  return signQueryToken(apiSecret, JOB_TOKEN_CLAIMS, lifetimeSeconds);
+}

@@ -16,6 +16,7 @@
     "identity:reconcile": "node tools/platform-cli/src/main.ts identity:reconcile",
     "transform": "node tools/platform-cli/src/main.ts transform",
     "ingest": "node tools/platform-cli/src/main.ts ingest",
+    "semantic": "node tools/platform-cli/src/main.ts semantic",
     "stack:up": "node tools/platform-cli/src/main.ts stack:up",
     "stack:down": "node tools/platform-cli/src/main.ts stack:down",
     "stack:logs": "node tools/platform-cli/src/main.ts stack:logs",
