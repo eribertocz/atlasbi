@@ -39,6 +39,9 @@ class NoPlatformManagedStatements(Rule):
 # What an ingestion tool leaves behind besides the landing contract: its own columns and tables
 # (`_dlt_load_id`, `_dlt_loads`…) and the schema it writes into before the adapter publishes the
 # landing views. Neither is a contract; reading them ties a model to one ingestion tool.
+# One of the two places outside packages/ingestion that name its tool, on purpose (decision D2,
+# docs/21 §2.4): this rule runs inside SQLMesh, in Python, and cannot read the prefix from the
+# ingestion package. A test in packages/ingestion lists it as a known exception.
 TOOL_METADATA = re.compile(r"^_dlt", re.IGNORECASE)
 INGESTION_INTERNAL_SCHEMA = re.compile(r"^ingestion_", re.IGNORECASE)
 

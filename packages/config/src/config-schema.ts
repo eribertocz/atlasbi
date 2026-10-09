@@ -4,7 +4,7 @@ import { LAKEHOUSE_CATALOG_TYPES, type LakehouseCatalogType } from '@atlasbi/con
 import { z } from 'zod';
 
 /** Config Schema contract version (docs/21 §2) — bump when a variable changes meaning or is removed. */
-export const CONFIG_SCHEMA_VERSION = 7;
+export const CONFIG_SCHEMA_VERSION = 8;
 
 const DUCKDB_CATALOG_REJECTION =
   'a DuckDB-file catalog allows a single client only and is not supported — use postgres (default) or sqlite (docs/01 §6.6)';
@@ -102,6 +102,8 @@ const originUrl = z
 
 const port = z.coerce.number().int().min(1).max(65535);
 const ipAddress = z.union([z.ipv4(), z.ipv6()]);
+/** `owner/name`, as GitHub spells a repository. */
+const GITHUB_REPOSITORY = /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/;
 
 /** Wire format: the non-secret environment variables a platform process reads. */
 export const environmentSchema = z
@@ -139,6 +141,27 @@ export const environmentSchema = z
     ATLASBI_PUBLIC_URL: originUrl.default('http://127.0.0.1:3000'),
     /** Cube's REST API as the gateway reaches it. Follows ATLASBI_CUBE_PORT (compose). */
     ATLASBI_SEMANTIC_URL: originUrl.default('http://127.0.0.1:4000'),
+    /**
+     * The ingestion's own folder (build step 7): the tool's working directories and the home it is
+     * given, so nothing of it lands in the user's home. Never the landing data: that is DuckLake.
+     */
+    ATLASBI_INGESTION_DATA_PATH: z.string().default('.data/ingestion'),
+    /** The GitHub repositories `pnpm ingest github` loads, `owner/name`, comma-separated. */
+    ATLASBI_GITHUB_REPOSITORIES: z
+      .string()
+      .default('')
+      .transform((value) =>
+        value
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean),
+      )
+      .pipe(z.array(z.string().regex(GITHUB_REPOSITORY, 'must be owner/name'))),
+    /** GitHub's REST API; another address for GitHub Enterprise (`https://host/api/v3`). */
+    ATLASBI_GITHUB_API_URL: z
+      .url({ protocol: /^https?$/ })
+      .default('https://api.github.com')
+      .transform((value) => value.replace(/\/+$/, '')),
     ...lakehouseVariables,
   })
   .superRefine(refineTier);
@@ -196,6 +219,15 @@ export interface PlatformConfig {
     /** The semantic layer's REST address, without a trailing slash. */
     url: string;
   };
+  ingestion: {
+    /** Absolute. */
+    dataPath: string;
+    github: {
+      repositories: string[];
+      /** Without a trailing slash. */
+      apiUrl: string;
+    };
+  };
   lakehouse: LakehouseConfig;
 }
 
@@ -228,6 +260,13 @@ export function toPlatformConfig(environment: Environment, baseDirectory: string
     semantic: {
       enabled: semanticLayerRuns(lakehouse),
       url: new URL(environment.ATLASBI_SEMANTIC_URL).origin,
+    },
+    ingestion: {
+      dataPath: path.resolve(baseDirectory, environment.ATLASBI_INGESTION_DATA_PATH),
+      github: {
+        repositories: environment.ATLASBI_GITHUB_REPOSITORIES,
+        apiUrl: environment.ATLASBI_GITHUB_API_URL,
+      },
     },
     lakehouse,
   };

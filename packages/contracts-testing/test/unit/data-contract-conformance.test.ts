@@ -70,7 +70,7 @@ describe('findDataContractViolations', () => {
       [
         { name: 'id', type: { kind: 'int32' } },
         { name: 'region', type: { kind: 'varchar' } },
-        { name: '_dlt_load_id', type: { kind: 'varchar' } },
+        { name: '_tool_load_id', type: { kind: 'varchar' } },
       ],
       { nulls: ['0', '3'], repeated: '2' },
     );
@@ -78,7 +78,7 @@ describe('findDataContractViolations', () => {
     await expect(findDataContractViolations(port, CONTRACT, { catalog: 'lake' })).resolves.toEqual([
       'id is {"kind":"int32"}, the contract says {"kind":"int64"}',
       'amount is missing',
-      '_dlt_load_id is published but not in the contract',
+      '_tool_load_id is published but not in the contract',
       'region has 3 null values; the contract says never',
       '2 values of the grain (id) repeat',
     ]);

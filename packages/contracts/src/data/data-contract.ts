@@ -158,6 +158,9 @@ export function parseDataContract(value: unknown): DataContract {
     issues.push(`column ${name} appears more than once`);
   }
   for (const column of parsedColumns) {
+    // One of the two places outside packages/ingestion that name its tool, on purpose (decision
+    // D2, docs/21 §2.4): this guard exists to stop that tool's metadata, so it has to know it. A
+    // test in packages/ingestion lists it as a known exception.
     if (/^_dlt/i.test(column.name)) {
       issues.push(`column ${column.name} is a tool's metadata, never part of a contract`);
     } else if (

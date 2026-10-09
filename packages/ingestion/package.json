@@ -1,0 +1,25 @@
+{
+  "name": "@atlasbi/ingestion",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --dir test/unit --test-timeout 120000",
+    "test:integration": "vitest run --dir test/integration --test-timeout 300000 --hook-timeout 300000"
+  },
+  "dependencies": {
+    "@atlasbi/contracts": "workspace:*",
+    "@atlasbi/warehouse": "workspace:*"
+  },
+  "devDependencies": {
+    "@atlasbi/contracts-testing": "workspace:*",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -23,6 +23,8 @@ export const SECRET_KEYS = {
   authSecret: 'auth.secret',
   /** Password of the demo users `pnpm seed` creates — development only (docs/19 §6). */
   seedDemoPassword: 'seed.demo-password',
+  /** Read-only token for GitHub's API — `pnpm ingest github` (build step 7). */
+  githubToken: 'github.token',
 } as const;
 
 /** Secrets that open the lakehouse as its writer (admin port, seed, SQLMesh). */
@@ -76,6 +78,15 @@ export function authSecretKeys(): string[] {
  */
 export function gatewaySecretKeys(lakehouse: LakehouseConfig): string[] {
   return [SECRET_KEYS.databaseUrl, ...authSecretKeys(), ...semanticSecretKeys(lakehouse)];
+}
+
+/**
+ * `pnpm ingest <source>`: the lakehouse as its writer (the ingestion writes the landing, decision
+ * K3) and the source's own credentials — never the platform database, which it does not use.
+ */
+export function ingestionSecretKeys(lakehouse: LakehouseConfig, source: 'github'): string[] {
+  const sourceKeys: Record<typeof source, string[]> = { github: [SECRET_KEYS.githubToken] };
+  return [...lakehouseWriterSecretKeys(lakehouse), ...sourceKeys[source]];
 }
 
 /** Everything `pnpm bootstrap` sets up: writer and reader access, the storage administration, Cube. */

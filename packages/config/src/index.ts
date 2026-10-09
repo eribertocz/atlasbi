@@ -9,6 +9,7 @@ export { EnvSecretProvider, toEnvironmentVariableName } from './secrets/env-secr
 export {
   bootstrapSecretKeys,
   gatewaySecretKeys,
+  ingestionSecretKeys,
   lakehouseReaderSecretKeys,
   lakehouseWriterSecretKeys,
   requiredSecretKeys,

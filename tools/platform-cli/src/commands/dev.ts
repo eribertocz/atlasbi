@@ -35,6 +35,7 @@ import {
   gatewayReadinessStep,
 } from '../health/gateway-probes.ts';
 import { identityReadinessStep } from '../health/identity-probes.ts';
+import { ingestionBootstrapSteps } from '../health/ingestion-probes.ts';
 import { lakehouseReadinessSteps, type LakehouseStartMode } from '../health/lakehouse-probes.ts';
 import { localStackReadinessSteps, MIGRATIONS_STEP } from '../health/local-stack-probes.ts';
 import {
@@ -86,8 +87,9 @@ export interface StartedStack {
  * Preflight → configuration (fail fast) → containers → migrations → object storage → lakehouse →
  * Cube → API gateway → Web → readiness (docs/19 §3, §9). Only `bootstrap` installs extensions (the
  * host's and Cube's), sets up the object storage's bucket and keys, provisions the lakehouse with
- * its reader role, and prepares the transform environment (uv) and SQLMesh's state database; `dev`
- * only verifies. The portable tier (sqlite catalog) starts neither the object storage nor Cube.
+ * its reader role, and prepares the transform and ingestion environments (uv) and SQLMesh's state
+ * database; `dev` only verifies. The portable tier (sqlite catalog) starts neither the object
+ * storage nor Cube.
  */
 export async function startLocalStack(
   mode: LakehouseStartMode = 'dev',
@@ -198,6 +200,9 @@ export async function startLocalStack(
     ),
     ...(mode === 'bootstrap'
       ? transformBootstrapSteps(await secrets.get(SECRET_KEYS.transformStateUrl))
+      : []),
+    ...(mode === 'bootstrap'
+      ? ingestionBootstrapSteps(lakehouse.writer, config.ingestion.dataPath)
       : []),
     ...(postgresTier
       ? semanticReadinessSteps({

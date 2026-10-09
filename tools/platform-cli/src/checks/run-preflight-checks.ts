@@ -2,6 +2,7 @@ import { readLocalInfraPorts } from '../local-environment.ts';
 import type { CheckResult } from './check-result.ts';
 import { checkContainerRuntime } from './container-checks.ts';
 import { checkEnvFile, checkPorts, devPortScope, type PortScope } from './environment-checks.ts';
+import { checkIngestion } from './ingestion-checks.ts';
 import { checkLakehouse } from './lakehouse-checks.ts';
 import { checkNode, checkPackageManager, checkUv } from './toolchain-checks.ts';
 import { checkTransform } from './transform-checks.ts';
@@ -19,5 +20,6 @@ export async function runPreflightChecks(
     checkEnvFile(),
     ...(await checkLakehouse()),
     await checkTransform(),
+    await checkIngestion(),
   ];
 }

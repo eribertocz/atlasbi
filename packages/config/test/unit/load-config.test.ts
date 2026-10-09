@@ -6,6 +6,7 @@ import {
   bootstrapSecretKeys,
   ConfigurationError,
   gatewaySecretKeys,
+  ingestionSecretKeys,
   lakehouseReaderSecretKeys,
   loadConfig,
   loadLakehouseConfig,
@@ -43,6 +44,10 @@ describe('loadConfig', () => {
       },
       web: { port: 3000 },
       semantic: { enabled: true, url: 'http://127.0.0.1:4000' },
+      ingestion: {
+        dataPath: path.join(BASE, '.data', 'ingestion'),
+        github: { repositories: [], apiUrl: 'https://api.github.com' },
+      },
       lakehouse: {
         catalogType: 'postgres',
         storage: {
@@ -157,6 +162,52 @@ describe('gateway behind a proxy (Config Schema v7)', () => {
       const error = captureError(() => loadConfig({ ...validEnvironment, [name]: value }));
       expect(error, `${name}=${value}`).toBeInstanceOf(ConfigurationError);
     }
+  });
+});
+
+describe('ingestion (Config Schema v8)', () => {
+  it('has a folder of its own and loads no repository until told to', () => {
+    const config = loadConfig(validEnvironment, { baseDirectory: BASE });
+
+    expect(config.ingestion).toEqual({
+      dataPath: path.join(BASE, '.data', 'ingestion'),
+      github: { repositories: [], apiUrl: 'https://api.github.com' },
+    });
+  });
+
+  it('takes the repositories as owner/name, and GitHub Enterprise without a trailing slash', () => {
+    const config = loadConfig({
+      ...validEnvironment,
+      ATLASBI_GITHUB_REPOSITORIES: ' duckdb/duckdb , sveltejs/svelte ',
+      ATLASBI_GITHUB_API_URL: 'https://github.example.com/api/v3/',
+    });
+
+    expect(config.ingestion.github).toEqual({
+      repositories: ['duckdb/duckdb', 'sveltejs/svelte'],
+      apiUrl: 'https://github.example.com/api/v3',
+    });
+  });
+
+  it('refuses a repository that is not owner/name, and an API that is not http(s)', () => {
+    for (const [name, value] of [
+      ['ATLASBI_GITHUB_REPOSITORIES', 'duckdb'],
+      ['ATLASBI_GITHUB_REPOSITORIES', 'duckdb/duckdb/extra'],
+      ['ATLASBI_GITHUB_API_URL', 'ftp://api.github.com'],
+    ] as const) {
+      const error = captureError(() => loadConfig({ ...validEnvironment, [name]: value }));
+      expect(error, `${name}=${value}`).toBeInstanceOf(ConfigurationError);
+    }
+  });
+
+  it('writes the landing as the lakehouse writer, with the source token', () => {
+    const postgres = loadLakehouseConfig({}, { baseDirectory: BASE });
+
+    expect(ingestionSecretKeys(postgres, 'github')).toEqual([
+      'lakehouse.catalog-url',
+      'lakehouse.s3-writer-access-key-id',
+      'lakehouse.s3-writer-secret-access-key',
+      'github.token',
+    ]);
   });
 });
 
