@@ -6,6 +6,57 @@ Migration…) versionan por separado y se listan en cada release.
 
 ## Unreleased
 
+### Plan C — los verbos de los trabajos (sale en `0.8.0`, con el Paso 8)
+
+Todo lo que corre y termina se llama igual desde Airflow, desde CI y, más adelante, desde los estudios: un verbo de la plataforma, un código de salida y un resumen JSON versionado. Ninguno expone la herramienta de abajo.
+
+#### Agregado
+
+- **`pnpm transform run | deploy | test | check [--json]`** (`TransformJobSummary` 1.0):
+  - `run`: los intervalos pendientes, la operación diaria;
+  - `deploy`: los modelos del repositorio pasan a ser los que corren, en CI/CD;
+  - `test`: los unit tests, sin lakehouse;
+  - `check`: las reglas del proyecto y las auditorías.
+
+  Un runner en Python usa la API de SQLMesh, no su CLI, y el resumen dice qué modelos evaluó, cuánto tardó cada uno y qué auditorías pasaron o fallaron. La salida de la herramienta va a stderr.
+
+- **`pnpm semantic refresh [--json]`** (`SemanticRefreshSummary` 1.0): reconstruye las pre-agregaciones de Cube y espera a que terminen, con un token que solo puede lanzar trabajos. Un token de consulta no puede lanzar un trabajo, y uno de trabajo no puede leer datos ni metadata, por REST ni por SQL.
+- **`pnpm lakehouse maintain [--dry-run] [--orphan-grace-hours=N] [--json]`** (`LakehouseMaintenanceSummary` 1.0): la retención del lakehouse (`docs/01` §6.8).
+  - Expira versiones, borra los archivos que solo ellas usaban y los huérfanos pasado su margen, y compacta.
+  - `--dry-run` no cambia nada y dice exactamente lo mismo que la corrida real.
+  - Los archivos que se liberan hoy se borran en la corrida siguiente, y la salida lo dice.
+  - El margen de los huérfanos nunca baja de 1 hora: lo rechazan el comando (64), la configuración (78) y el puerto.
+  - Fuera de desarrollo, una corrida real pide `--confirm=atlasbi`, como `pnpm reset:local`.
+- **Un sobre común para todos los resúmenes** (`status`, `exitCode`, `retryable`, `startedAt`, `finishedAt`, `error`) y los mismos códigos de salida: 0, 64, 65, 70, **75 reintentable**, 77 y 78 (`docs/07` §7.1).
+
+#### Cambiado
+
+- **`pnpm transform <comando>` pasa a ser `pnpm transform <verbo>`.** `pnpm transform plan` ya no existe: para desplegar, `pnpm transform deploy`. Cualquier otro comando de SQLMesh queda en `pnpm transform tool <argumentos>`, solo para desarrollo, fuera del contrato y con un aviso: nunca en Airflow ni en CI.
+- **Ningún identificador que exporta `@atlasbi/transform` nombra a SQLMesh,** y la salida de los verbos tampoco. El confinamiento completo de SQLMesh y de Cube, con su test, va en una tanda aparte (decisión C6).
+- **`pnpm reset:local` y `pnpm lakehouse maintain` comparten la confirmación** por texto.
+- **El mensaje de `audit_failed` dice lo que pasa de verdad:** lo que escribió la corrida queda visible hasta la siguiente.
+
+#### Medido
+
+- **En `run`, una auditoría que falla no deshace lo escrito.** SQLMesh escribe primero y audita después: con un evento repetido en el landing, `run` salió con 65 y el mart ya tenía 597 filas en vez de 596. Por eso un 65 de `transform` tiene que alertar (`docs/07` §7.1). Si una auditoría debe bloquear antes de publicar, se mide en la Fase 0 del Paso 8.
+- **Un barrido de huérfanos sin margen corrompe una tabla** si hay un escritor en curso: borra los archivos que todavía no confirmó, y la tabla queda apuntando a archivos que no existen. Queda como test de regresión.
+- **La compactación de DuckLake no tiene simulación,** así que la plataforma la cuenta con las reglas que sigue DuckLake, medidas: por esquema de cada tabla, y sin archivos con filas borradas. La primera comparación en vivo dio 3 tablas en la simulación y 2 en la corrida real; con las reglas corregidas, la batería exige igualdad exacta con los dos catálogos.
+- **`SELECT count(*)` sobre `ducklake_expire_snapshots` no expira nada:** el mantenimiento lee siempre las filas.
+- **`pnpm --reporter=silent … --json`** deja en stdout una sola línea de JSON: probado en vivo con `transform run` y `transform deploy`, con los códigos 0, 65 y 75.
+
+#### Verificado en vivo, sobre el lakehouse de desarrollo
+
+- El mantenimiento real expiró 24 versiones y compactó 2 tablas. Los datos quedaron idénticos: los 596 eventos de GitHub y las 20.000 filas de ventas, con el mismo hash. Los reportes de la web dan las mismas cifras.
+- `pnpm semantic refresh` reconstruyó `amount_by_region_month` y salió con 0.
+
+#### Contratos
+
+- **Config Schema v8 → v9:** `ATLASBI_LAKEHOUSE_SNAPSHOT_RETENTION_DAYS` (7), `ATLASBI_LAKEHOUSE_CLEANUP_GRACE_MINUTES` (60) y `ATLASBI_LAKEHOUSE_ORPHAN_GRACE_HOURS` (24, nunca menos de 1). Un `.env` anterior sigue funcionando.
+- **`LakehouseAdminPort` 1.1 → 1.2:** `maintain(policy, { dryRun })`.
+- **Nuevos:** `TransformJobSummary` 1.0, `SemanticRefreshSummary` 1.0 y `LakehouseMaintenanceSummary` 1.0, sobre el sobre común. `IngestSummary` 1.0 no cambia.
+- **Sin migraciones de base.** El BFF y la API pública no cambian.
+- **Al actualizar:** la primera vez que arranque `pnpm dev`, Cube se recrea una vez, porque cambió su configuración de seguridad; hasta entonces, `pnpm semantic refresh` sale con 77.
+
 ## 0.7.0 — la primera fuente externa real, con ingesta (2026-10-08)
 
 Paso 7 del orden de construcción: la primera fuente real, GitHub, entra por la ingesta y llega hasta un reporte.

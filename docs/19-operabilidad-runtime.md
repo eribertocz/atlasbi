@@ -22,7 +22,7 @@
 | OpenMetadata | Sí, fase metadata | Servicios propios |
 | **DuckDB** | **No** | Embebido — nunca un "servidor DuckDB" |
 | **DuckLake** | **No** | Catálogo + storage, no un servidor propio |
-| **SQLMesh** | **No** | Proceso/job/CLI (`sqlmesh run`, disparado por Airflow) |
+| **SQLMesh** | **No** | Job: `pnpm transform run` (Plan C), disparado por Airflow desde el Paso 8; `deploy` corre en CI/CD |
 | **dlt** | **No** | Job: `pnpm ingest <source>` (Paso 7), corre y termina; lo dispara Airflow desde el Paso 8 |
 | better-auth | No necesariamente | Librería dentro del backend (API Gateway), no un servicio aparte |
 | ECharts / TanStack Table | No | Corre en el navegador |
@@ -61,8 +61,10 @@ pnpm dev          # ver sección 3
 | `pnpm test:image` | Tests sobre la imagen del gateway ya construida (`pnpm stack:up` la construye): no trae TypeScript, Vite ni Vitest, carga su código fuente y corre sin privilegios, sin `.env` — Paso 6 |
 | `pnpm seed` | Carga datos de demo (sección 6) — nunca corre solo, siempre a pedido explícito. Llega en el Paso 1 con el dataset del lakehouse; la organización y los usuarios demo se suman en el Paso 4 |
 | `pnpm identity:reconcile` | Repara la identidad propia de la plataforma (`identity.*`, `09-auth-gobernanza.md` §6.4): agrega las personas y organizaciones que el proveedor de identidad conoce y la plataforma no. **Nunca borra**: lo que solo conoce la plataforma se lista para que lo decida una persona. `pnpm dev` solo detecta el desfase (paso `Identity`) |
-| `pnpm transform <comando>` | Corre SQLMesh (`plan`, `run`, `test`, `audit`, `lint`…) sobre el lakehouse — **la única forma soportada** (`02-transformacion.md` §6.5): verifica el lakehouse antes y le pasa los secretos solo a ese proceso. `test` y `lint` corren sin lakehouse ni secretos |
+| `pnpm transform <run \| deploy \| test \| check> [--json]` | La transformación como trabajo (Plan C): `run`, los intervalos pendientes (la operación diaria); `deploy`, los modelos del repositorio pasan a ser los que corren (CI/CD); `test`, los unit tests sin lakehouse ni secretos; `check`, las reglas del proyecto y las auditorías. **La única forma soportada** de correr SQLMesh (`02-transformacion.md` §6.5): verifica el lakehouse antes, le pasa los secretos solo a ese proceso y termina con un código de salida y, con `--json`, un resumen en stdout (`07-orquestacion.md` §7.1). `pnpm transform tool <argumentos>` le pasa argumentos a SQLMesh tal cual: solo para desarrollo, fuera del contrato, nunca en Airflow ni en CI |
 | `pnpm ingest <source> [--json]` | Trae una fuente con ingesta a su landing (Paso 7; hoy `github`) — **la única forma soportada** de correr la ingesta: abre el lakehouse antes, le pasa los secretos solo a ese proceso y termina con un código de salida y, con `--json`, un resumen en stdout (`07-orquestacion.md` §7.1) |
+| `pnpm semantic refresh [--json]` | Reconstruye las pre-agregaciones de Cube y espera a que terminen (Plan C, `04-semantico.md` §6.6), con un token que solo puede lanzar trabajos. En el nivel portátil no hay capa semántica: sale con 78 |
+| `pnpm lakehouse maintain [--dry-run] [--json]` | La retención del lakehouse (Plan C, `01-motor-almacenamiento.md` §6.8): expira versiones, borra los archivos que solo ellas usaban y los huérfanos pasado su margen (nunca menos de 1 hora), y compacta. `--dry-run` no cambia nada y dice lo mismo que la corrida real. Fuera de desarrollo, una corrida real pide `--confirm=atlasbi` |
 | `pnpm reset:local` | **Destructivo, siempre explícito.** Pide escribir `atlasbi` para confirmar (o `--confirm=atlasbi` en uso no interactivo) y borra los volúmenes —incluidos los del object storage y de Cube Store—, la carpeta `.data/lakehouse` y, desde el Paso 7, `.data/ingestion`: el estado local de la ingesta pertenece al lakehouse que se destruye, y no se deja librado a que la herramienta lo note sola. Una ruta propia fuera de `.data/` nunca se borra; `.env` no se toca, y las extensiones de DuckDB se conservan (son una caché, no datos). Nunca se esconde un borrado de datos dentro de `dev` — si `pnpm dev` alguna vez necesita limpiar algo, lo pide, no lo hace solo |
 
 **Por qué `pnpm dev` y `pnpm stack:up` son comandos distintos, no el mismo con una bandera:** durante desarrollo, *hot reload* en el código propio (Web, API Gateway) es lo que hace productivo el día a día — nadie quiere reconstruir un contenedor cada vez que cambia una línea de Svelte. Pero esa velocidad esconde diferencias reales con producción (variables de entorno, healthchecks, tiempos de arranque). `stack:up` es la versión honesta — todo en contenedores, la misma forma en que corre de verdad — y es la que se usa para el vertical slice de validación (`16-mvp-definicion-terminado.md`) y para CI.
@@ -97,7 +99,9 @@ Si algo no está saludable, `pnpm dev` no imprime el resumen de arriba como si t
 
 **Paso 2:** `pnpm bootstrap` además prepara el entorno Python de `packages/transform` (`uv sync --frozen`, la única descarga de esa pieza) y la base `sqlmesh_state`; `pnpm preflight` verifica sin red que el entorno coincida con `uv.lock`. `pnpm dev` no corre SQLMesh: es un job, no un servicio (§1) — lo programa Airflow en el Paso 8.
 
-**Paso 7:** `pnpm bootstrap` además prepara el entorno Python de `packages/ingestion` (`uv sync --frozen`) y publica el landing de cada fuente, vacío y tipado mientras no haya cargas (línea `Ingestion landing`), para que `pnpm transform plan` funcione antes de la primera ingesta. `pnpm preflight` verifica sin red el entorno de la ingesta. `pnpm dev` tampoco corre la ingesta: es un job (§1).
+**Paso 7:** `pnpm bootstrap` además prepara el entorno Python de `packages/ingestion` (`uv sync --frozen`) y publica el landing de cada fuente, vacío y tipado mientras no haya cargas (línea `Ingestion landing`), para que `pnpm transform deploy` funcione antes de la primera ingesta. `pnpm preflight` verifica sin red el entorno de la ingesta. `pnpm dev` tampoco corre la ingesta: es un job (§1).
+
+**Plan C:** `pnpm dev` tampoco corre los trabajos nuevos (`transform`, `semantic refresh`, `lakehouse maintain`): son jobs (§1), que programa Airflow en el Paso 8. Cube se recrea una vez después de actualizar, porque cambió su configuración de seguridad (D3); hasta entonces, `pnpm semantic refresh` sale con 77.
 
 **Paso 7, decisión D3 — Cube se recrea solo cuando cambió su modelo.** Cube compila su modelo una sola vez al arrancar (`CUBEJS_DEV_MODE=false`), y `compose up` no reinicia un contenedor que ya corre, así que un cube nuevo no aparecía hasta reiniciarlo a mano (medido en la Fase C). Ahora la CLI le pasa a compose un resumen del contenido de `packages/semantic/cube` (`ATLASBI_SEMANTIC_MODEL_VERSION`). Si el modelo cambió, `pnpm dev`, `pnpm bootstrap` y `pnpm stack:up` recrean Cube; si no, dejan el contenedor que corre y sus consultas en curso. Verificado en vivo: con el modelo igual, el mismo contenedor; con un cambio, uno nuevo.
 
@@ -265,6 +269,11 @@ Validación al arrancar (parte de `pnpm dev`/`pnpm bootstrap` y del bootstrap de
 - `loadConfig()` valida la configuración no secreta y la traduce a un objeto de dominio (`{ environment, secretProvider, telemetry }`) — ningún código lee nombres de variables de entorno directo. Un `KEY=` vacío cuenta como "no definido".
 - Los secretos nunca se leen como configuración: pasan por el puerto `SecretProvider` (`11-infraestructura.md` §4.7) con claves lógicas (`database.url`); el adaptador `EnvSecretProvider` las mapea a `ATLASBI_DATABASE_URL`. `assertSecretsAvailable()` resuelve todos los obligatorios al arrancar y lista **todos** los faltantes de una vez, nombrando la variable a definir.
 - El puerto de host de Postgres por defecto es **55432**, no 5432, para no chocar con un Postgres ya instalado en la máquina (caso real encontrado al implementar).
+
+**Plan C — "Config Schema v9":** la retención del lakehouse (`01-motor-almacenamiento.md` §6.8), tres variables con un valor por defecto. Un `.env` anterior sigue funcionando.
+- `ATLASBI_LAKEHOUSE_SNAPSHOT_RETENTION_DAYS` (7): las versiones más viejas pierden su *time travel*.
+- `ATLASBI_LAKEHOUSE_CLEANUP_GRACE_MINUTES` (60): cuánto espera un archivo liberado antes de borrarse.
+- `ATLASBI_LAKEHOUSE_ORPHAN_GRACE_HOURS` (24): cuánto espera un archivo que el catálogo no conoce. **Menos de 1 hora se rechaza al validar la configuración**: borraría archivos que un escritor todavía no confirmó.
 
 **Paso 7 — "Config Schema v8":** tres variables nuevas, con un valor por defecto, y un secreto. Un `.env` anterior sigue funcionando: sin repositorios configurados, solo `pnpm ingest github` se niega a correr (código 78).
 - `ATLASBI_GITHUB_REPOSITORIES`: los repositorios que trae `pnpm ingest github`, `owner/name`, separados por coma.

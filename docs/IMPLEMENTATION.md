@@ -9,7 +9,7 @@
 | # | Capa | Paquete | Herramienta | Lenguaje |
 |---|---|---|---|---|
 | 1 | Almacenamiento | `packages/warehouse` | DuckDB + DuckLake (catálogo SQLite/Postgres según nivel; datos en carpeta local o en S3 — Garage en el nivel "equipo local") | SQL |
-| 2 | Transformación | `packages/transform` | SQLMesh | SQL + Python |
+| 2 | Transformación | `packages/transform` | SQLMesh (**verbos de trabajo desde el Plan C**: `pnpm transform run`, `deploy`, `test` y `check`, con un resumen versionado) | SQL + Python |
 | 3 | Ingesta | `packages/ingestion` | dlt (+ ADBC) — solo para fuentes que no se leen directo (**implementado en el Paso 7**: GitHub, `pnpm ingest`, landing como contrato, adaptador TypeScript) | Python + TypeScript |
 | 4 | Semántico | `packages/semantic` | Cube Core; el adaptador de `SemanticRuntimePort` vive acá (Paso 5) | YAML |
 | 5 | IA/copiloto | `packages/ai-copilot` | `LLMProvider` (Claude por defecto) + MCP propio | TypeScript |
@@ -38,7 +38,7 @@ Semántico (4) ◄──lee mart_*── Transformación (2) ◄──lee fuente
 Almacenamiento (1)
 
 Copiloto (5) ──MCP propio (list_metrics, query_metric)──► Semántico (4)
-Orquestación (7) ──dispara/coordina── (2), (3), (4 refresh), (12 ingesta)
+Orquestación (7) ──llama a los verbos de trabajo── (1 mantenimiento), (2), (3), (4 refresh); dispara (12 ingesta)
 Metadata (12) ──lee (solo lectura)── (2), (3), (4), (7), (9)
 Realtime (10) ──sync/broadcast── visual, filter_definition (Postgres)
 ```
@@ -77,7 +77,7 @@ Realtime (10) ──sync/broadcast── visual, filter_definition (Postgres)
 8. Rescatar lo mejor de otros BI, traducido a herramientas ya elegidas, nunca copiado literal.
 9. **No materializar ni duplicar datos sin justificación explícita — sin RAW persistente por defecto.** Import guarda en DuckLake el resultado analítico (`mart_*`); landing mínimo solo con dlt; snapshot solo con motivo y retención; `stg_*`/`int_*` lógicos por defecto; Live no materializa. Política canónica en `02-transformacion.md` §6.1.1–6.1.2; retención en `01-motor-almacenamiento.md` §6.8.
 
-**Nunca**: FastAPI ni otro framework Python sirviendo al frontend (Python es solo para capas de datos). SQL Lab tocando `mart_*` directo. Un modelo Python de SQLMesh llamando a una API externa (eso es trabajo de dlt, capa 3). Un modelo SQL adjuntando una fuente por su cuenta, o una fuente no registrada (`02-transformacion.md` §6.1.2). Un pipeline de dlt copiando tablas completas cuando la fuente permitía traer solo lo necesario. Un rol de workspace baked-in en el JWT. Un objeto `{ metric, dimensions }` pasado directo a `cubeClient.load()` sin el adaptador de `13-recorrido-end-to-end.md` §4 — Cube espera `{ measures: [...], dimensions: [...] }`, nunca un campo `metric` suelto. `sqlmesh apply` como comando (no existe) — es `sqlmesh plan --auto-apply` para desplegar cambios, `sqlmesh run` para la ejecución programada de modelos ya desplegados; nunca `plan --auto-apply` dentro del DAG diario de Airflow.
+**Nunca**: FastAPI ni otro framework Python sirviendo al frontend (Python es solo para capas de datos). SQL Lab tocando `mart_*` directo. Un modelo Python de SQLMesh llamando a una API externa (eso es trabajo de dlt, capa 3). Un modelo SQL adjuntando una fuente por su cuenta, o una fuente no registrada (`02-transformacion.md` §6.1.2). Un pipeline de dlt copiando tablas completas cuando la fuente permitía traer solo lo necesario. Un rol de workspace baked-in en el JWT. Un objeto `{ metric, dimensions }` pasado directo a `cubeClient.load()` sin el adaptador de `13-recorrido-end-to-end.md` §4 — Cube espera `{ measures: [...], dimensions: [...] }`, nunca un campo `metric` suelto. `sqlmesh apply` como comando (no existe) — es `sqlmesh plan --auto-apply` para desplegar cambios, `sqlmesh run` para la ejecución programada de modelos ya desplegados; nunca `plan --auto-apply` dentro del DAG diario de Airflow. Desde el Plan C, Airflow y CI tampoco llaman a SQLMesh: llaman a `pnpm transform run` y `pnpm transform deploy`, nunca a `pnpm transform tool`, que es solo para desarrollo.
 
 ---
 
@@ -103,14 +103,18 @@ Realtime (10) ──sync/broadcast── visual, filter_definition (Postgres)
 - Fuera de alcance todavía (huecos de producto, no de arquitectura): authoring visual completo, catálogo/lineage en UI, embedding, alertas por umbral, exportación programada, mobile, accesibilidad. Ver `00-documentacion-general.md` sección 4 y `AUDITORIA-EXTERNA.md`.
 - Dirección estratégica de visualización (diferenciador principal: Visualization Engine propio, Visual Intelligence, Design System, Motion, Custom Component Studio en HTML/CSS/Vanilla JS aislado, Custom Visual SDK) — **fijada en `22-visualization-engine.md`**; es visión, no entra en el MVP. `VisualSpec` nunca persiste configuración de un renderer.
 - **Bloqueante antes del SQL Lab (medido en el Paso 1):** el puerto de solo lectura del lakehouse es suficiente para la plataforma, no para SQL libre de usuarios humanos — la lista única de pendientes está en `08-frontend.md` §10.3.
-- **Retención del lakehouse en producción:** explícita y configurable; el *default* de desarrollo es 7 días, y la política de producción se cierra antes de depender de ella operacionalmente (`01-motor-almacenamiento.md` §6.8).
+- **Retención del lakehouse en producción:** explícita y configurable, e implementada en el Plan C (`pnpm lakehouse maintain`, `LakehouseAdminPort` 1.2); el *default* de desarrollo es 7 días, y la política de producción se cierra antes de depender de ella operacionalmente (`01-motor-almacenamiento.md` §6.8).
 - **Pendiente antes del lanzamiento público — auditoría de licencias de las dependencias embebidas** (`21-engineering-standards.md` §11): revisar todas las librerías npm y Python que corren dentro de los procesos de AtlasBI contra la regla de compatibilidad con Apache-2.0 (permisivas sin restricción, copyleft débil caso por caso, GPL/AGPL nunca embebidas). Casos conocidos: `psycopg2` (LGPL-3.0), que entra por `sqlmesh[postgres]` en `packages/transform`; `certifi` (MPL-2.0) y `orjson` (`MPL-2.0 AND (Apache-2.0 OR MIT)`), que entran por `dlt` en `packages/ingestion` — aceptados en la Fase 0 del Paso 7 (`versions.md`, "Ingesta (Paso 7)"). Tarea aparte; no bloquea los pasos de construcción.
 - ~~Decisión pendiente antes del Paso 3: la pieza S3-compatible local, con `minio/minio` archivado~~ — **resuelta en el Paso 3: Garage**, elegido con la regla 7 frente a versitygw; el nivel "equipo local" guarda sus datos en S3 (`11-infraestructura.md` §4.4).
 - **Hueco conocido de Cube Store 1.7.45, a retomar si aparece antes del Paso 11:** un filtro sobre una medida decimal, con orden, falla cuando lo responde una pre-agregación. Documentado con su test de alerta en `17-self-service-calculations.md` §3.2.2; el Visual Builder es quien puede generar ese patrón.
 - **Versiones del frontend a revisar** (`versions.md`, "Frontend y proxy (Paso 6)"): migrar a SvelteKit 3 cuando tenga algunas semanas de parches. Vite ya está en 8.3.3.
 - **La *verified source* de GitHub se revisa en cada actualización de dlt y al menos una vez por milestone** (`versions.md`, "Ingesta (Paso 7)"; `packages/ingestion/runner/vendor/github/PROVENANCE.md`). El mart FULL de GitHub tiene un umbral de revisión medido en la misma sección.
-- **Pendiente, en una tanda aparte (decisión C6 del Plan C, 2026-10-08):** el confinamiento de SQLMesh y de Cube en sus paquetes, con una prueba que recorra el repositorio y falle ante cualquier mención fuera de ellos, como la que ya existe para dlt (decisión D2, `21-engineering-standards.md` §2.4). Hoy SQLMesh aparece en 16 archivos fuera de `packages/transform`, casi todos en comentarios. El Plan C limpia solo lo que se ve: la salida de la CLI y los nombres que exporta `@atlasbi/transform`.
-- **Para el Paso 8 (orquestación), del Paso 7:** llamar a la ingesta con `pnpm --reporter=silent ingest <source> --json` y decidir por el código de salida (solo el 75 se reintenta). Tener en cuenta el `cron '@daily'` del mart de GitHub, y programar la retención del lakehouse junto con la ingesta (`07-orquestacion.md` §7.1, `01-motor-almacenamiento.md` §6.8).
+- **Pendiente, en una tanda aparte (decisión C6 del Plan C, 2026-10-08):** el confinamiento de SQLMesh y de Cube en sus paquetes, con una prueba que recorra el repositorio y falle ante cualquier mención fuera de ellos, como la que ya existe para dlt (decisión D2, `21-engineering-standards.md` §2.4). Hoy SQLMesh aparece en 16 archivos fuera de `packages/transform`, casi todos en comentarios. El Plan C limpió solo lo que se ve: ningún identificador que exporta `@atlasbi/transform` nombra a SQLMesh, y la salida de los verbos tampoco.
+- **Para el Paso 8 (orquestación), del Paso 7 y del Plan C** (`07-orquestacion.md` §7.1, `01-motor-almacenamiento.md` §6.8):
+  - llamar a los verbos de trabajo con `pnpm --reporter=silent <verbo> … --json` (`ingest`, `transform run`, `semantic refresh`, `lakehouse maintain`) y decidir por el código de salida: solo el 75 se reintenta;
+  - un 65 de `transform` alerta, no solo falla: una auditoría fallida no protege a quien lee el mart, porque SQLMesh escribe primero y audita después. Si una auditoría debe bloquear antes de publicar, se mide en la Fase 0 del Paso 8;
+  - tener en cuenta el `cron '@daily'` del mart de GitHub;
+  - programar la retención del lakehouse junto con la ingesta, en un DAG propio; fuera de desarrollo, con `--confirm=atlasbi`.
 - **Nunca confundir una capacidad arquitectónica con la herramienta que la implementa hoy** (Semantic Model ≠ Cube, Matrix Engine ≠ TanStack Table, Visualization Engine ≠ ECharts) — **resuelto en `18-first-class-citizens.md`**, lectura obligatoria antes de tocar código de la Capa 8.
 
 ---

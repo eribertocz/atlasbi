@@ -213,13 +213,28 @@ La política cubre cuatro operaciones de mantenimiento de DuckLake (nombres seg�
 **Política:**
 
 - **Desarrollo** usa un *default* razonable: 7 días de *time travel*.
-- **Producción** es configurable por política, no una constante del producto: se fija por instalación y, si hace falta, por tabla. **La política concreta de producción se cierra antes de depender de ella operacionalmente.**
-- El mantenimiento **es una operación administrativa explícita**, igual que el vaciado de *Inlining v1* (§6.7): nunca un efecto de leer ni de escribir. Se ejecuta a través del puerto administrativo —hoy `LakehouseAdminPort` no la ofrece: agregarla es un cambio de contrato versionado— y la programa Airflow en el Paso 8 (`07-orquestacion.md`).
+- **Producción** es configurable por política, no una constante del producto: se fija por instalación y, si hace falta, por tabla. Desde el Plan C hay una sola política por instalación (decisión C4); por tabla, cuando haga falta. **La política concreta de producción se cierra antes de depender de ella operacionalmente.**
+- El mantenimiento **es una operación administrativa explícita**, igual que el vaciado de *Inlining v1* (§6.7): nunca un efecto de leer ni de escribir. Se ejecuta a través del puerto administrativo (`LakehouseAdminPort` 1.2, `maintain`, desde el Plan C) con `pnpm lakehouse maintain`, y la programa Airflow en el Paso 8 (`07-orquestacion.md` §7.1).
 - **Lo que el Paso 7 suma a esta cuenta, medido:**
   - El primer modelo `FULL`, `marts.mart_github_repo_events`, reescribe su tabla en cada corrida: unos 13,5 MiB por millón de eventos (`versions.md`, "Ingesta (Paso 7)"). Hasta que el mantenimiento esté programado, cada corrida suma un mart entero al disco.
   - Cada carga `append` de dlt agrega archivos chicos, unos once por carga en la Fase 0. Muchas cargas chicas son justo lo que la compactación junta.
 
   Las dos son razones concretas para que el Paso 8 programe la retención junto con la ingesta, no después.
+- **Implementado en el Plan C: `pnpm lakehouse maintain [--dry-run] [--orphan-grace-hours=N] [--json]`.** La política sale del `.env` (Config Schema v9): `ATLASBI_LAKEHOUSE_SNAPSHOT_RETENTION_DAYS` (7), `ATLASBI_LAKEHOUSE_CLEANUP_GRACE_MINUTES` (60) y `ATLASBI_LAKEHOUSE_ORPHAN_GRACE_HOURS` (24). El resumen es `LakehouseMaintenanceSummary` 1.0 (`07-orquestacion.md` §7.1). Lo medido con DuckLake d8a1881e, en la Fase 0 y la Fase C del Plan C:
+  - **Orden:** expirar versiones, limpiar archivos viejos, limpiar huérfanos y compactar con `ducklake_merge_adjacent_files`. La reescritura de archivos con muchos borrados (`ducklake_rewrite_data_files`) todavía no se usa.
+  - **Lo que se libera hoy se borra en la corrida siguiente.** Los archivos que dejan de usarse al expirar o compactar se borran recién cuando pasa el margen de limpieza, en la próxima corrida. La salida lo dice expresamente, y más todavía en `--dry-run`: un 0 en archivos borrados no quiere decir que no haya nada para borrar.
+  - **Los huérfanos nunca se borran con menos de 1 hora de margen (`MIN_ORPHAN_GRACE_HOURS`).** Sin margen y con un escritor en curso, el barrido borra los archivos que ese escritor ya subió y todavía no confirmó: la tabla confirma después apuntando a archivos que no existen, y su lectura falla. Medido, y guardado como test de regresión (`packages/warehouse/test/integration/orphan-grace.test.ts`). El piso lo rechazan el puerto, la validación de la configuración (código 78) y el comando (`--orphan-grace-hours`, código 64).
+  - **`--dry-run` no cambia nada y dice lo mismo que la corrida real.** DuckLake tiene `dry_run` para expirar, limpiar y barrer huérfanos, pero no para compactar. La plataforma cuenta lo que compactaría con las reglas que sigue DuckLake, medidas:
+    - compacta por tabla, y solo junta archivos escritos bajo el mismo esquema de esa tabla;
+    - excluye todo archivo con filas borradas, tanto si el borrado está en un archivo aparte como si quedó dentro del catálogo;
+    - junta los archivos limpios aunque no sean contiguos;
+    - un cambio de esquema en otra tabla no la bloquea.
+
+    La primera comparación en vivo mostró la diferencia (la simulación decía 3 tablas, la corrida real compactó 2: una tabla de la ingesta tenía archivos de dos esquemas). Desde entonces, la batería del puerto exige igualdad exacta entre la simulación y la corrida real, con los dos catálogos.
+  - **Nunca `SELECT count(*) FROM ducklake_expire_snapshots(…)`:** no expira nada (medido). Siempre se leen las filas que devuelve.
+  - **Fuera de desarrollo, una corrida real pide confirmación** (`--confirm=atlasbi`), como `pnpm reset:local`.
+  - **Con catálogo SQLite,** un escritor en curso bloquea el catálogo y el mantenimiento sale con 75 (reintentable).
+  - **En el lakehouse de desarrollo:** expiró 24 versiones y compactó 2 tablas. Los datos quedaron idénticos (los 596 eventos de GitHub y las 20.000 filas de ventas, con el mismo hash por fila), y los reportes de la web siguieron dando las mismas cifras.
 - La retención de versiones **no reemplaza a un snapshot**. Si una fuente necesita historia más allá de la ventana de *time travel* —auditoría, regulación, reproducibilidad—, eso es un snapshot con motivo y retención propios (`02-transformacion.md` §6.1.1), no un umbral de expiración más largo.
 
 ---
@@ -233,7 +248,7 @@ La política cubre cuatro operaciones de mantenimiento de DuckLake (nombres seg�
 - **Expone**: una conexión SQL estándar (protocolo DuckDB o el conector de MotherDuck) — nada de HTTP directo al frontend. La capa de transformación y la capa semántica son las únicas que hablan directo con este motor.
 - **Expone a la plataforma TypeScript (implementado en el Paso 1)** dos puertos propios en `@atlasbi/contracts`, nunca un tipo de DuckDB (`21-engineering-standards.md` §3):
   - **`AnalyticalQueryPort` v1** — solo lectura, para *health*, lectores y el futuro SQL Lab: `query(statement, parameters?, { maxRows?, timeoutMs? })` → `QueryResult`, `capabilities`, `close()`. **No tiene `execute`.**
-  - **`LakehouseAdminPort` v1** — administración y escritura (seed, mantenimiento, futuras Input Tables): `execute(statement, parameters?)` → `{ affectedRows }` (una sentencia por llamada, sin transacciones explícitas), `checkHealth()` (incluye `lakehouseId`, §6.7), `flushInlinedData()`, `close()`. `capabilities.concurrentWriters` es `false` con catálogo SQLite.
+  - **`LakehouseAdminPort` v1** — administración y escritura (seed, mantenimiento, futuras Input Tables): `execute(statement, parameters?)` → `{ affectedRows }` (una sentencia por llamada, sin transacciones explícitas), `checkHealth()` (incluye `lakehouseId`, §6.7), `flushInlinedData()`, `close()`. `capabilities.concurrentWriters` es `false` con catálogo SQLite. La versión 1.1 sumó el código de error `storage_unreachable`; la 1.2 (Plan C), `maintain(policy, { dryRun })`, la retención de §6.8.
   - **`QueryResult` sin pérdida:** `{ columns: [{ name, type }], rows, rowCount, truncated }`, con filas posicionales (los nombres de columna duplicados son SQL válido) y un `LogicalType` propio. Enteros de 64/128 bits y `DECIMAL` siempre como string (el decimal con exactamente su escala); `float` como número, con `NaN`/`±Infinity` como string; `TIMESTAMP` como `2026-09-23T12:34:56.123456`, sin zona ni `Z`; `TIMESTAMPTZ` en UTC con `Z`, calculado desde el instante y no desde la zona de la sesión; `INTERVAL` como `{ months, days, micros }` con `micros` string; `BLOB` en base64; listas, structs y mapas con las mismas reglas. Los parámetros se enlazan por posición y aceptan string para `bigint` y `decimal`. Por defecto se leen hasta 10.000 filas (`DEFAULT_QUERY_MAX_ROWS`).
   - Las baterías de contrato de los dos puertos (`@atlasbi/contracts-testing`) son las que cualquier adaptador futuro tiene que pasar.
 - **No expone**: ninguna noción de "métrica" ni "medida" — eso vive exclusivamente en la capa semántica (documento 04).

@@ -232,12 +232,21 @@ SQLMesh necesita un *state backend* propio para llevar el registro de qué se ap
 - **Unit tests** (`tests/*.yaml`): corren contra datos de ejemplo (fixtures), antes de tocar cualquier dato real — verifican la lógica del SQL en sí.
 - **Audits**: assertions que corren sobre los datos reales después de materializar (`not_null`, `unique`, `accepted_values`, custom en SQL) — el equivalente directo a `dbt test`, pero integrado al mismo flujo `plan`/`apply`.
 - **Gate de CI**: un plan que falla un audit no se promueve a `prod`. Esto es lo que reemplaza la ausencia total de tests de Power Query.
+- **En `run`, una auditoría que falla no deshace lo escrito (medido en la Fase C del Plan C).** SQLMesh escribe el modelo y después lo audita. Con un evento repetido en el landing, `pnpm transform run` salió con 65 (`audit_failed`) y el mart de GitHub ya tenía la fila de más: 597 en vez de 596. El intervalo queda pendiente y la corrida siguiente lo reconstruye; hasta entonces, lo escrito es visible. Por eso un 65 alerta (`07-orquestacion.md` §7.1). Si una auditoría debe bloquear antes de publicar, se mide en la Fase 0 del Paso 8.
 
 ### 6.5 Cómo corre SQLMesh en la plataforma (implementado en el Paso 2)
 
 Medido en la Fase 0 del Paso 2 (SQLMesh 0.236.2, DuckDB 1.5.5, DuckLake 1.0) antes de programarlo:
 
-- **Solo a través de `pnpm transform <comando>`** (`packages/transform`, runner en TypeScript). **Ejecutar `uv run sqlmesh` directamente no está soportado**: SQLMesh adjunta DuckLake con `ATTACH IF NOT EXISTS` y sin `CREATE_IF_NOT_EXISTS false`, así que apuntado a un catálogo equivocado **crea en silencio un lakehouse vacío** (medido: 28 tablas nuevas en una base vacía con solo un `SELECT 1`). El runner abre antes el lakehouse con el puerto administrativo, que nunca lo crea (`01-motor-almacenamiento.md` §6.7), y recién ahí lanza SQLMesh. `config.py` se niega a cargar sin las variables que pone el runner.
+- **Solo a través de `pnpm transform <verbo>`** (`packages/transform`, adaptador en TypeScript). **Ejecutar `uv run sqlmesh` directamente no está soportado**: SQLMesh adjunta DuckLake con `ATTACH IF NOT EXISTS` y sin `CREATE_IF_NOT_EXISTS false`, así que apuntado a un catálogo equivocado **crea en silencio un lakehouse vacío** (medido: 28 tablas nuevas en una base vacía con solo un `SELECT 1`). El runner abre antes el lakehouse con el puerto administrativo, que nunca lo crea (`01-motor-almacenamiento.md` §6.7), y recién ahí lanza SQLMesh. `config.py` se niega a cargar sin las variables que pone el runner.
+- **Los verbos (Plan C).** `pnpm transform run | deploy | test | check [--json]` es el contrato del trabajo (`TransformJobSummary` 1.0, `07-orquestacion.md` §7.1), el mismo para Airflow, para CI y, más adelante, para los estudios:
+  - `run`: los intervalos pendientes de los modelos ya desplegados, la operación diaria;
+  - `deploy`: los modelos como están en el repositorio pasan a ser los que corren, en CI/CD (`15-testing-cicd.md`);
+  - `test`: los unit tests, sin lakehouse ni secretos;
+  - `check`: las reglas del proyecto (el linter, con las guardas de §6.1.2) y las auditorías de los datos publicados. Con una regla rota sale con 65 (`model_invalid`), sin correr las auditorías.
+
+  Por debajo, un runner en Python (`packages/transform/runner`, `python -m runner <verbo> --json`) usa la API de SQLMesh, no su CLI: sus objetos dicen qué modelos evaluó, cuánto tardó cada uno, qué auditorías pasaron y qué falló y por qué (medido en la Fase 0 del Plan C). `run` de SQLMesh nunca lanza una excepción por un modelo que falla: devuelve un estado, y el runner lo traduce a un código cerrado. La salida de SQLMesh va a stderr; stdout lleva solo el resumen. Ningún identificador que exporta `@atlasbi/transform` nombra a SQLMesh, y la salida de los verbos tampoco; el nombre de la herramienta queda como un dato (`TransformEnvironment.tool`), para `tool` y la verificación de `pnpm dev` (decisión C6, `IMPLEMENTATION.md`).
+- **`pnpm transform tool <argumentos>`: solo para desarrollo, fuera del contrato.** Le pasa los argumentos a SQLMesh tal cual (por ejemplo, `tool plan dev` o `tool render <modelo>`), con la misma verificación del lakehouse y los mismos secretos que los verbos, y avisa en amarillo que nunca va en el orquestador ni en CI. `tool test`, `lint`, `format`, `render` e `info` corren sin lakehouse ni secretos.
 - **Secretos solo en el proceso de SQLMesh.** La CLI los resuelve con `SecretProvider` y se los pasa al proceso hijo; ninguna otra variable `ATLASBI_*` le llega. La contraseña del catálogo va en un secret postgres sin nombre de DuckDB, nunca en el `ATTACH` (con contraseña incorrecta, el error nombra base y usuario, no la contraseña). El state vive en la base `sqlmesh_state` (§6.3, secreto `transform.state-url`), en el esquema del lakehouse que el runner acaba de verificar: el runner le pasa a SQLMesh el `lakehouseId` del *health* y `config.py` rechaza cualquier otro nombre de esquema.
 - **Sin red en ejecución.** Nunca se usa la opción `extensions` de SQLMesh (instala antes de que se pueda fijar el directorio, y descargaría a `~/.duckdb`); `connector_config` fija el directorio de extensiones del proyecto y apaga la instalación automática, y el `ATTACH` carga `ducklake`/`postgres`/`sqlite` desde ahí. `uv run --frozen --offline` usa exactamente `uv.lock`.
 - **Qué deja en DuckLake:** el staging (`kind VIEW`) es una vista sobre otra vista — cero datos copiados; el mart es una tabla física `sqlmesh__marts.<modelo>__<huella>` más la vista `marts.<modelo>` que Cube y la plataforma consultan. DuckLake guarda las vistas con un marcador de catálogo, así que funcionan con cualquier alias.
@@ -271,7 +280,7 @@ Medido en la Fase 0 del Paso 2 (SQLMesh 0.236.2, DuckDB 1.5.5, DuckLake 1.0) ant
 2. El proyecto SQLMesh vive en `packages/transform/project/`: `config.py` (todo desde las variables del runner), `external_models.yaml` (el fixture del Paso 1 como fuente y, desde el Paso 7, el landing de GitHub, cada uno exactamente como su contrato de datos), `models/`, `tests/`, `linter/`.
 3. `state_connection` apunta a la base `sqlmesh_state` del mismo Postgres, que `pnpm bootstrap` crea; `state_schema` es el del lakehouse (§6.3).
 4. Primer modelo: `staging.stg_sales_orders` (`VIEW`) sobre `lake.fixture.sales_orders`; primer resultado analítico: `marts.mart_sales_orders` (`INCREMENTAL_BY_TIME_RANGE` por `order_date`, grano pedido, sin partición por día), con audits `not_null`, `unique_values` y `accepted_values` y un unit test.
-5. `pnpm transform test` (sin lakehouse) y `pnpm transform plan` para desplegar — siempre por la CLI (§6.5). En CI, el `plan` a `prod` sigue las reglas de `15-testing-cicd.md`.
+5. `pnpm transform test` (sin lakehouse) y `pnpm transform deploy` para desplegar (hasta el Plan C, `pnpm transform plan`) — siempre por la CLI (§6.5). En CI, el despliegue a `prod` sigue las reglas de `15-testing-cicd.md`.
 6. **Paso 7 (`0.7.0`):** la primera fuente externa real, GitHub, llega con ingesta (§6.1.2), y el recorrido es este:
    - `landing_github.repo_events` (contrato `landing.github_repo_events` 1.0);
    - `staging.stg_github_repo_events` (`VIEW`);
@@ -279,7 +288,7 @@ Medido en la Fase 0 del Paso 2 (SQLMesh 0.236.2, DuckDB 1.5.5, DuckLake 1.0) ant
 
    El mart es `FULL`, no incremental por fecha: los eventos de GitHub llegan horas tarde, y un día ya procesado todavía puede sumar eventos. El umbral medido para revisarlo está en `versions.md` ("Ingesta (Paso 7)"). Su `cron '@daily'` decide cuándo llega lo ingerido (`07-orquestacion.md` §7.1).
 
-   El fixture del Paso 1 se queda como dataset determinista de desarrollo y de tests (decisión K2). `pnpm bootstrap` publica el landing vacío y tipado, para que `pnpm transform plan` funcione antes de la primera ingesta: DuckDB exige que la tabla exista al crear la vista de staging.
+   El fixture del Paso 1 se queda como dataset determinista de desarrollo y de tests (decisión K2). `pnpm bootstrap` publica el landing vacío y tipado, para que `pnpm transform deploy` funcione antes de la primera ingesta: DuckDB exige que la tabla exista al crear la vista de staging.
 
 ---
 

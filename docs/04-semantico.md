@@ -244,6 +244,17 @@ Si algo falla, no lo oculta. El cliente recibe siempre el mismo mensaje genéric
 - **La sonda de `pnpm dev`** firma con el grupo `readiness`, que solo ve `regions.zone`.
 - **Logs.** Cube escribe en su log los tokens que **rechaza** completos, nunca los que acepta. La Gateway (Paso 5) nunca le reenvía a Cube el token del cliente: firma uno propio por request.
 
+**El refresco como trabajo (Plan C).** `pnpm semantic refresh [--json]` reconstruye todas las pre-agregaciones y espera a que terminen. Corre después de que la transformación publicó datos nuevos, para que Cube nunca conteste desde una construcción vieja. El resumen es `SemanticRefreshSummary` 1.0 (`07-orquestacion.md` §7.1).
+
+- **Cómo lo pide (`src/semantic-refresh.ts`).** Usa la API de trabajos de Cube, `POST /cubejs-api/v1/pre-aggregations/jobs`: la acción `post` lanza la reconstrucción de todas las pre-agregaciones, y la acción `get` sigue el avance hasta que terminan. El plazo es de 10 minutos; vencido, sale con 75 (`semantic_unavailable`, reintentable). Una pre-agregación que no se puede construir da 65 (`build_failed`).
+- **Con un token que solo puede lanzar trabajos (decisión C3).** `signJobToken` firma `{ sub: 'platform-jobs', scope: 'jobs' }`, sin grupos. `contextToApiScopes` (`cube/query-security.cjs`) le da a ese token solo el scope `jobs` de Cube, y a cualquier otro token los scopes por defecto menos `jobs`. Probado en las dos direcciones (`test/integration/semantic-refresh.test.ts`):
+  - un token de consulta no puede lanzar un trabajo;
+  - un token de trabajo no puede leer datos ni metadata, ni por REST ni por el SQL API.
+
+  La RLS queda intacta después de un refresco.
+- **En el nivel portátil** no hay capa semántica: `semantic refresh` sale con 78 y lo explica.
+- **Medido en vivo (Fase C):** después de que `pnpm dev` recreó Cube con la configuración nueva (decisión D3, `19-operabilidad-runtime.md` §3), el refresco reconstruyó `sales_orders.amount_by_region_month` y salió con 0.
+
 **Cómo la consume la plataforma (Paso 5, `0.5.0`).** El único consumidor es el puerto `SemanticRuntimePort` 1.0 (`@atlasbi/contracts`). Su adaptador, `createCubeSemanticRuntime` (`packages/semantic/src/adapters/cube/`), es el único código que conoce el formato de consulta de Cube, su metadata y sus errores.
 
 - **Por consulta: metadata → validación → datos**, sin caché (decisión del Paso 5, `06-api-gateway.md` §6.6).
