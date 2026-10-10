@@ -119,6 +119,19 @@ Realtime (10) ──sync/broadcast── visual, filter_definition (Postgres)
 
 ---
 
+## Ediciones de documentación diferidas (a propósito, para su paso)
+
+Lo que un paso dejó sin tocar porque corresponde a otro. Cada fila se borra cuando su paso la resuelve; nada de esta lista se corrige "de paso" en otra tanda.
+
+| Documento y lugar | Qué dice hoy | Qué tiene que decir | Cuándo | Anotado en |
+| --- | --- | --- | --- | --- |
+| `13-recorrido-end-to-end.md`, "Paso 6 — Orquestación" | El DAG del recorrido llama a `sqlmesh run` y explica `plan` contra `run` con los comandos de SQLMesh | Los verbos de la plataforma (`pnpm transform run`, y `deploy` en CI) y la decisión por código de salida (`07-orquestacion.md` §7.1) | Paso 8, con el DAG real | Plan C |
+| `20-product-ui-ux.md` §8, el diagrama de publicación de Data Studio y el párrafo que lo sigue | "modelo SQLMesh gestionado ──► sqlmesh plan ──► DuckLake" y "un ciclo de `sqlmesh plan`" | La publicación llama a `transform deploy` (Plan C) a través del servicio de trabajos | Paso 19 (Data Studio), o el 15 si reescribe ese documento por R1 | Plan C |
+| `15-testing-cicd.md` §3, primera fila de la tabla de tests de contrato | "Test que corre `sqlmesh plan` (dry-run)…": el diseño anterior a los contratos de datos | Lo que ya existe —contratos de datos verificados de los dos lados (`21-engineering-standards.md` §2.4)— y el verbo de análisis de impacto, cuando exista | Al construir el pipeline de CI | Plan C |
+| `20-product-ui-ux.md` §1 y §6 | Las herramientas externas se abren por "deep-link" | Ninguna UI de otra herramienta aparece en el producto (R1); Monitor muestra por sí mismo estado, historial y errores | Paso 15 | Hoja de ruta, 2026-10-08 |
+
+---
+
 ## Orden de construcción real (repetido de `CLAUDE.md`, es el que importa)
 
 0. **Bootstrap del entorno de desarrollo** (nuevo, corrección de una revisión externa que señaló que faltaba un paso explícito): repo clonado, gestor de paquetes (`pnpm`/`uv`), `podman compose` levantando Postgres local, **OTel Collector incluido desde este primer compose**, DuckLake local configurado, la interfaz `SecretProvider` definida (con `EnvSecretProvider` como única implementación por ahora) — **todo esto tiene que poder reproducirse desde cero en una laptop nueva antes de escribir el primer modelo**. No es "construir la Capa 11 completa" (eso incluye OpenTofu, modo nube, el Edge Connector Agent, OpenBao) — es asegurar que el entorno de desarrollo local arranca solo, sin pasos manuales no documentados.
