@@ -238,6 +238,20 @@ El producto pregunta `runtime.capabilities.windowFunctions` — nunca compara co
 
 > **Contract Ownership Principle**: Platform contracts are owned by the product, never by Cube, DuckDB, ECharts, ElectricSQL, SQLMesh, OpenMetadata or any other provider.
 
+### 3.6 Una definición, tres caminos — las medidas (regla normativa, 2026-10-09)
+
+**Regla:** una persona crea una medida desde el editor visual, un desarrollador la escribe como código y un agente la pide en lenguaje natural. **Los tres caminos terminan en la misma definición semántica, validada y persistida.** Por eso un agente no tiene que inventar una aplicación distinta en cada conversación: usa la misma definición y los mismos comandos que los otros dos caminos.
+
+- **La definición es de la plataforma.** `MeasureDefinition` (el "Calculation AST" de §2, versionado como contrato) es tipada y neutral respecto del motor. Es **más chica que SQL**: un conjunto fijo de operaciones, cuya gramática se mide en la Fase 0 del paso 11 (`17-self-service-calculations.md` §3). Nunca guarda la sintaxis de un motor: el Semantic SQL de Cube se compila en su adaptador, al consultar (§3.2).
+- **Los tres caminos producen la misma definición:**
+  - el **editor visual** la arma;
+  - el **código** es **la misma definición escrita como JSON o YAML**, validada contra el mismo esquema. No es un lenguaje nuevo;
+  - el **agente** usa herramientas (`05-cerebro-ia.md`) cuya entrada es el esquema de la definición.
+- **Un mismo ciclo de vida para los tres: borrador → validar → vista previa → publicar → versiones** (la base del paso 15). Los tres tienen la misma validación, los mismos problemas (ruta, código, severidad, mensaje), los mismos permisos y el mismo evento de auditoría; decide el permiso, nunca el tipo de usuario (`05-cerebro-ia.md` §10.3). El camino por el que llegó una medida es un dato de su auditoría, nunca un tipo distinto de medida. Un agente actúa con los permisos de la persona por la que actúa, nunca con más.
+- **La salida de emergencia es el SQL del motor.** Una medida que la definición no puede expresar se puede escribir en el SQL del motor (hoy, el Semantic SQL de Cube), marcada **"específica del motor, no portable"**. La plataforma avisa, al crearla y donde se use, que esa medida queda atada a Cube: si el motor cambia, hay que reescribirla. No es un cuarto camino: pasa por el mismo ciclo de vida, con los mismos permisos.
+- **Lo garantiza un test de contrato:** la misma medida creada por los tres caminos da la misma definición, idéntica byte a byte en su forma canónica.
+- **Alcance:** las medidas (`17-self-service-calculations.md`). Los demás estudios deciden su contrato cuando se diseña cada uno; esta regla no lo prejuzga.
+
 ---
 
 ## 4. Código — inglés siempre, sin excepción

@@ -33,6 +33,30 @@ Lo que sí es parte de Cube Core, confirmado:
 
 ## 3. La arquitectura: tres caminos, un solo destino
 
+**Corrección (2026-10-09), regla normativa de `21-engineering-standards.md` §3.6: "una definición, tres caminos".** El destino común ya no es el Semantic SQL: es **la definición de la medida** (`MeasureDefinition`), propia de la plataforma, validada y persistida. Los tres caminos son el editor visual, el código —la misma definición escrita como JSON o YAML, no un lenguaje nuevo— y el agente (capa 5), que la pide en lenguaje natural con herramientas cuya entrada es el esquema de la definición. Los tres pasan por el mismo ciclo de vida: borrador, validar, vista previa, publicar y versiones. El Semantic SQL se compila desde la definición en el adaptador de Cube, al consultar.
+
+```
+ Editor visual          Código                    Agente
+ (Capa 8)               (JSON o YAML,             (Capa 5, lenguaje natural,
+                        en el editor o en Git)    herramientas con el esquema)
+     │                        │                        │
+     └────────────────────────┼────────────────────────┘
+                              ▼
+      MeasureDefinition — contrato propio, versionado, más chico que SQL
+      borrador → validar → vista previa → publicar → versiones (uno solo)
+                              ▼
+      Compilador, en el adaptador de Cube: definición → Semantic SQL
+                              ▼
+      Cube Core — SQL API → DuckDB / ClickHouse
+
+ Salida de emergencia: SQL del motor, marcada "específica del motor, no portable"
+ (§3.2) — el mismo ciclo de vida, y la medida queda atada a Cube
+```
+
+**La definición es más chica que SQL: un conjunto fijo de operaciones** (ratio, % del total, período anterior, ventana móvil, medida que ignora un filtro…). **Qué operaciones entran se mide en la Fase 0 del paso 11:** con medidas reales, cuáles cubre la definición y cuáles quedan para la salida de emergencia. Ampliar la gramática es una versión nueva del contrato, nunca una excepción suelta.
+
+El diagrama original, anterior a la corrección:
+
 ```
 AUTOR DEL DASHBOARD
                       │
@@ -69,7 +93,8 @@ Denominador: Facturación
 El usuario no escribe nada. La plataforma arma internamente una estructura tipada — el AST — y **recién ahí** la traduce a Semantic SQL:
 
 ```ts
-// El AST es una estructura de datos interna, nunca algo que el usuario escribe o lee
+// La definición es una estructura de datos propia: el editor visual la arma, y un desarrollador
+// la escribe tal cual como JSON o YAML (§3). Esta traducción vive en el adaptador de Cube.
 const ast = { type: 'ratio', numerator: 'recaudacion', denominator: 'facturacion' };
 
 function astToSemanticSql(ast: MeasureAst): string {
@@ -86,6 +111,14 @@ function astToSemanticSql(ast: MeasureAst): string {
 **Por qué pasar por un AST y no concatenar strings SQL desde los componentes visuales directamente:** una estructura tipada se valida antes de convertirse en texto (¿existe la métrica referenciada? ¿los tipos coinciden?) — concatenar strings desde una UI es la forma más fácil de terminar con un SQL malformado o, peor, con una inyección si algún campo no se sanitiza bien.
 
 ### 3.2 Camino 2 — Editor de Semantic SQL (usuario avanzado)
+
+**Corrección (2026-10-09, `21-engineering-standards.md` §3.6): este ya no es el camino de código.** El camino de código es la definición escrita como JSON o YAML (§3). El editor de Semantic SQL queda como **salida de emergencia**, para lo que la definición no puede expresar:
+
+- La medida queda marcada **"específica del motor, no portable"**.
+- La plataforma avisa, al crearla y donde se use, que esa medida queda atada a Cube.
+- Pasa por el mismo ciclo de vida y los mismos permisos que las demás.
+
+Lo que sigue en esta sección (el transporte HTTP, la autenticación y el *pushdown*) vale para esa salida y para el SQL que el compilador genera desde la definición.
 
 Un toggle `[ Visual | SQL ]` en la misma pantalla. El usuario avanzado escribe SQL real, en un editor de código embebido — **Monaco Editor** (Microsoft, MIT), elegido por la misma razón que otras piezas de este proyecto: gobernanza sin nada que auditar, sin necesidad de aplicar el checklist de "adopción masiva sin empresa" que sí hizo falta para otras librerías. Se carga de forma diferida (recién cuando el usuario abre el toggle `[ SQL ]`, nunca en la carga inicial del dashboard) para no cargar su peso completo (2-10 MB) en el camino de lectura, que es de solo lectura para la mayoría de los usuarios. Si el peso del bundle se vuelve un problema medido en la práctica, CodeMirror 6 es la alternativa a evaluar — pero recién aplicándole el mismo checklist de gobernanza que ya se usó para tRPC, no adoptándola por su adopción masiva sin verificarlo.
 
@@ -273,15 +306,17 @@ CREATE TABLE user_measures (
     workspace_id        TEXT NOT NULL,
     report_id           TEXT,                 -- NULL si ya se promovió más allá del reporte (terminología unificada, 19-operabilidad-runtime.md §8.2)
     name                TEXT NOT NULL,
-    definition_type     TEXT NOT NULL,        -- 'visual' | 'semantic_sql'
-    visual_definition   JSONB,                -- el AST, si vino del Visual Builder
-    expression_sql      TEXT NOT NULL,        -- la EXPRESIÓN semántica de la medida, no una consulta completa — ver 6.1
+    definition          JSONB,                -- la MeasureDefinition, venga del editor visual, del código o del agente (21 §3.6)
+    engine_sql          TEXT,                 -- solo la salida de emergencia (§3.2): la EXPRESIÓN en el SQL del motor
+    engine_specific     BOOLEAN NOT NULL,     -- true exactamente cuando la medida es engine_sql: "específica del motor, no portable"
     scope               TEXT NOT NULL,        -- 'report' | 'workspace' | 'global' (terminología unificada, 19-operabilidad-runtime.md §8.2)
     status              TEXT NOT NULL,        -- 'draft' | 'certified'
     created_by          TEXT NOT NULL,
     version             INT NOT NULL DEFAULT 1
 );
 ```
+
+**Corrección (2026-10-09, `21-engineering-standards.md` §3.6):** el esquema guardaba como verdad `expression_sql`, la sintaxis de Cube, y el AST solo si la medida venía del editor visual. Ahora la verdad es una sola, `definition`; el SQL del motor existe solo en la salida de emergencia, marcado. Por qué camino llegó la medida queda en su evento de auditoría, no en una columna. Lo que sigue llama `expression_sql` a la expresión ya compilada desde la definición, o a `engine_sql`.
 
 **Corrección de precisión, señalada en una revisión posterior: `expression_sql` no es una consulta ejecutable completa — es la expresión de la medida en sí.** Para renderizar "Cobrabilidad por mes y área, últimos 12 meses" hace falta combinar la expresión (`MEASURE(recaudacion)/NULLIF(MEASURE(facturacion),0)`) con dimensiones, filtros, *time grain*, orden y límite — piezas que vienen del widget que está usando la medida, no de la definición guardada.
 
