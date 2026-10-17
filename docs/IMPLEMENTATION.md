@@ -112,9 +112,7 @@ Realtime (10) ──sync/broadcast── visual, filter_definition (Postgres)
 - **Confinamiento de herramientas (decisión C6, `21-engineering-standards.md` §2.4):**
   - **C6a, hecho (2026-10-17):** una batería común, `describeToolConfinement`. SQLMesh queda confinado en `packages/transform`, con una sola excepción, que es una guarda. El estado pasa a la base `transform_state`, con un esquema `state_<identidad>` por lakehouse.
   - **C6b, pendiente:** Cube. Antes hay que separar a Cube como servicio que se opera de Cube como motor semántico.
-  - **Hallazgo, pendiente:** la herramienta guarda las tablas físicas de cada versión de un modelo en esquemas `sqlmesh__<esquema>` del lakehouse, el nombre que pone por defecto. Cambiarlo reconstruye los modelos: se decide aparte.
-  - **Falta verificar:** el test de integración `transform-lakehouse` con el esquema renombrado.
-- **Para el Paso 8 (orquestación), del Paso 7 y del Plan C** (`07-orquestacion.md` §7.1, `01-motor-almacenamiento.md` §6.8):
+  - **Hallazgo, pendiente:** la herramienta guarda las tablas físicas de cada versión de un modelo en esquemas `sqlmesh__<esquema>` del lakehouse, el nombre que pone por defecto. Cambiarlo reconstruye los modelos: se decide aparte.- **Para el Paso 8 (orquestación), del Paso 7 y del Plan C** (`07-orquestacion.md` §7.1, `01-motor-almacenamiento.md` §6.8):
   - llamar a los verbos de trabajo con `pnpm --reporter=silent <verbo> … --json` (`ingest`, `transform run`, `semantic refresh`, `lakehouse maintain`) y decidir por el código de salida: solo el 75 se reintenta;
   - un 65 de `transform` alerta, no solo falla: una auditoría fallida no protege a quien lee el mart, porque SQLMesh escribe primero y audita después. Si una auditoría debe bloquear antes de publicar, se mide en la Fase 0 del Paso 8;
   - tener en cuenta el `cron '@daily'` del mart de GitHub;

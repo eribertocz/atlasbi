@@ -487,3 +487,30 @@ El informe se aprobó antes de escribir código.
   - la retención del lakehouse se programa junto con la ingesta.
 - Pendientes de presentación: los títulos del modelo de Cube (hoy los genera Cube), y que la línea diaria rellene los días sin eventos.
 - Migrar a SvelteKit 3 cuando tenga algunas semanas de parches.
+
+### Unreleased (sale en 0.8.0 con el Paso 8) — Plan C y C6a — 2026-10-09 / 2026-10-17
+
+**Hecho:**
+- **Plan C, los verbos de los trabajos** (`07` §7.1):
+  - `pnpm transform run | deploy | test | check`, `pnpm semantic refresh` y `pnpm lakehouse maintain`;
+  - un mismo formato de resumen para todos y los mismos códigos de salida (solo el 75 se reintenta);
+  - `pnpm transform tool`, solo para desarrollo.
+- **"Una definición, tres caminos" para las medidas** (`21` §3.6, `17` §6).
+- **C6a:**
+  - `describeToolConfinement` (`@atlasbi/contracts-testing`): una batería común, que el paquete dueño de cada herramienta corre;
+  - SQLMesh queda confinado en `packages/transform`, con una sola excepción, que es una guarda;
+  - el estado pasa a la base `transform_state`, con un esquema `state_<identidad>` por lakehouse;
+  - `21` §2.4 escribe la regla para todas las herramientas.
+
+**Decisiones del usuario:**
+- Desde 2026-10-17: entregables pequeños y medianos, cada uno sobre contratos y fronteras.
+- C6a (a): renombrar la base y el esquema de estado.
+
+**Lecciones:**
+- **Mover la carpeta del repo rompe los entornos:** `node_modules` (pnpm usa enlaces con ruta absoluta) y los `.venv` (lanzadores de uv). Se arregla con `CI=true pnpm install --frozen-lockfile --config.confirmModulesPurge=false` y `uv sync --frozen --reinstall --offline` en cada paquete Python.
+
+**Siguiente:**
+- C6b: Cube. Antes hay que separar a Cube como servicio que se opera de Cube como motor semántico.
+- Decidir qué hacer con los esquemas físicos `sqlmesh__*` del lakehouse.
+- Revisar las casillas de `16`: Capa 1 y `checkSqlAuth` parecen hechas, pero están sin marcar.
+- Paso 8 (Airflow), empezando por su Fase 0.
