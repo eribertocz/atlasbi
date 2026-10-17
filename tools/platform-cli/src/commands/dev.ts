@@ -87,9 +87,9 @@ export interface StartedStack {
  * Preflight → configuration (fail fast) → containers → migrations → object storage → lakehouse →
  * Cube → API gateway → Web → readiness (docs/19 §3, §9). Only `bootstrap` installs extensions (the
  * host's and Cube's), sets up the object storage's bucket and keys, provisions the lakehouse with
- * its reader role, and prepares the transform and ingestion environments (uv) and SQLMesh's state
- * database; `dev` only verifies. The portable tier (sqlite catalog) starts neither the object
- * storage nor Cube.
+ * its reader role, and prepares the transform and ingestion environments (uv) and the
+ * transformation's state database; `dev` only verifies. The portable tier (sqlite catalog) starts
+ * neither the object storage nor Cube.
  */
 export async function startLocalStack(
   mode: LakehouseStartMode = 'dev',

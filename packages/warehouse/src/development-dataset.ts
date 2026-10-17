@@ -2,8 +2,8 @@ import type { LakehouseAdminPort } from '@atlasbi/contracts';
 
 /**
  * Deterministic development dataset (docs/19 §6): every column is a pure function of the row
- * number, so two runs — or two machines — produce the same rows. Step 2 (SQLMesh) builds its
- * first stg_/mart_ models on top of it until real ingestion (Step 7) replaces it.
+ * number, so two runs — or two machines — produce the same rows. Step 2 (the transformation)
+ * builds its first stg_/mart_ models on top of it until real ingestion (Step 7) replaces it.
  */
 export const DEVELOPMENT_DATASET = {
   table: 'lake.fixture.sales_orders',

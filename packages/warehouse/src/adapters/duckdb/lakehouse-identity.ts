@@ -13,9 +13,10 @@ const IDENTITY_TABLE = 'lakehouse_identity';
 
 /**
  * Every lakehouse carries a UUID assigned once, at provisioning, stored as one row inside the
- * lakehouse itself. It is what ties other state to *this* lakehouse — SQLMesh keeps one state
- * schema per identity (docs/02 §6.3). Neither alternative works: DuckLake rejects custom options,
- * and the creation time (snapshot 0) disappears once old snapshots expire (docs/01 §6.8).
+ * lakehouse itself. It is what ties other state to *this* lakehouse — the transformation keeps
+ * one state schema per identity (docs/02 §6.3). Neither alternative works: DuckLake rejects
+ * custom options, and the creation time (snapshot 0) disappears once old snapshots expire
+ * (docs/01 §6.8).
  * A lakehouse created again — even at the same location — gets a new identity; a copied or
  * relocated one keeps it, because it is the same lakehouse.
  */

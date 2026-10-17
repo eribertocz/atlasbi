@@ -339,7 +339,7 @@ async function stateSchemas(connectionString: string): Promise<string[]> {
   await client.connect();
   try {
     const result = await client.query<{ name: string }>(
-      "select schema_name as name from information_schema.schemata where schema_name like 'sqlmesh%' order by 1",
+      "select schema_name as name from information_schema.schemata where schema_name ~ '^state_[0-9a-f]{32}$' order by 1",
     );
     return result.rows.map((row) => row.name);
   } finally {

@@ -6,7 +6,7 @@ import type { QueryValue } from '@atlasbi/contracts';
  * What a published table does differently from its data contract — empty when it honors it. The
  * producer's tests call it on what they publish (docs/21 §2.4). Types come from the platform's
  * read port, never from an engine's catalog; nullability and grain are checked with the data,
- * because a view (SQLMesh publishes views) reports every column as nullable.
+ * because a view (the transformation publishes views) reports every column as nullable.
  *
  * `catalog` is the alias the reader attached the lakehouse under (`lake`). Identifiers in a
  * contract are validated lowercase names, so the SQL below needs no quoting.

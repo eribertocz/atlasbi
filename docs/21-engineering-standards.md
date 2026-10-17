@@ -113,11 +113,24 @@ Commits normales (`feat(matrix): add server-side hierarchy expansion`, `fix(quer
 
 Las columnas propias de una herramienta (`_dlt_load_id`, `_dlt_id`…) **nunca** forman parte de un contrato: `parseDataContract` las rechaza. Tampoco pueden leerlas los modelos: la regla de lint `NoIngestionInternals` de SQLMesh rechaza cualquier referencia a `_dlt_*` o a los esquemas `ingestion_*` (`02-transformacion.md` §6.5).
 
-**La única excepción al confinamiento de la herramienta de ingesta (decisión D2, Paso 7).** Fuera de `packages/ingestion` y de la documentación, ningún archivo nombra a dlt, salvo dos guardas que existen justamente para frenarlo, con sus tests:
-- el rechazo de las columnas `_dlt*` en `parseDataContract` (`@atlasbi/contracts`), y
-- la regla de lint `NoIngestionInternals` de SQLMesh (`packages/transform/project/linter/platform_rules.py`).
+**El confinamiento de cada herramienta (decisiones D2 y C6).** Fuera del paquete que usa una herramienta, y fuera de la documentación, ningún archivo la nombra: cambiarla toca ese paquete y nada más.
+- **Una sola batería para todas:** `describeToolConfinement` (`@atlasbi/contracts-testing`). La corre el paquete dueño de la herramienta, que declara su patrón y sus excepciones.
+- **Qué recorre:** los archivos que Git versiona o versionaría. Lo que Git ignora (dependencias, entornos, datos, cachés) no es código de la plataforma, y el Markdown queda afuera.
+- **Cómo compara:** contra una lista exacta de excepciones, cada una con su motivo. Una excepción que deja de nombrar a la herramienta también sale de la lista.
+- **Qué puede ser una excepción:** solo una guarda que existe para frenar a la herramienta, y su test.
+- **Los recursos que persisten tampoco llevan su nombre.** La ingesta escribe en `ingestion_<source>`. El estado de la transformación vive en la base `transform_state`, con un esquema `state_<identidad>` por lakehouse (`02-transformacion.md` §6.3).
 
-Quitarles el nombre las debilitaría: el contrato y el linter, que corre en Python dentro de SQLMesh, no pueden leer esos prefijos desde el paquete de ingesta. Un test de `packages/ingestion` recorre el repositorio y falla ante cualquier otra mención; estas dos figuran en su lista de excepciones conocidas. Si se cambia de herramienta, se actualizan las dos guardas y esa lista.
+| Herramienta | Paquete dueño | Excepciones |
+| --- | --- | --- |
+| dlt | `packages/ingestion` | Las dos guardas de D2 (abajo) y sus tests |
+| SQLMesh | `packages/transform` | El test de `platform-cli` que comprueba que lo que imprime `pnpm transform` nunca la nombra (C6a) |
+| Cube | `packages/semantic` | Todavía sin batería (C6b): antes hay que separar a Cube como servicio que se opera (compose, sondas, secretos) de Cube como motor semántico |
+
+**Las guardas de D2 (Paso 7).** Fuera de `packages/ingestion`, dos guardas nombran a dlt justamente para frenarlo, con sus tests:
+- el rechazo de las columnas `_dlt*` en `parseDataContract` (`@atlasbi/contracts`), y
+- la regla de lint `NoIngestionInternals` de la transformación (`packages/transform/project/linter/platform_rules.py`).
+
+Quitarles el nombre las debilitaría: el contrato y el linter, que corre en Python dentro de la herramienta de transformación, no pueden leer esos prefijos desde el paquete de ingesta. Las dos figuran en las excepciones de la batería de `packages/ingestion`. Si se cambia de herramienta, se actualizan las dos guardas y esa lista.
 
 **Cómo publica la ingesta un contrato de landing (Paso 7).** La herramienta escribe en su propio dataset, `ingestion_<source>`. El adaptador publica encima una vista `landing_<source>.<entidad>` con las columnas del contrato, `_load_id` y `_loaded_at`, solo de cargas completas y sin repetidos. La vista está vacía y tipada antes de la primera carga y se regenera en cada corrida (`03-ingesta.md` §6.4).
 

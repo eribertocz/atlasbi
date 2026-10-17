@@ -30,3 +30,5 @@ export type {
   PlatformIdentityView,
 } from './identity-port-contract.ts';
 export { findDataContractViolations } from './data-contract-conformance.ts';
+export { describeToolConfinement, findToolMentions } from './tool-confinement.ts';
+export type { ToolConfinement, ToolMentionSearch } from './tool-confinement.ts';

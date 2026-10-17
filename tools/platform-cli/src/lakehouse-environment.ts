@@ -2,7 +2,7 @@ import { SECRET_KEYS, type LakehouseConfig } from '@atlasbi/config';
 import type { SecretProvider } from '@atlasbi/contracts';
 import type { LakehouseSettings, LakehouseStorage } from '@atlasbi/warehouse';
 
-/** Who opens the lakehouse: the writer (admin port, seed, SQLMesh) or a reader (query port). */
+/** Who opens the lakehouse: the writer (admin port, seed, transform) or a reader (query port). */
 export type LakehouseAccessIdentity = 'writer' | 'reader';
 
 /** Config + secrets → what the warehouse needs to open the lakehouse, as the given identity. */

@@ -97,7 +97,7 @@ pnpm dev
 
 Si algo no está saludable, `pnpm dev` no imprime el resumen de arriba como si todo estuviera bien — muestra explícitamente qué pieza falló y por qué, antes de dejar que alguien abra el navegador y se encuentre con errores confusos más adelante.
 
-**Paso 2:** `pnpm bootstrap` además prepara el entorno Python de `packages/transform` (`uv sync --frozen`, la única descarga de esa pieza) y la base `sqlmesh_state`; `pnpm preflight` verifica sin red que el entorno coincida con `uv.lock`. `pnpm dev` no corre SQLMesh: es un job, no un servicio (§1) — lo programa Airflow en el Paso 8.
+**Paso 2:** `pnpm bootstrap` además prepara el entorno Python de `packages/transform` (`uv sync --frozen`, la única descarga de esa pieza) y la base `transform_state`; `pnpm preflight` verifica sin red que el entorno coincida con `uv.lock`. `pnpm dev` no corre SQLMesh: es un job, no un servicio (§1) — lo programa Airflow en el Paso 8.
 
 **Paso 7:** `pnpm bootstrap` además prepara el entorno Python de `packages/ingestion` (`uv sync --frozen`) y publica el landing de cada fuente, vacío y tipado mientras no haya cargas (línea `Ingestion landing`), para que `pnpm transform deploy` funcione antes de la primera ingesta. `pnpm preflight` verifica sin red el entorno de la ingesta. `pnpm dev` tampoco corre la ingesta: es un job (§1).
 

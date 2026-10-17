@@ -59,9 +59,9 @@ describe('describeFailure', () => {
 });
 
 describe('stateSchemaFor', () => {
-  it('names the SQLMesh state after the lakehouse identity, in the form config.py accepts', () => {
+  it('names the state after the lakehouse identity, never after the tool, in the form config.py accepts', () => {
     expect(stateSchemaFor('0F8FAD5B-D9CB-469F-A165-70867728950E')).toBe(
-      'sqlmesh_0f8fad5bd9cb469fa16570867728950e',
+      'state_0f8fad5bd9cb469fa16570867728950e',
     );
   });
 });

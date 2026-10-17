@@ -1,0 +1,3 @@
+# SQLMesh's local cache of the parsed project, and its log files
+project/.cache/
+logs/

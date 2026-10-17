@@ -32,7 +32,11 @@ Todo lo que corre y termina se llama igual desde Airflow, desde CI y, más adela
 #### Cambiado
 
 - **`pnpm transform <comando>` pasa a ser `pnpm transform <verbo>`.** `pnpm transform plan` ya no existe: para desplegar, `pnpm transform deploy`. Cualquier otro comando de SQLMesh queda en `pnpm transform tool <argumentos>`, solo para desarrollo, fuera del contrato y con un aviso: nunca en Airflow ni en CI.
-- **Ningún identificador que exporta `@atlasbi/transform` nombra a SQLMesh,** y la salida de los verbos tampoco. El confinamiento completo de SQLMesh y de Cube, con su test, va en una tanda aparte (decisión C6).
+- **Ningún identificador que exporta `@atlasbi/transform` nombra a SQLMesh,** y la salida de los verbos tampoco.
+- **SQLMesh queda confinado en `packages/transform` (C6a):**
+  - una batería común, `describeToolConfinement` (`@atlasbi/contracts-testing`), que también usa dlt;
+  - el estado de la transformación pasa a la base `transform_state`, con un esquema `state_<identidad>` por lakehouse. **Si tienes un entorno local:** cambia `sqlmesh_state` por `transform_state` en `ATLASBI_TRANSFORM_STATE_URL` de tu `.env`, corre `pnpm bootstrap` y después `pnpm transform deploy`. La base vieja queda sin uso.
+  - Cube va aparte (C6b).
 - **`pnpm reset:local` y `pnpm lakehouse maintain` comparten la confirmación** por texto.
 - **El mensaje de `audit_failed` dice lo que pasa de verdad:** lo que escribió la corrida queda visible hasta la siguiente.
 

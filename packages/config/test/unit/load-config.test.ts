@@ -337,7 +337,7 @@ describe('lakehouse configuration (Config Schema v4)', () => {
     ).toEqual([]);
   });
 
-  it('adds the SQLMesh state database for transformations only', () => {
+  it('adds the transformation state database for transformations only', () => {
     expect(
       transformSecretKeys(loadLakehouseConfig({ ATLASBI_LAKEHOUSE_CATALOG_TYPE: 'sqlite' })),
     ).toEqual(['database.url', 'transform.state-url']);

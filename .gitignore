@@ -6,9 +6,7 @@ node_modules/
 .venv/
 __pycache__/
 *.pyc
-# SQLMesh's local cache of the parsed project, and its log files
-packages/transform/project/.cache/
-packages/transform/logs/
+# Each package ignores its own tool's caches and logs, next to it (packages/transform/.gitignore)
 
 # Build and tool caches
 .turbo/

@@ -1,8 +1,8 @@
 /**
  * Administration of the "equipo local" tier's object storage server — Garage (docs/11 §4.4) —
  * through its admin API: a bearer token, no request signing. Bootstrap only: the platform itself
- * speaks nothing but S3 (the warehouse, SQLMesh, Cube). In the cloud tier the bucket and its keys
- * belong to OpenTofu, never to this module.
+ * speaks nothing but S3 (the warehouse, the transformation, Cube). In the cloud tier the bucket and
+ * its keys belong to OpenTofu, never to this module.
  */
 export interface ObjectStorageAdmin {
   /** e.g. http://127.0.0.1:53903 */

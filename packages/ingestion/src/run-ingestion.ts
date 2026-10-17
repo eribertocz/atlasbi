@@ -67,7 +67,7 @@ export function isIngestionSource(value: string): value is IngestionSource {
 /**
  * The only supported way to run the ingestion (docs/03): the lakehouse is opened first the
  * platform's way — never created, since dlt attaches with IF NOT EXISTS and would silently start an
- * empty lakehouse on a wrong catalog (the same trap as SQLMesh, build step 2) — then the runner
+ * empty lakehouse on a wrong catalog (the transformation's trap in build step 2) — then the runner
  * gets exactly what it needs through its environment, secrets included, and nothing else.
  */
 export async function runIngestion(

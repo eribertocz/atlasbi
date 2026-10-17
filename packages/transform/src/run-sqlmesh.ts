@@ -106,7 +106,7 @@ export async function provisionedLakehouseId(settings: LakehouseSettings): Promi
  * created again, so a new lakehouse always starts from an empty state.
  */
 export function stateSchemaFor(lakehouseId: string): string {
-  return `sqlmesh_${lakehouseId.replaceAll('-', '').toLowerCase()}`;
+  return `state_${lakehouseId.replaceAll('-', '').toLowerCase()}`;
 }
 
 /** Only what SQLMesh needs: every other ATLASBI_* variable — other secrets included — stays out. */

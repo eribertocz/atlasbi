@@ -7,7 +7,7 @@ export const SECRET_KEYS = {
   lakehouseCatalogUrl: 'lakehouse.catalog-url',
   /** The same catalog through a SELECT-only role, for the readers (query port, Cube). */
   lakehouseCatalogReaderUrl: 'lakehouse.catalog-reader-url',
-  /** Object storage key that owns the bucket: admin port, seed, SQLMesh. */
+  /** Object storage key that owns the bucket: admin port, seed, the transformation. */
   lakehouseS3WriterAccessKeyId: 'lakehouse.s3-writer-access-key-id',
   lakehouseS3WriterSecretAccessKey: 'lakehouse.s3-writer-secret-access-key',
   /** Object storage key that can only read the bucket: query port, Cube. */
@@ -15,7 +15,7 @@ export const SECRET_KEYS = {
   lakehouseS3ReaderSecretAccessKey: 'lakehouse.s3-reader-secret-access-key',
   /** Administration of the local object storage server — `pnpm bootstrap` only. */
   objectStorageAdminToken: 'object-storage.admin-token',
-  /** SQLMesh's state database — needed by bootstrap and `pnpm transform`, not by `pnpm dev`. */
+  /** The transformation's state database — bootstrap and `pnpm transform`, not `pnpm dev`. */
   transformStateUrl: 'transform.state-url',
   /** The secret Cube verifies the platform's short-lived query tokens with (CUBEJS_API_SECRET). */
   semanticApiSecret: 'semantic.api-secret',
@@ -27,7 +27,7 @@ export const SECRET_KEYS = {
   githubToken: 'github.token',
 } as const;
 
-/** Secrets that open the lakehouse as its writer (admin port, seed, SQLMesh). */
+/** Secrets that open the lakehouse as its writer (admin port, seed, the transformation). */
 export function lakehouseWriterSecretKeys(lakehouse: LakehouseConfig): string[] {
   return lakehouse.catalogType === 'postgres'
     ? [
@@ -54,7 +54,7 @@ export function requiredSecretKeys(lakehouse: LakehouseConfig): string[] {
   return [SECRET_KEYS.databaseUrl, ...lakehouseWriterSecretKeys(lakehouse)];
 }
 
-/** Secrets `pnpm transform` (SQLMesh) needs on top of the lakehouse ones. */
+/** Secrets `pnpm transform` needs on top of the lakehouse ones. */
 export function transformSecretKeys(lakehouse: LakehouseConfig): string[] {
   return [...requiredSecretKeys(lakehouse), SECRET_KEYS.transformStateUrl];
 }

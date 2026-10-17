@@ -110,7 +110,7 @@ def unit_test_connection() -> DuckDBConnectionConfig:
 def state_schema() -> str:
     # One state per lakehouse, named after the lakehouse identity (docs/02 §6.3).
     schema = required("ATLASBI_TRANSFORM_STATE_SCHEMA")
-    if not re.fullmatch(r"sqlmesh_[0-9a-f]{32}", schema):
+    if not re.fullmatch(r"state_[0-9a-f]{32}", schema):
         raise ConfigError(f"ATLASBI_TRANSFORM_STATE_SCHEMA is not a lakehouse state schema: {schema!r}.")
     return schema
 
