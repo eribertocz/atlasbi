@@ -1,0 +1,23 @@
+name: Bug
+description: Something the platform does wrong.
+labels: ['type: bug']
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Qué pasa
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Qué debería pasar
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Cómo reproducirlo
+      description: Comandos, nivel de despliegue (portátil, equipo local, nube) y versión.
+    validations:
+      required: true

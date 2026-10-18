@@ -57,20 +57,7 @@ MAJOR.MINOR.PATCH
 
 **Regla fuerte: un cambio interno de arquitectura NUNCA justifica un MAJOR.** Reemplazar Cube, ECharts, SQLMesh o DuckDB por otra pieza, si el contrato externo (sección 4) sigue siendo compatible, es como mucho un MINOR — el usuario ni se entera de qué corre por debajo, y no debería tener que enterarse.
 
-**Antes de 1.0**, la convención `0.MINOR.PATCH` permite cambios incompatibles sin ceremonia — coherente con el orden de construcción ya definido (`CLAUDE.md`):
-
-```
-0.1.0  bootstrap
-0.2.0  vertical slice de datos
-0.3.0  capa semántica
-0.4.0  auth + RLS
-0.5.0  report viewer
-0.6.0  authoring básico
-0.7.0  matrix
-0.8.0  realtime
-0.9.0  release candidate
-1.0.0  primera versión estable
-```
+**Antes de 1.0**, la convención `0.MINOR.PATCH` permite cambios incompatibles, con las reglas de cada canal: pre-alpha (0.1–0.7, hecho), alpha (0.8–0.17) y beta (0.18 en adelante). Qué versión cierra cada fase, y qué puede cambiar un contrato en cada canal, está en `ROADMAP.md`. *(La tabla anterior de esta sección, que llegaba a una release candidate en 0.9.0, se escribió antes del orden de construcción real y de los estudios; la reemplazó el roadmap el 2026-10-17.)*
 
 ### 2.2 No se versiona cada commit
 

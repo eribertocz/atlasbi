@@ -1,0 +1,30 @@
+name: Decision
+description: Measure or decide something before building it (a Phase 0 item).
+labels: ['type: decision']
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Pregunta
+      description: Qué hay que decidir, y qué paso o issue la necesita.
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Opciones
+      description: Cada una con su costo. La recomendada, primero.
+    validations:
+      required: true
+  - type: textarea
+    id: measurement
+    attributes:
+      label: Qué se mide
+      description: Lo que se comprueba en vivo, no se supone.
+    validations:
+      required: true
+  - type: textarea
+    id: closes-when
+    attributes:
+      label: Se cierra cuando
+      value: '- [ ] Lo medido y la decisión quedan escritos en el documento de su capa (docs/…).'

@@ -1,0 +1,30 @@
+name: Feature
+description: A capability the platform builds, inside one phase of docs/ROADMAP.md.
+labels: ['type: feature']
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: Contexto
+      description: Por qué ahora, y qué documento de capa lo define (docs/…).
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Alcance
+      description: Qué entra. El contrato o la frontera que fija, si fija una.
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Fuera de alcance
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Criterios de aceptación
+      description: Verificables, cada uno con cómo se demuestra (test, medición en vivo).
+      value: '- [ ] '
+    validations:
+      required: true
