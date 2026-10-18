@@ -38,8 +38,8 @@
 
 ```bash
 # Primera vez
-git clone ...
-cd bi-platform
+git clone https://github.com/eribertocz/atlasbi.git
+cd atlasbi
 corepack enable   # una vez por máquina: usa la versión exacta de pnpm fijada en package.json
 pnpm install
 pnpm bootstrap    # valida prerrequisitos, copia .env.example → .env, levanta la infraestructura, aplica migraciones

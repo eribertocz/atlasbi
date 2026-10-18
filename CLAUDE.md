@@ -54,7 +54,7 @@ Una plataforma de BI moderna y 100% open source diseñada para reemplazar y supe
 ## Estructura del monorepo
 
 ```
-bi-platform/
+atlasbi/
 ├── compose.yaml             # infraestructura local (Compose Spec, vía `podman compose`)
 ├── apps/web/                # SvelteKit + Svelte 5
 ├── packages/

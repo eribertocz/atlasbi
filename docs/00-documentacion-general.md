@@ -125,7 +125,7 @@ dlt │ SQLMesh │ Cube │ DuckDB │ Airflow
 ## 6. Estructura de monorepo
 
 ```
-bi-platform/                 # pnpm workspace + Turborepo
+atlasbi/                     # pnpm workspace + Turborepo
 ├── apps/
 │   └── web/                 # SvelteKit + Svelte 5: dashboards, ECharts, SQL Lab exploratorio
 ├── packages/
