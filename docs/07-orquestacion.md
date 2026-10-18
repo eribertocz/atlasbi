@@ -178,11 +178,55 @@ Los códigos de salida son los mismos para todos:
 
 **Cuándo llega lo ingerido al mart (hallazgo del Paso 7).** El mart de GitHub (`marts.mart_github_repo_events`) tiene `cron '@daily'`: `transform run` lo reconstruye una vez por intervalo diario, que cierra a las 00:00 UTC. Lo que se ingiere más tarde en el día, después de esa corrida, llega al mart al día siguiente: `transform run` no evalúa ningún modelo (`models` vacío) hasta que cierre el próximo intervalo (medido en la Fase C). **El horario del DAG tiene que tenerlo en cuenta:** encadenar la ingesta antes de `transform run` dentro del mismo intervalo, o cambiar el `cron` del mart si hace falta más frescura. Nunca forzar un `transform deploy` para refrescar: eso es despliegue, no operación diaria (`15-testing-cicd.md`).
 
+### 7.2 La frontera de `packages/orchestrator` (Paso 8, Fase 0: el contrato)
+
+**Qué es.** El paquete de la Capa 7: los DAGs y un adaptador, nada más. Es Python, con su propio proyecto uv (`pyproject.toml`, `uv.lock`, `.python-version`), que nunca comparte entorno con `packages/ingestion` ni con `packages/transform`. Un DAG declara horarios y dependencias entre trabajos; todo lo demás lo hace un verbo de la plataforma.
+
+**Lo que nunca hace** (cada punto se puede verificar):
+- **Nombrar una herramienta de otra capa.** Las baterías de confinamiento de cada dueño (`21-engineering-standards.md` §2.4) ya recorren todo el repositorio, así que el paquete nace cubierto: un DAG que nombre a la herramienta de ingesta o a la de transformación hace fallar sus tests.
+- **Importar código de otro paquete ni leer sus bases:** ni el catálogo, ni el estado de la transformación, ni la base de la plataforma.
+- **Ver un secreto de una capa.** El verbo los resuelve con `SecretProvider`. El DAG no los pasa ni los lee.
+- **Llamar a `transform deploy` o a `transform tool`** (§7.1).
+- **Dejarse leer por otra capa:** nadie lee la base de metadata de Airflow (regla 2). Monitor (paso 15) obtiene el historial por contrato (O3).
+
+**El adaptador: el único lugar que habla con los verbos.** Una función, `run_job(verb, *args)`, que todos los DAGs usan:
+1. **Lanza el verbo** con `--json`. Dónde corre se decide en O1.
+2. **Lee una sola línea JSON de stdout y comprueba el sobre:**
+   - que conozca la versión mayor del resumen (hoy, 1);
+   - que `exitCode` sea el código del proceso.
+
+   Si el resumen falta, no se puede leer o no coincide, se trata como un 70. Nunca se adivina.
+3. **Traduce el código a Airflow**, en un solo lugar:
+
+| Código | En Airflow |
+| --- | --- |
+| 0 | La tarea termina bien. El sobre va a XCom y el resumen completo al log |
+| 75 | Una excepción que Airflow reintenta, con los `retries` de la tarea |
+| 65 | Una excepción que Airflow no reintenta, más una alerta |
+| 64, 70, 77, 78 | Una excepción que Airflow no reintenta. El 77 también avisa |
+
+Las clases exactas de excepción se verifican contra la versión de Airflow que se fije. El adaptador se prueba con un verbo falso: un script que imprime un resumen dado y sale con un código dado. No hace falta un scheduler.
+
+**Decisiones abiertas de la Fase 0 (se miden, no se suponen):**
+- **O1, dónde corre un verbo.** Un worker de Airflow no tiene Node, pnpm ni los entornos de las capas.
+  - **(a), recomendada:** una imagen OCI de trabajos de la plataforma, con la CLI, los verbos y sus entornos, que Airflow lanza por tarea. Airflow solo necesita lanzar un contenedor y leer su código y su stdout. CI y el servicio de trabajos de los estudios (paso 15) usarían la misma imagen.
+  - **(b):** extender la imagen de Airflow con Node y el repositorio. Ata cada actualización de Airflow a la de la plataforma, y al revés.
+  - **A medir:** cómo lanza Airflow un contenedor sobre Podman en el nivel local.
+- **O2, el comando estable.** `pnpm --reporter=silent <verbo>` sirve dentro del repositorio, pero una imagen de trabajos no tiene por qué tener pnpm. El contrato es el verbo, sus argumentos, el código y el resumen, no `pnpm`. Se fija el punto de entrada de la imagen, sin el codename (`21-engineering-standards.md` §1).
+- **O3, de dónde lee Monitor el historial.** Nunca de la base de metadata de Airflow.
+  - (a) La API REST de Airflow, detrás de un adaptador de la plataforma.
+  - (b) El servicio de trabajos del paso 15 guarda cada resumen en la base de la plataforma.
+
+  Se decide en la Fase 0 del paso 15. El adaptador ya produce el resumen que necesitan las dos.
+- **O4, una auditoría que bloquee antes de publicar** (§7.1). Se mide en esta Fase 0.
+- **O5, Airflow con uv.** Airflow se instala con su archivo de *constraints*. Hay que ver cómo convive eso con `uv.lock` y fijar la versión en `versions.md`.
+- **El confinamiento de Airflow mismo** (que solo `packages/orchestrator` lo nombre) espera a C6b. Airflow, como Cube, también es un servicio que se opera desde `compose.yaml` y la CLI.
+
 ---
 
 ## 8. Por dónde empezar a construir (paso a paso concreto)
 
-1. Levantar Airflow localmente vía Docker Compose (imagen oficial, Postgres como backend de metadata).
+1. Levantar Airflow localmente con `podman compose`, en el perfil MVP de `compose.yaml` (`19-operabilidad-runtime.md` §4): imagen oficial y Postgres como backend de metadata. Nunca Docker como producto (`CLAUDE.md`, infraestructura). Antes, cerrar las decisiones O1–O5 (§7.2).
 2. Escribir el primer DAG con dos tareas: `pnpm ingest` de la primera fuente con ingesta (capa 3), y encadenar `pnpm transform run` (capa 2) con `>>` — el despliegue de cambios de modelo (`pnpm transform deploy`) ya debería haber corrido en CI/CD antes de este punto, ver `15-testing-cicd.md`. Cada tarea decide por el código de salida (§7.1).
 3. Correrlo manualmente desde la UI y verificar que el orden de dependencias se respeta.
 4. Agregar la tercera tarea (`pnpm semantic refresh`, capa 4) al final de la cadena, y el DAG propio de `pnpm lakehouse maintain`.
