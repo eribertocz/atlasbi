@@ -512,5 +512,5 @@ El informe se aprobó antes de escribir código.
 **Siguiente:**
 - C6b: Cube. Antes hay que separar a Cube como servicio que se opera de Cube como motor semántico.
 - Decidir qué hacer con los esquemas físicos `sqlmesh__*` del lakehouse.
-- Revisar las casillas de `16`: Capa 1 y `checkSqlAuth` parecen hechas, pero están sin marcar.
+- MVP (`16`): 9 de 11 casillas, verificadas el 2026-10-17. La Capa 1 se lee como escala, no como origen (decisión del usuario). Faltan el DAG de Airflow (Paso 8) y el recorrido de `13` como test en CI.
 - Paso 8 (Airflow), empezando por su Fase 0.
