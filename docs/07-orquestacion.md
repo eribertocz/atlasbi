@@ -211,7 +211,15 @@ Las clases exactas de excepción se verifican contra la versión de Airflow que 
 - **O1, dónde corre un verbo.** Un worker de Airflow no tiene Node, pnpm ni los entornos de las capas.
   - **(a), recomendada:** una imagen OCI de trabajos de la plataforma, con la CLI, los verbos y sus entornos, que Airflow lanza por tarea. Airflow solo necesita lanzar un contenedor y leer su código y su stdout. CI y el servicio de trabajos de los estudios (paso 15) usarían la misma imagen.
   - **(b):** extender la imagen de Airflow con Node y el repositorio. Ata cada actualización de Airflow a la de la plataforma, y al revés.
-  - **A medir:** cómo lanza Airflow un contenedor sobre Podman en el nivel local.
+  - **Medido el 2026-10-17** (Podman 5.8.7 sin root, en su VM de WSL; librería `docker` 7.1.0; Airflow todavía no instalado):
+    - **El `DockerOperator` oficial no sirve para `run_job`.** En `apache-airflow-providers-docker` 4.6.1 se conecta a stdout y a stderr a la vez, y lo que deja en XCom es la última línea mezclada. Además, ante cualquier código distinto de 0 lanza la misma excepción, que Airflow reintenta: un 65 se reintentaría igual que un 75. Por eso `run_job` usa directamente la librería `docker` de Python.
+    - **La API compatible de Podman alcanza.** Desde un contenedor con el socket de Podman montado (`/run/user/1000/podman/podman.sock`), la librería lanzó un contenedor hermano y leyó su código exacto (0, 65, 75 y 78), su stdout y su stderr por separado: una línea de JSON en stdout y dos líneas de progreso en stderr, sin mezclarse. El resumen coincidió con el código en los cuatro casos.
+    - **Cuesta alrededor de 1,5 s por tarea** (5 s la primera vez). Para trabajos que tardan minutos, no importa.
+    - **El contenedor del trabajo llega a los servicios por nombre** en una red compartida, que es lo que necesita para alcanzar Postgres o el almacenamiento.
+  - **Lo que deja como contrato, dentro de O1:**
+    - **`run_job` depende de un puerto, `JobLauncher`:** lanzar una imagen con un comando, esperar, y devolver el código, stdout y stderr. En el nivel local, el adaptador es la API compatible de Podman; en la nube, otro adaptador, por ejemplo uno de Kubernetes, sin tocar los DAGs.
+    - **El riesgo, dicho:** montar el socket le da a Airflow el poder de lanzar cualquier contenedor como el usuario de Podman. Sin root, ese poder queda limitado a ese usuario, pero sigue siendo poder. El adaptador solo lanza la imagen de trabajos de la plataforma, por su *digest*.
+    - **Los secretos llegan al contenedor del trabajo sin pasar por Airflow.** En desarrollo, el adaptador monta el `.env` de solo lectura y Airflow conoce solo su ruta. En producción, el trabajo se autentica él mismo ante el gestor de secretos (OpenBao, paso 14).
 - **O2, el comando estable.** `pnpm --reporter=silent <verbo>` sirve dentro del repositorio, pero una imagen de trabajos no tiene por qué tener pnpm. El contrato es el verbo, sus argumentos, el código y el resumen, no `pnpm`. Se fija el punto de entrada de la imagen, sin el codename (`21-engineering-standards.md` §1).
 - **O3, de dónde lee Monitor el historial.** Nunca de la base de metadata de Airflow.
   - (a) La API REST de Airflow, detrás de un adaptador de la plataforma.
