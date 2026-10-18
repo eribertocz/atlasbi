@@ -38,19 +38,21 @@ Pasos 0–7, Plan C, C6a y la medición de O1 (`07` §7.2). MVP: 9 de 11 casilla
 
 ### Fase 1 — Cierre del MVP · Paso 8 · → **0.8.0, Alpha 1**
 
+Milestone: [0.8.0 — Alpha 1](https://github.com/eribertocz/atlasbi/milestone/5).
+
 | Id | Issue | Tipo |
 | --- | --- | --- |
-| F1-01 | O2: el comando estable de la imagen de trabajos | decision |
-| F1-02 | La imagen OCI de trabajos: la CLI, los verbos y sus entornos, fijada por *digest* | feature |
-| F1-03 | `packages/orchestrator`: proyecto uv, Airflow fijado (O5) y su servicio en el perfil MVP | feature |
-| F1-04 | El puerto `JobLauncher`, su adaptador para Podman y `run_job`, probado con un verbo falso | feature |
-| F1-05 | El DAG diario: ingesta → transformación → refresco semántico, con el `cron '@daily'` del mart | feature |
-| F1-06 | El DAG de mantenimiento del lakehouse | feature |
-| F1-07 | Un reintento demostrado (75) y la alerta de un 65: la casilla de la Capa 7 | feature |
-| F1-08 | O4: si una auditoría debe bloquear antes de publicar | decision |
-| F1-09 | El pipeline de CI y el recorrido de `13` como test: la última casilla del MVP | feature |
-| F1-10 | C6b: el confinamiento de Cube (servicio y motor) y el de Airflow | chore |
-| F1-11 | Qué hacer con los esquemas físicos `sqlmesh__*` del lakehouse | decision |
+| [F1-01](https://github.com/eribertocz/atlasbi/issues/1) | O2: el comando estable de la imagen de trabajos | decision |
+| [F1-02](https://github.com/eribertocz/atlasbi/issues/2) | La imagen OCI de trabajos: la CLI, los verbos y sus entornos, fijada por *digest* | feature |
+| [F1-03](https://github.com/eribertocz/atlasbi/issues/3) | `packages/orchestrator`: proyecto uv, Airflow fijado (O5) y su servicio en el perfil MVP | feature |
+| [F1-04](https://github.com/eribertocz/atlasbi/issues/4) | El puerto `JobLauncher`, su adaptador para Podman y `run_job`, probado con un verbo falso | feature |
+| [F1-05](https://github.com/eribertocz/atlasbi/issues/5) | El DAG diario: ingesta → transformación → refresco semántico, con el `cron '@daily'` del mart | feature |
+| [F1-06](https://github.com/eribertocz/atlasbi/issues/6) | El DAG de mantenimiento del lakehouse | feature |
+| [F1-07](https://github.com/eribertocz/atlasbi/issues/7) | Un reintento demostrado (75) y la alerta de un 65: la casilla de la Capa 7 | feature |
+| [F1-08](https://github.com/eribertocz/atlasbi/issues/8) | O4: si una auditoría debe bloquear antes de publicar | decision |
+| [F1-09](https://github.com/eribertocz/atlasbi/issues/9) | El pipeline de CI y el recorrido de `13` como test: la última casilla del MVP | feature |
+| [F1-10](https://github.com/eribertocz/atlasbi/issues/10) | C6b: el confinamiento de Cube (servicio y motor) y el de Airflow | chore |
+| [F1-11](https://github.com/eribertocz/atlasbi/issues/11) | Qué hacer con los esquemas físicos `sqlmesh__*` del lakehouse | decision |
 
 **Sale cuando:** el MVP está en 11 de 11 (`16`).
 
